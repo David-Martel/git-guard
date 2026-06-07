@@ -1,0 +1,56 @@
+name: git-guard QA
+
+# Self-test git-guard on every push/PR: prove the BLOCK trio fires, a clean
+# commit passes, and the shell engine is shellcheck-clean. This is the public
+# repo validating ITSELF with its own gate.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ast-grep
+        run: npm install -g @ast-grep/cli
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Versions
+        run: |
+          git --version
+          ast-grep --version
+          shellcheck --version | head -3
+
+      - name: git-guard doctor
+        run: sh ./bin/git-guard doctor
+
+      - name: git-guard rule manifest
+        run: sh ./bin/git-guard rules
+
+      - name: git-guard verify (BLOCK trio fires, clean commit passes)
+        run: sh ./bin/git-guard verify
+
+      - name: shellcheck the engine + hooks
+        run: |
+          shellcheck -S warning \
+            hooks/pre-commit hooks/post-commit hooks/pre-push \
+            hooks/common/qa_gate.sh hooks/common/secret_scan.sh \
+            hooks/common/nul-cleanup.sh bin/git-guard install.sh \
+            branch-protection.sh
+
+      - name: validate bundled example rules
+        run: |
+          fail=0
+          for f in $(find rules-examples -name '*.yml'); do
+            ast-grep scan --rule "$f" --json=compact . >/dev/null 2>&1 \
+              || { echo "INVALID rule: $f"; fail=1; }
+          done
+          exit $fail

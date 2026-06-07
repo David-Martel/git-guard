@@ -1,0 +1,26 @@
+id: dispose-pattern
+language: csharp
+severity: warning
+message: "IDisposable object not wrapped in using statement - potential resource leak"
+rule:
+  pattern: var $VAR = new $TYPE($$$ARGS);
+files:
+  - "**/src/**/*.cs"
+  - "**/Public/**/*.cs"
+  - "!**/Tests/**"
+  - "!**/test*/**"
+constraints:
+  TYPE:
+    any:
+      - pattern: HttpClient
+      - pattern: StreamReader
+      - pattern: StreamWriter
+      - pattern: FileStream
+      - pattern: MemoryStream
+      - pattern: SqlConnection
+      - pattern: TcpClient
+note: |
+  Wrap IDisposable objects in a using statement or declaration:
+  Before: var client = new HttpClient();
+  After:  using var client = new HttpClient();
+  Or:     using (var client = new HttpClient()) { ... }

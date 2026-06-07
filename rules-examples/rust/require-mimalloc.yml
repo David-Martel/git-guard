@@ -1,0 +1,31 @@
+id: require-mimalloc
+language: Rust
+severity: info
+message: "Binary crate missing mimalloc global allocator (M-MIMALLOC-APPS)"
+rule:
+  pattern: "fn main()"
+files:
+  - "**/src/main.rs"
+  - "!**/tests/**"
+  - "!**/_backup*/**"
+constraints:
+  # This rule fires on main.rs files that don't contain #[global_allocator]
+  # Unfortunately ast-grep can't check file-level absence, so this is advisory
+note: |
+  Microsoft Rust Guideline M-MIMALLOC-APPS:
+  Set mimalloc as the global allocator for ~25% allocation improvement:
+
+  ```toml
+  # Cargo.toml
+  [dependencies]
+  mimalloc = "0.1"
+  ```
+
+  ```rust
+  // main.rs (top of file)
+  use mimalloc::MiMalloc;
+  #[global_allocator]
+  static GLOBAL: MiMalloc = MiMalloc;
+  ```
+
+  Exceptions: WASM targets, embedded, no-std contexts.

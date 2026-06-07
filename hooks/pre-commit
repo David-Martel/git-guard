@@ -1,0 +1,90 @@
+#!/bin/sh
+#
+# git-guard pre-commit — account-wide git-safety + language-gated QA.
+#
+# Composes (in order): secret-scan (BLOCK) -> NUL/reserved-name cleanup (BLOCK)
+# -> language-gated QA gate (BLOCK on real fast errors, WARN otherwise) ->
+# protected-branch WARN -> partial-staging WARN -> optional downstream hook.
+#
+# Design: BLOCK-on-real-errors, WARN-otherwise (the anti-brick policy). A
+# per-repo `.qa-gate.conf` overrides the global defaults (the escape hatch).
+# See docs/QA_TOOLING.md and docs/GIT_COMMIT_SAFETY.md.
+#
+# Bypass (conscious, documented): `GIT_GUARD=0 git commit ...` or
+# `LEFTHOOK=0 git commit ...` skips the guards. Do NOT use --no-verify.
+
+if [ "$GIT_GUARD" = "0" ] || [ "$LEFTHOOK" = "0" ]; then
+  exit 0
+fi
+
+git_guard_hooks_dir="$(cd "$(dirname "$0")" && pwd)"
+
+# 1. Secret scan — BLOCKS (exit 1). Scans ADDED lines only.
+if [ -x "$git_guard_hooks_dir/common/secret_scan.sh" ]; then
+  "$git_guard_hooks_dir/common/secret_scan.sh" || exit 1
+fi
+
+# 2. NUL / reserved-filename cleanup — MANDATORY filesystem hygiene (PII-safe,
+#    language-agnostic). NUKENUL_MANDATORY=1 -> blocks on a genuine failure.
+#    qa_gate is told to skip its own nul step (QA_SKIP_NUL=1) to avoid a re-run.
+if [ -x "$git_guard_hooks_dir/common/nul-cleanup.sh" ]; then
+  NUKENUL_MANDATORY=1 "$git_guard_hooks_dir/common/nul-cleanup.sh" >/dev/null 2>&1 || {
+    printf '%s\n' "git-guard BLOCKED: reserved-filename (NUL) cleanup failed. Your changes are STAGED but UNCOMMITTED — do NOT 'git reset --hard'. Resolve the reserved file, re-commit." >&2
+    exit 1
+  }
+fi
+
+# 3. Broad LANGUAGE-GATED QA layer — BLOCKS on real, fast, configured errors;
+#    WARNs otherwise; true no-op on docs-only repos. Per-repo .qa-gate.conf
+#    overrides the global defaults. QA_DEBUG=1 for verbose per-check output.
+if [ -x "$git_guard_hooks_dir/common/qa_gate.sh" ]; then
+  QA_SKIP_NUL=1 "$git_guard_hooks_dir/common/qa_gate.sh" || exit 1
+fi
+
+# 4. Protected-branch WARNING (non-blocking). On an UNBORN branch (root commit),
+#    --abbrev-ref HEAD returns literal "HEAD"; fall back to the symbolic ref.
+git_guard_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+if [ "$git_guard_branch" = "HEAD" ] || [ -z "$git_guard_branch" ]; then
+  git_guard_branch="$(git symbolic-ref --short HEAD 2>/dev/null || echo '')"
+fi
+case "$git_guard_branch" in
+  main|master)
+    printf '%s\n' "git-guard WARN: committing directly on '$git_guard_branch'. Consider a feature branch + PR for review/CI. (non-blocking)" >&2
+    ;;
+esac
+
+# 5. Partial-staging WARNING (non-blocking): files staged that ALSO have unstaged
+#    edits are a stash hazard (a downstream stash can hide/restore the wrong
+#    version). POSIX-safe overlap (no process substitution).
+git_guard_staged="$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)"
+git_guard_unstaged="$(git diff --name-only --diff-filter=ACMR 2>/dev/null)"
+git_guard_overlap=""
+if [ -n "$git_guard_staged" ] && [ -n "$git_guard_unstaged" ]; then
+  git_guard_overlap="$(printf '%s\n' "$git_guard_staged" \
+    | { while IFS= read -r f; do
+          [ -n "$f" ] || continue
+          if printf '%s\n' "$git_guard_unstaged" | grep -qxF -- "$f"; then
+            printf '%s\n' "$f"
+          fi
+        done; })"
+fi
+if [ -n "$git_guard_overlap" ]; then
+  printf '%s\n' "git-guard WARN: these files are staged but ALSO have unstaged edits — a stash may hide/restore the wrong version. Stage or stash before committing: (non-blocking)" >&2
+  printf '  %s\n' $git_guard_overlap >&2
+fi
+
+# 6. Optional downstream hook chaining. git-guard is ADDITIVE: if the repo (or
+#    the prior hook this one replaced) defines its own pre-commit logic, invoke
+#    it last so git-guard composes WITH it rather than replacing it.
+#    Precedence: $GIT_GUARD_DOWNSTREAM_HOOK > repo .git-guard/pre-commit.local >
+#    lefthook (if installed). None present -> nothing to chain (clean exit).
+git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
+if [ -n "${GIT_GUARD_DOWNSTREAM_HOOK:-}" ] && [ -x "${GIT_GUARD_DOWNSTREAM_HOOK}" ]; then
+  "${GIT_GUARD_DOWNSTREAM_HOOK}" "$@" || exit $?
+elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/pre-commit.local" ]; then
+  "$git_guard_repo_root/.git-guard/pre-commit.local" "$@" || exit $?
+elif command -v lefthook >/dev/null 2>&1; then
+  lefthook run pre-commit "$@" || exit $?
+fi
+
+exit 0

@@ -1,0 +1,24 @@
+id: unwrap-call
+message: unwrap() will panic on None/Err - use ? operator or explicit error handling
+severity: error
+language: rust
+rule:
+  pattern: $EXPR.unwrap()
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/*_test.rs"
+  - "!**/test_*.rs"
+  - "!**/_backup*/**"
+fix: |-
+  $EXPR?
+note: |
+  Example fixes:
+  1. Use ? operator: value.some_method()?
+  2. Use unwrap_or: value.unwrap_or(default)
+  3. Use unwrap_or_else: value.unwrap_or_else(|| compute_default())
+  4. Match explicitly:
+     match value {
+         Some(v) => v,
+         None => return Err(Error::ValueMissing),
+     }

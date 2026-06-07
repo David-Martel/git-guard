@@ -1,0 +1,10 @@
+id: prefer-uv-python
+language: Bash
+rule:
+  any:
+    - pattern: "python $ARGS"
+    - pattern: "python3 $ARGS"
+    - pattern: "pip install $ARGS"
+message: "Use 'uv run python' instead of direct python calls per framework requirements"
+severity: warning
+note: "Framework mandates UV-first Python operations as per CLAUDE.md"

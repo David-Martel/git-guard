@@ -1,0 +1,24 @@
+# REFERENCE ONLY — this file is NOT consumed at runtime.
+#
+# ast-grep is a NATIVE binary that resolves `ruleDirs` relative to the SCAN CWD
+# (the target repo), not to this config's own location — so a committed sgconfig
+# with relative paths silently finds zero rules, and one with absolute paths is
+# machine-specific. To be both correct AND portable, qa_gate.sh GENERATES the
+# effective sgconfig at runtime (`qa-rules/sgconfig.generated.yml`, gitignored)
+# with ABSOLUTE, cygpath-converted ruleDirs pointing at the validated rule cache.
+#
+# This file documents the rule categories the gate scans and the cache layout.
+# The cache (`qa-rules/`) holds only rules that pass `sg scan --rule` validation
+# (a few source rules fail ast-grep's strict multi-rule loader and would poison
+# the whole batch); qa_gate.sh rebuilds it from $GIT_GUARD_RULES_DIR
+# (env > conf `rules_dir` > bundled rules-examples) whenever the source is newer.
+# See docs/QA_TOOLING.md "ast-grep rule cache".
+#
+# rust/ recurses into rust/panics/ automatically. Excludes the rules root and
+# python/ts dirs by design.
+ruleDirs:
+  - qa-rules/core
+  - qa-rules/security
+  - qa-rules/rust
+  - qa-rules/csharp
+  - qa-rules/powershell

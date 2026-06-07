@@ -1,0 +1,19 @@
+id: avoid-unwrap
+language: Rust
+severity: warning
+message: "Avoid unwrap() in production code - use ? operator or proper error handling"
+rule:
+  pattern: "$EXPR.unwrap()"
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/*_test.rs"
+  - "!**/test_*.rs"
+  - "!**/_backup*/**"
+note: |
+  unwrap() panics on None/Err. Preferred alternatives:
+  1. Use ? operator: $EXPR?
+  2. Use unwrap_or: $EXPR.unwrap_or(default)
+  3. Use unwrap_or_else: $EXPR.unwrap_or_else(|| default)
+  4. Use anyhow context: $EXPR.context("description")?
+  Do NOT auto-fix to expect("TODO: ...") — that creates tech debt.

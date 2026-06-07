@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# git-guard pre-push — generic, optional downstream chaining.
+#
+# git-guard's enforcement is at pre-commit; this pre-push is a thin, OPTIONAL
+# hook that chains a downstream pusher's heavy gate (tests/clippy/typecheck) if
+# one is configured, and otherwise no-ops. No machine-specific paths.
+#
+# Bypass: `GIT_GUARD=0 git push ...`. Do NOT use --no-verify.
+
+if [ "$GIT_GUARD" = "0" ] || [ "$LEFTHOOK" = "0" ]; then
+  exit 0
+fi
+
+git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
+if [ -n "${GIT_GUARD_DOWNSTREAM_PRE_PUSH:-}" ] && [ -x "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" ]; then
+  "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" "$@" || exit $?
+elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/pre-push.local" ]; then
+  "$git_guard_repo_root/.git-guard/pre-push.local" "$@" || exit $?
+elif command -v lefthook >/dev/null 2>&1; then
+  lefthook run pre-push "$@" || exit $?
+fi
+
+exit 0

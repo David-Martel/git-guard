@@ -1,0 +1,16 @@
+id: expect-call
+message: expect() will panic on None/Err - prefer ? operator or proper error handling
+severity: warning
+language: rust
+rule:
+  pattern: $EXPR.expect($MSG)
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/*_test.rs"
+  - "!**/test_*.rs"
+  - "!**/_backup*/**"
+note: |
+  Example fix:
+  Before: value.expect("Should have value")
+  After:  value.ok_or_else(|| anyhow::anyhow!("Should have value"))?

@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# git-guard post-commit — un-missable landed-commit feedback.
+#
+# Prints the SHA that just landed so an operator/orchestrator can VERIFY the
+# commit before any push/PR/reset (IRON RULE 1 of docs/GIT_COMMIT_SAFETY.md).
+# Additive + non-fatal.
+
+git_guard_sha="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
+printf '%s\n' "git-guard: commit ${git_guard_sha} landed — verify before any reset: git log -1 --pretty='%h %G? %s'" >&2
+
+# Optional downstream chaining (only if the operator wired one).
+git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
+if [ -n "${GIT_GUARD_DOWNSTREAM_POST_COMMIT:-}" ] && [ -x "${GIT_GUARD_DOWNSTREAM_POST_COMMIT}" ]; then
+  "${GIT_GUARD_DOWNSTREAM_POST_COMMIT}" "$@" || true
+elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/post-commit.local" ]; then
+  "$git_guard_repo_root/.git-guard/post-commit.local" "$@" || true
+fi
+
+exit 0

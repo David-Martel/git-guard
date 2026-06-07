@@ -1,0 +1,17 @@
+id: prefer-expect-over-allow
+language: Rust
+severity: warning
+message: "Use #[expect] instead of #[allow] for lint overrides (M-LINT-OVERRIDE-EXPECT)"
+rule:
+  pattern: "#[allow($LINT)]"
+files:
+  - "**/*.rs"
+  - "!**/tests/**"
+  - "!**/_backup*/**"
+fix: '#[expect($LINT, reason = "TODO: add justification")]'
+note: |
+  Microsoft Rust Guideline M-LINT-OVERRIDE-EXPECT:
+  #[expect] verifies the lint actually fires — if the underlying code changes
+  and the lint no longer triggers, #[expect] produces a compiler warning.
+  #[allow] silently swallows the suppression forever.
+  Always include a reason= parameter explaining why the override is needed.

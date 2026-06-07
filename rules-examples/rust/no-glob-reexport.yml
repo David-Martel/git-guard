@@ -1,0 +1,18 @@
+id: no-glob-reexport
+language: Rust
+severity: warning
+message: "Avoid pub use foo::* - explicitly list re-exports (M-NO-GLOB-REEXPORTS)"
+rule:
+  pattern: "pub use $MOD::*;"
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/_backup*/**"
+note: |
+  Microsoft Rust Guideline M-NO-GLOB-REEXPORTS:
+  Glob re-exports make it impossible to know what's public without resolving
+  the glob. They also cause accidental API surface expansion when upstream
+  crates add new public items.
+  Exception: HAL platform modules (embedded) may use glob re-exports.
+  Fix: Replace with explicit named re-exports:
+    pub use foo::{Bar, Baz, Quux};

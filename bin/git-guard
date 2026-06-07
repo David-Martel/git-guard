@@ -1,0 +1,117 @@
+#!/bin/sh
+#
+# git-guard — account-wide git-safety + language-gated QA, CLI front-end.
+#
+# Subcommands:
+#   status     show install state, version, resolved rules dir
+#   doctor     check prerequisites (git, ast-grep, shellcheck, ruff, cygpath…)
+#   rules      print the rule manifest (categories, counts, the BLOCK trio)
+#   verify     self-test: BLOCK trio fires, clean commit passes (scratch repo)
+#   install    install/refresh the hooks (delegates to install.sh)
+#   uninstall  remove the hooks (delegates to install.sh --uninstall)
+#   version    print the version
+#   help       this message
+#
+# No machine-specific paths: everything resolves relative to this script.
+
+set -u
+
+# --- Locate the git-guard root (this file is at <root>/bin/git-guard) ---
+GG_BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+GG_ROOT="$(cd "$GG_BIN_DIR/.." && pwd)"
+GG_HOOKS="$GG_ROOT/hooks"
+GG_ENGINE="$GG_HOOKS/common"
+GG_CONF="$GG_ENGINE/qa-gate.conf"
+GG_BUNDLED_RULES="$GG_ROOT/rules-examples"
+
+have() { command -v "$1" >/dev/null 2>&1; }
+gg_version() { [ -f "$GG_ROOT/VERSION" ] && cat "$GG_ROOT/VERSION" || echo "0.0.0"; }
+
+# Resolve the active rules dir the same way qa_gate.sh does (env > conf > bundled).
+gg_rules_dir() {
+  if [ -n "${GIT_GUARD_RULES_DIR:-}" ] && [ -d "${GIT_GUARD_RULES_DIR}" ]; then
+    printf '%s' "$GIT_GUARD_RULES_DIR"; return
+  fi
+  rd="$(grep -E '^[[:space:]]*rules_dir[[:space:]]*=' "$GG_CONF" 2>/dev/null | head -n1 | sed 's/^[^=]*=//; s/[[:space:]]*#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
+  if [ -n "$rd" ] && [ -d "$rd" ]; then printf '%s' "$rd"; return; fi
+  printf '%s' "$GG_BUNDLED_RULES"
+}
+
+cmd_status() {
+  echo "git-guard $(gg_version)"
+  echo "  root:          $GG_ROOT"
+  echo "  global hooks:  $(git config --global core.hooksPath 2>/dev/null || echo '<unset>')"
+  rd="$(gg_rules_dir)"
+  echo "  rules dir:     $rd"
+  echo "  rule source:   $( [ "$rd" = "$GG_BUNDLED_RULES" ] && echo 'bundled rules-examples (public default)' || echo 'overlay (env/conf)' )"
+  # Is ~/.git-hooks pointing here?
+  ghp="$(git config --global core.hooksPath 2>/dev/null || echo '')"
+  if [ -n "$ghp" ]; then
+    real_ghp="$(cd "$ghp" 2>/dev/null && pwd -P || echo "$ghp")"
+    if [ "$real_ghp" = "$(cd "$GG_HOOKS" 2>/dev/null && pwd -P)" ]; then
+      echo "  installed:     YES (core.hooksPath -> this git-guard)"
+    else
+      echo "  installed:     core.hooksPath set elsewhere ($real_ghp)"
+    fi
+  else
+    echo "  installed:     NO (run: git-guard install)"
+  fi
+}
+
+cmd_doctor() {
+  echo "git-guard doctor — prerequisite check"
+  for t in git sg ast-grep shellcheck ruff python pwsh cygpath dotnet cargo; do
+    if have "$t"; then printf '  [ok]   %-12s %s\n' "$t" "$(command -v "$t")"; else printf '  [--]   %-12s (absent — related checks self-skip)\n' "$t"; fi
+  done
+  echo ""
+  if have sg || have ast-grep; then echo "  ast-grep present -> structural BLOCK trio active"; else echo "  ast-grep ABSENT -> ast-grep layer self-skips (trio inactive)"; fi
+}
+
+cmd_rules() {
+  rd="$(gg_rules_dir)"
+  echo "git-guard rule manifest"
+  echo "  source: $rd"
+  echo ""
+  total=0
+  for d in core security rust rust/panics csharp powershell; do
+    n=$(ls "$rd/$d"/*.yml 2>/dev/null | wc -l | tr -d ' ')
+    [ "$n" -gt 0 ] && printf '  %-14s %3d rules\n' "$d" "$n"
+    total=$((total + n))
+  done
+  printf '  %-14s %3d rules\n' "TOTAL" "$total"
+  echo ""
+  echo "  BLOCK trio (always blocks unless astgrep=off):"
+  echo "    avoid-static-mut · no-glob-reexport · unsafe-with-panic"
+  echo "  Everything else: WARN (or block if astgrep=block in qa-gate.conf)."
+}
+
+cmd_verify() {
+  echo "git-guard verify — self-test"
+  if ! have sg && ! have ast-grep; then echo "  SKIP: no ast-grep CLI (cannot test the trio)"; return 0; fi
+  t="$(mktemp -d)" || { echo "  FAIL: mktemp"; return 1; }
+  ( cd "$t" && git init -q && git config user.email t@t.t && git config user.name t && git config commit.gpgsign false
+    mkdir -p src; printf 'static mut C: u32 = 0;\nfn main(){ unsafe { C += 1; } }\n' > src/bad.rs; git add -A )
+  if sh "$GG_ENGINE/qa_gate.sh" >/dev/null 2>&1 -- 2>/dev/null; then : ; fi
+  ( cd "$t" && sh "$GG_ENGINE/qa_gate.sh" >/dev/null 2>&1 ); rc=$?
+  [ "$rc" -eq 1 ] && echo "  [ok]   BLOCK trio (static mut) -> commit refused (exit 1)" || echo "  [FAIL] static mut did NOT block (exit $rc)"
+  rm -rf "$t"; t="$(mktemp -d)"
+  ( cd "$t" && git init -q && echo '# x' > README.md && git add -A )
+  ( cd "$t" && sh "$GG_ENGINE/qa_gate.sh" >/dev/null 2>&1 ); rc2=$?
+  [ "$rc2" -eq 0 ] && echo "  [ok]   clean docs commit -> allowed (exit 0)" || echo "  [FAIL] clean commit blocked (exit $rc2)"
+  rm -rf "$t"
+  [ "${rc:-9}" -eq 1 ] && [ "${rc2:-9}" -eq 0 ] && echo "  RESULT: PASS" || { echo "  RESULT: FAIL"; return 1; }
+}
+
+cmd_install()   { sh "$GG_ROOT/install.sh" "$@"; }
+cmd_uninstall() { sh "$GG_ROOT/install.sh" --uninstall "$@"; }
+
+case "${1:-help}" in
+  status)     cmd_status ;;
+  doctor)     cmd_doctor ;;
+  rules)      cmd_rules ;;
+  verify)     cmd_verify ;;
+  install)    shift; cmd_install "$@" ;;
+  uninstall)  shift; cmd_uninstall "$@" ;;
+  version|--version|-v) gg_version ;;
+  help|--help|-h|*) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
+esac

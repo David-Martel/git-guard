@@ -1,0 +1,18 @@
+id: avoid-static-mut
+language: Rust
+severity: error
+message: "Avoid static mut - use atomic types or interior mutability (M-AVOID-STATICS)"
+rule:
+  pattern: "static mut $NAME: $TYPE = $INIT;"
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/_backup*/**"
+note: |
+  Microsoft Rust Guideline M-AVOID-STATICS:
+  static mut is unsound in multithreaded contexts and requires unsafe for
+  every access. Alternatives:
+  - std::sync::atomic::AtomicBool / AtomicUsize / etc.
+  - std::sync::OnceLock<T> for lazy init
+  - parking_lot::RwLock<T> for mutable shared state
+  - thread_local! for per-thread state
