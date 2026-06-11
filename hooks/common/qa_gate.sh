@@ -201,7 +201,12 @@ qa_detect_types() {
 # ruleId. sg's exit code is 0 even on matches, so we detect via the JSON output.
 # ----------------------------------------------------------------------------
 QA_SG=""
-if have sg; then QA_SG="sg"; elif have ast-grep; then QA_SG="ast-grep"; fi
+# NOTE: prefer the `sg` alias ONLY when it is genuinely ast-grep. On Linux,
+# /usr/bin/sg is util-linux's set-group command, which shadows ast-grep and
+# would make the structural scan silently no-op (trio never fires). Validate
+# via `sg --version` before trusting it; otherwise fall back to `ast-grep`.
+if have sg && sg --version 2>/dev/null | grep -qi 'ast-grep'; then QA_SG="sg"
+elif have ast-grep; then QA_SG="ast-grep"; fi
 QA_RULE_CACHE="$QA_SELF_DIR/qa-rules"
 # The EFFECTIVE sgconfig is GENERATED at runtime with ABSOLUTE ruleDirs (see
 # qa_write_sgconfig). ast-grep resolves `ruleDirs` relative to the scan CWD (the
@@ -262,19 +267,30 @@ qa_refresh_rule_cache() {
   fi
   qa_dbg "rebuilding ast-grep rule cache"
   rm -rf "$QA_RULE_CACHE"; mkdir -p "$QA_RULE_CACHE"
+  _src_rules=0; _copied=0
   for d in core security rust rust/panics csharp powershell; do
     mkdir -p "$QA_RULE_CACHE/$d"
     for f in "$src/$d"/*.yml; do
       [ -f "$f" ] || continue
+      _src_rules=$((_src_rules + 1))
       tmp="$(mktemp -d)"
       if "$QA_SG" scan --rule "$f" --json=compact "$tmp" >/dev/null 2>&1; then
-        cp "$f" "$QA_RULE_CACHE/$d/" 2>/dev/null || true
+        cp "$f" "$QA_RULE_CACHE/$d/" 2>/dev/null && _copied=$((_copied + 1))
       fi
       rm -rf "$tmp"
     done
   done
-  : > "$stamp"
   qa_write_sgconfig
+  # Anti-poison guard: only stamp the cache "fresh" if we actually cached rules
+  # when the source had some. A transient ast-grep failure (e.g. the wrong `sg`
+  # binary shadowing ast-grep) must NOT stamp an EMPTY cache as current — that
+  # would silently disable the BLOCK trio until the source rules next change.
+  # Leaving the stamp absent forces a rebuild on the next commit.
+  if [ "$_src_rules" -gt 0 ] && [ "$_copied" -eq 0 ]; then
+    qa_warn "ast-grep rule cache built EMPTY ($_src_rules source rules, 0 validated) — not stamping; will retry next commit."
+  else
+    : > "$stamp"
+  fi
 }
 
 # Extract unique ruleIds from a compact-JSON scan result.

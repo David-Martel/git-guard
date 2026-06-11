@@ -58,13 +58,20 @@ cmd_status() {
   fi
 }
 
+# True only when `sg` on PATH is genuinely ast-grep (not util-linux set-group).
+sg_is_astgrep() { have sg && sg --version 2>/dev/null | grep -qi 'ast-grep'; }
 cmd_doctor() {
   echo "git-guard doctor — prerequisite check"
   for t in git sg ast-grep shellcheck ruff python pwsh cygpath dotnet cargo; do
-    if have "$t"; then printf '  [ok]   %-12s %s\n' "$t" "$(command -v "$t")"; else printf '  [--]   %-12s (absent — related checks self-skip)\n' "$t"; fi
+    if [ "$t" = sg ]; then
+      if sg_is_astgrep; then printf '  [ok]   %-12s %s (ast-grep)\n' "$t" "$(command -v sg)"
+      elif have sg; then printf '  [warn] %-12s %s (NOT ast-grep — shadowed; ast-grep used instead)\n' "$t" "$(command -v sg)"
+      else printf '  [--]   %-12s (absent — related checks self-skip)\n' "$t"; fi
+    elif have "$t"; then printf '  [ok]   %-12s %s\n' "$t" "$(command -v "$t")"
+    else printf '  [--]   %-12s (absent — related checks self-skip)\n' "$t"; fi
   done
   echo ""
-  if have sg || have ast-grep; then echo "  ast-grep present -> structural BLOCK trio active"; else echo "  ast-grep ABSENT -> ast-grep layer self-skips (trio inactive)"; fi
+  if sg_is_astgrep || have ast-grep; then echo "  ast-grep present -> structural BLOCK trio active"; else echo "  ast-grep ABSENT -> ast-grep layer self-skips (trio inactive)"; fi
 }
 
 cmd_rules() {
