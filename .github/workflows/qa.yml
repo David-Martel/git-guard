@@ -51,6 +51,9 @@ jobs:
       - name: git-guard verify — BLOCK trio fires, clean commit passes (in image)
         run: docker run --rm git-guard:ci verify
 
+      - name: git-guard test — comprehensive validation suite (in image)
+        run: docker run --rm --entrypoint git-guard git-guard:ci test
+
       - name: validate bundled example rules (in image)
         run: |
           docker run --rm --entrypoint sh git-guard:ci -c '
@@ -96,13 +99,22 @@ jobs:
       - name: git-guard-run native backend (smoke test)
         run: GIT_GUARD_BACKEND=native sh ./bin/git-guard-run verify
 
-      - name: shellcheck the engine + hooks + runner
+      - name: Install pyyaml + ruff (so YAML-block + ruff categories actually run)
+        run: |
+          python3 -m pip install --quiet --user pyyaml ruff || pip install --quiet pyyaml ruff
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: git-guard test — comprehensive validation suite
+        run: sh ./bin/git-guard test
+
+      - name: shellcheck the engine + hooks + runner + tests
         run: |
           shellcheck -S warning \
             hooks/pre-commit hooks/post-commit hooks/pre-push \
             hooks/common/qa_gate.sh hooks/common/secret_scan.sh \
             hooks/common/nul-cleanup.sh bin/git-guard bin/git-guard-run \
-            install.sh branch-protection.sh
+            install.sh branch-protection.sh \
+            tests/run.sh tests/lib.sh tests/*.t.sh
 
       - name: validate bundled example rules
         run: |

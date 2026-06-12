@@ -184,6 +184,15 @@ qa_restage_safe() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Resolve a Python interpreter ONCE: prefer `python`, fall back to `python3`.
+# Debian/Ubuntu (and the slim Docker base) ship only `python3`, so hardcoding
+# `python` would silently no-op the JSON/YAML validation (a default BLOCK check)
+# on most Linux clones — a severability gap. Empty when neither is present.
+QA_PY=""
+if have python; then QA_PY=python
+elif have python3; then QA_PY=python3
+fi
+
 # ----------------------------------------------------------------------------
 # Language detection (reuses the quality-pipeline.sh:detect_project_type logic).
 # ----------------------------------------------------------------------------
@@ -530,13 +539,14 @@ qa_check_csharp() {
 # Uses python only if present; never forces uv install.
 # ----------------------------------------------------------------------------
 qa_check_validate() {
+  [ -n "$QA_PY" ] || { qa_dbg "no python interpreter -> structured-data validation skipped"; return 0; }
   jmode="$(qa_cfg validate.json block)"
   if [ "$jmode" != "off" ]; then
     jf="$(qa_staged_match '\.json$')"
-    if [ -n "$jf" ] && have python; then
+    if [ -n "$jf" ]; then
       for f in $jf; do
         [ -f "$REPO_ROOT/$f" ] || continue
-        if ! python -c "import json,sys; json.load(open(sys.argv[1]))" "$REPO_ROOT/$f" >/dev/null 2>&1; then
+        if ! "$QA_PY" -c "import json,sys; json.load(open(sys.argv[1]))" "$REPO_ROOT/$f" >/dev/null 2>&1; then
           [ "$jmode" = "block" ] && qa_block "invalid JSON: $f." || qa_warn "invalid JSON: $f (non-blocking)."
         fi
       done
@@ -545,10 +555,10 @@ qa_check_validate() {
   ymode="$(qa_cfg validate.yaml warn)"
   if [ "$ymode" != "off" ]; then
     yf="$(qa_staged_match '\.(yml|yaml)$')"
-    if [ -n "$yf" ] && have python && python -c "import yaml" >/dev/null 2>&1; then
+    if [ -n "$yf" ] && "$QA_PY" -c "import yaml" >/dev/null 2>&1; then
       for f in $yf; do
         [ -f "$REPO_ROOT/$f" ] || continue
-        if ! python -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" "$REPO_ROOT/$f" >/dev/null 2>&1; then
+        if ! "$QA_PY" -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" "$REPO_ROOT/$f" >/dev/null 2>&1; then
           [ "$ymode" = "block" ] && qa_block "invalid YAML: $f." || qa_warn "invalid YAML: $f (non-blocking)."
         fi
       done

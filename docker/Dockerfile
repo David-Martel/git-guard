@@ -42,9 +42,13 @@ RUN apt-get update \
         shellcheck \
         jq \
         python3 \
+        python3-yaml \
         nodejs \
         npm \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ # The gate calls `python` (not `python3`) for JSON/YAML validation; Debian ships
+ # only python3, so provide a `python` shim on PATH for the toolchain image.
+ && ln -sf /usr/bin/python3 /usr/local/bin/python
 
 # ruff via uv (fast, self-contained). uv installs to /root/.local/bin.
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
