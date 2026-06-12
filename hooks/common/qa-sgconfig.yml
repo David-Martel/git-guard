@@ -14,11 +14,13 @@
 # (env > conf `rules_dir` > bundled rules-examples) whenever the source is newer.
 # See docs/QA_TOOLING.md "ast-grep rule cache".
 #
-# rust/ recurses into rust/panics/ automatically. Excludes the rules root and
-# python/ts dirs by design.
+# rust/ recurses into rust/panics/ automatically. The gate also scans staged
+# python/typescript files, so those categories are loaded when present.
 ruleDirs:
   - qa-rules/core
   - qa-rules/security
   - qa-rules/rust
   - qa-rules/csharp
   - qa-rules/powershell
+  - qa-rules/python
+  - qa-rules/typescript

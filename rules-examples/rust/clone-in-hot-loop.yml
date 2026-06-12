@@ -1,0 +1,22 @@
+id: clone-in-hot-loop
+language: Rust
+severity: info
+message: "clone() inside loop body - consider borrowing, Cow, or Arc to reduce allocations"
+rule:
+  all:
+    - pattern: $EXPR.clone()
+    - inside:
+        any:
+          - kind: for_expression
+          - kind: while_expression
+          - kind: loop_expression
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/_backup*/**"
+note: |
+  Cloning inside a loop creates N allocations. Alternatives:
+  - Borrow with & or &mut instead of cloning
+  - Use Cow<str> for conditional ownership
+  - Use Arc::clone() for shared ownership (cheap ref-count bump)
+  - Move the clone outside the loop if the value doesn't change

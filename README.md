@@ -130,6 +130,35 @@ absent: [`ast-grep`](https://ast-grep.github.io/) (structural rules),
 `shellcheck`, `ruff`, `python`, `pwsh`, `dotnet`, `cargo`. On Git-Bash/MSYS,
 `cygpath` is used to hand native paths to ast-grep.
 
+## Containerized / cross-backend runs
+
+`bin/git-guard-run` runs the gate or self-test through the best available
+backend, falling through automatically: **Docker → WSL → native shell**. This
+lets a "naked" machine (or CI) run the QA toolchain without installing
+`ast-grep`/`shellcheck`/`ruff` locally — the Docker image (`docker/Dockerfile`)
+carries the pinned toolchain.
+
+```sh
+sh bin/git-guard-run verify              # self-test via best backend
+sh bin/git-guard-run gate /path/to/repo  # run the gate against a repo's staged files
+```
+
+**Backend knobs** (env vars):
+
+| Var | Effect |
+| --- | --- |
+| `GIT_GUARD_BACKEND` | force `docker` \| `wsl` \| `native` (skips auto-detection) |
+| `GIT_GUARD_RULES_DIR` | overlay a private rules dir (mounted `:ro` at `/rules` for Docker) |
+| `GIT_GUARD_IMAGE` | Docker image tag to build/use (default `git-guard:local`) |
+
+Auto-detection: Docker is used when `docker info` succeeds; otherwise on Windows
+WSL is tried (`wsl.exe bash …`); otherwise the local POSIX shell runs it. The
+chosen backend is printed to stderr. Build the image directly with
+`docker build -t git-guard:local -f docker/Dockerfile .`.
+
+CI (`.github/workflows/qa.yml`) runs the SAME image in `self-test-docker` and
+keeps a `self-test-native` fallback job with the identical assertions.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).

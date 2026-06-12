@@ -1,0 +1,13 @@
+id: prefer-collect-result
+language: Rust
+severity: info
+message: "Iterator with map().filter() + unwrap - consider collect::<Result<Vec<_>, _>>()?"
+rule:
+  pattern: $ITER.map($F).filter($G).collect::<Vec<$T>>()
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+note: |
+  When mapping fallible operations, collecting into Result propagates errors cleanly:
+  Before: items.iter().map(|x| x.parse::<i32>().unwrap()).collect::<Vec<_>>()
+  After:  items.iter().map(|x| x.parse::<i32>()).collect::<Result<Vec<_>, _>>()?

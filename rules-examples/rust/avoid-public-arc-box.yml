@@ -1,0 +1,25 @@
+id: avoid-public-arc-box
+language: Rust
+severity: info
+message: "Public API exposes Arc/Box/Rc - consider hiding behind a newtype (M-AVOID-WRAPPERS)"
+rule:
+  any:
+    - pattern: "pub fn $FN($$$) -> Arc<$T>"
+    - pattern: "pub fn $FN($$$) -> Box<$T>"
+    - pattern: "pub fn $FN($$$) -> Rc<$T>"
+    - pattern: "pub struct $NAME { pub $FIELD: Arc<$T> }"
+    - pattern: "pub struct $NAME { pub $FIELD: Rc<$T> }"
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/_backup*/**"
+note: |
+  Microsoft Rust Guideline M-AVOID-WRAPPERS:
+  Hide Arc, Rc, Box from public APIs. Consumers shouldn't need to know
+  the ownership strategy.
+  Before: pub fn get_service() -> Arc<ServiceInner>
+  After:  pub fn get_service() -> Service  // Service wraps Arc internally
+
+  Use the M-SERVICES-CLONE pattern:
+  #[derive(Clone)]
+  pub struct Service { inner: Arc<ServiceInner> }

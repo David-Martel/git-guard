@@ -1,0 +1,164 @@
+#!/bin/sh
+#
+# git-guard-run — run the git-guard gate/verify through the best available
+# backend, falling through on failure: Docker -> WSL -> native local shell.
+#
+# Usage:
+#   git-guard-run [verify|gate] [TARGET_REPO]
+#
+#   verify            run the self-test (BLOCK trio fires, clean commit passes).
+#                     This is the default action.
+#   gate              run the QA gate (qa_gate.sh) against TARGET_REPO's staged
+#                     files (TARGET_REPO defaults to the current directory).
+#   TARGET_REPO       path to the repo to operate on (default: $PWD).
+#
+# Backend selection (highest preference first):
+#   Docker  — used if `docker info` succeeds (image built on demand).
+#   WSL     — used on Windows (when wsl.exe is available) if Docker is absent.
+#   native  — the local POSIX shell. Always the final fallback.
+#
+# Env knobs:
+#   GIT_GUARD_BACKEND   force a backend: docker | wsl | native (skips detection).
+#   GIT_GUARD_RULES_DIR overlay a private rules dir (passed through to the gate;
+#                       for Docker it is mounted read-only at /rules).
+#   GIT_GUARD_IMAGE     docker image tag to use/build (default: git-guard:local).
+#
+# Portable: pure POSIX sh, no bashisms. Prints which backend ran on stderr.
+
+set -u
+
+# --- Locate the git-guard root (this file is at <root>/bin/git-guard-run) ---
+GGR_BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+GGR_ROOT="$(cd "$GGR_BIN_DIR/.." && pwd)"
+GGR_GATE="$GGR_ROOT/hooks/common/qa_gate.sh"
+GGR_CLI="$GGR_BIN_DIR/git-guard"
+GGR_IMAGE="${GIT_GUARD_IMAGE:-git-guard:local}"
+
+ACTION="${1:-verify}"
+TARGET="${2:-$PWD}"
+
+have() { command -v "$1" >/dev/null 2>&1; }
+say()  { printf 'git-guard-run: %s\n' "$*" >&2; }
+
+# Convert a path to a WSL (/mnt/c/...) path when on Windows. Falls back to the
+# input unchanged if wslpath is unavailable.
+to_wsl_path() {
+  if have wsl.exe; then
+    wsl.exe wslpath -a "$1" 2>/dev/null | tr -d '\r' || printf '%s' "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+# --- backend: native ---------------------------------------------------------
+run_native() {
+  say "backend = native ($(uname -s 2>/dev/null || echo unknown))"
+  case "$ACTION" in
+    verify) sh "$GGR_CLI" verify; return $? ;;
+    gate)
+      ( cd "$TARGET" 2>/dev/null || exit 2
+        sh "$GGR_GATE" ); return $? ;;
+    *) say "unknown action: $ACTION"; return 2 ;;
+  esac
+}
+
+# --- backend: docker ---------------------------------------------------------
+docker_available() {
+  have docker && docker info >/dev/null 2>&1
+}
+
+run_docker() {
+  say "backend = docker (image $GGR_IMAGE)"
+  # Build the image if it is missing (quietly; surface failure to caller).
+  if ! docker image inspect "$GGR_IMAGE" >/dev/null 2>&1; then
+    say "building image $GGR_IMAGE ..."
+    docker build -t "$GGR_IMAGE" -f "$GGR_ROOT/docker/Dockerfile" "$GGR_ROOT" >&2 || return 1
+  fi
+
+  # Assemble the rules-overlay mount/env if requested.
+  rules_args=""
+  if [ -n "${GIT_GUARD_RULES_DIR:-}" ] && [ -d "${GIT_GUARD_RULES_DIR}" ]; then
+    rules_args="-v ${GIT_GUARD_RULES_DIR}:/rules:ro -e GIT_GUARD_RULES_DIR=/rules"
+  fi
+
+  case "$ACTION" in
+    verify)
+      # Self-test runs entirely inside the image; no repo mount needed.
+      # shellcheck disable=SC2086
+      docker run --rm $rules_args "$GGR_IMAGE" verify; return $? ;;
+    gate)
+      # shellcheck disable=SC2086
+      docker run --rm $rules_args -v "$TARGET:/work" -w /work \
+        "$GGR_IMAGE" sh /opt/git-guard/hooks/common/qa_gate.sh; return $? ;;
+    *) say "unknown action: $ACTION"; return 2 ;;
+  esac
+}
+
+# --- backend: wsl ------------------------------------------------------------
+wsl_available() {
+  # wsl.exe present AND a default distro that can run a trivial command.
+  have wsl.exe && wsl.exe true >/dev/null 2>&1
+}
+
+run_wsl() {
+  say "backend = wsl"
+  wsl_root="$(to_wsl_path "$GGR_ROOT")"
+  [ -n "$wsl_root" ] || { say "could not resolve WSL path for root"; return 1; }
+  rules_env=""
+  if [ -n "${GIT_GUARD_RULES_DIR:-}" ] && [ -d "${GIT_GUARD_RULES_DIR}" ]; then
+    wsl_rules="$(to_wsl_path "$GIT_GUARD_RULES_DIR")"
+    rules_env="GIT_GUARD_RULES_DIR='$wsl_rules'"
+  fi
+  # A repo checked out on Windows (core.autocrlf=true) gives the scripts CRLF
+  # line endings; dash/sh under WSL chokes on the trailing \r. Strip CR on the
+  # fly so the WSL backend works against a Windows working tree.
+  case "$ACTION" in
+    verify)
+      wsl.exe bash -lc "${rules_env} sed 's/\r\$//' '$wsl_root/bin/git-guard' | sh -s -- verify"
+      return $? ;;
+    gate)
+      wsl_target="$(to_wsl_path "$TARGET")"
+      wsl.exe bash -lc "${rules_env} cd '$wsl_target' && sed 's/\r\$//' '$wsl_root/hooks/common/qa_gate.sh' | sh"
+      return $? ;;
+    *) say "unknown action: $ACTION"; return 2 ;;
+  esac
+}
+
+# --- backend selection + fall-through ---------------------------------------
+main() {
+  forced="${GIT_GUARD_BACKEND:-}"
+
+  if [ -n "$forced" ]; then
+    case "$forced" in
+      docker) run_docker; return $? ;;
+      wsl)    run_wsl;    return $? ;;
+      native) run_native; return $? ;;
+      *) say "invalid GIT_GUARD_BACKEND='$forced' (docker|wsl|native)"; return 2 ;;
+    esac
+  fi
+
+  # Auto: docker -> wsl -> native, falling through when a backend is unavailable
+  # OR fails to launch. A genuine QA failure (gate exit 1) is returned as-is.
+  if docker_available; then
+    run_docker; rc=$?
+    [ "$rc" -ne 125 ] && return $rc   # 125 = docker run/daemon launch failure
+    say "docker launch failed (rc=125) -> falling through"
+  else
+    say "docker unavailable -> trying next backend"
+  fi
+
+  # On Windows (MSYS/Cygwin) prefer WSL before native.
+  case "$(uname -s 2>/dev/null || echo)" in
+    MINGW*|MSYS*|CYGWIN*)
+      if wsl_available; then
+        run_wsl; return $?
+      else
+        say "wsl unavailable -> falling through to native"
+      fi
+      ;;
+  esac
+
+  run_native; return $?
+}
+
+main

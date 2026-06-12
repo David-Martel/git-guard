@@ -1,0 +1,24 @@
+id: prefer-pathbuf
+language: Rust
+severity: info
+message: "Use impl AsRef<Path> or &Path instead of &str/String for file paths (M-STRONG-TYPES, M-IMPL-ASREF)"
+rule:
+  any:
+    - pattern: "fn $FN($$$BEFORE, path: &str, $$$AFTER)"
+    - pattern: "fn $FN($$$BEFORE, path: String, $$$AFTER)"
+    - pattern: "fn $FN($$$BEFORE, file_path: &str, $$$AFTER)"
+    - pattern: "fn $FN($$$BEFORE, file_path: String, $$$AFTER)"
+    - pattern: "fn $FN($$$BEFORE, dir: &str, $$$AFTER)"
+    - pattern: "fn $FN($$$BEFORE, dir: String, $$$AFTER)"
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/ffi/**"
+  - "!**/_backup*/**"
+note: |
+  Microsoft Rust Guidelines M-STRONG-TYPES + M-IMPL-ASREF:
+  Use the strongest type available for the domain:
+  - File paths: &Path, PathBuf, or impl AsRef<Path>
+  - Not: &str or String (loses path semantics, platform portability)
+  Before: fn read_config(path: &str) -> Result<Config>
+  After:  fn read_config(path: impl AsRef<Path>) -> Result<Config>
