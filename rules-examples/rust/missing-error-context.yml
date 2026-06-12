@@ -1,0 +1,22 @@
+id: missing-error-context
+language: Rust
+severity: info
+message: "Bare ? operator without context - consider adding .context() for better error messages"
+rule:
+  pattern: $EXPR?
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/_backup*/**"
+constraints:
+  EXPR:
+    not:
+      any:
+        - pattern: $E.context($MSG)
+        - pattern: $E.with_context($F)
+        - pattern: $E.map_err($F)
+note: |
+  When using anyhow, add context to help diagnose failures:
+  Before: file.read_to_string(&mut buf)?
+  After:  file.read_to_string(&mut buf).context("reading config file")?
+  Only apply where the default error message is insufficient.

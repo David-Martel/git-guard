@@ -1,0 +1,14 @@
+id: avoid-task-result
+language: csharp
+severity: warning
+message: "Accessing .Result on a Task can deadlock - use await instead"
+rule:
+  pattern: $TASK.Result
+files:
+  - "**/*.cs"
+  - "!**/Tests/**"
+note: |
+  .Result blocks the calling thread and can deadlock in async contexts.
+  Before: var value = someTask.Result;
+  After:  var value = await someTask;
+  If you must block, use .GetAwaiter().GetResult() with caution.

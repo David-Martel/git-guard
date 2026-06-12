@@ -1,0 +1,20 @@
+id: vec-push-in-loop
+language: Rust
+severity: info
+message: "Vec::push() in loop without pre-allocation - consider Vec::with_capacity()"
+rule:
+  all:
+    - pattern: $VEC.push($ITEM)
+    - inside:
+        any:
+          - kind: for_expression
+          - kind: while_expression
+          - kind: loop_expression
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/_backup*/**"
+note: |
+  When the loop count is known or estimable, pre-allocate:
+  let mut vec = Vec::with_capacity(expected_count);
+  This avoids repeated reallocations as the Vec grows.

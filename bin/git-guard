@@ -80,7 +80,7 @@ cmd_rules() {
   echo "  source: $rd"
   echo ""
   total=0
-  for d in core security rust rust/panics csharp powershell; do
+  for d in core security rust rust/panics csharp powershell python typescript; do
     n=$(ls "$rd/$d"/*.yml 2>/dev/null | wc -l | tr -d ' ')
     [ "$n" -gt 0 ] && printf '  %-14s %3d rules\n' "$d" "$n"
     total=$((total + n))

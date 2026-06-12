@@ -1,0 +1,11 @@
+id: prefer-string-interpolation
+language: csharp
+severity: info
+message: "Use string interpolation ($\"\") instead of String.Format for readability"
+rule:
+  pattern: String.Format($FMT, $$$ARGS)
+fix: null
+note: |
+  String interpolation is more readable and has compile-time safety:
+  Before: String.Format("Hello {0}, you have {1} items", name, count)
+  After:  $"Hello {name}, you have {count} items"

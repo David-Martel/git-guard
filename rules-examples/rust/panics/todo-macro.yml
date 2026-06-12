@@ -1,0 +1,17 @@
+id: todo-macro
+message: todo!() will panic at runtime - implement or return error
+severity: warning
+language: rust
+rule:
+  pattern: todo!($$$ARGS)
+files:
+  - "**/src/**/*.rs"
+  - "!**/tests/**"
+  - "!**/*_test.rs"
+  - "!**/test_*.rs"
+  - "!**/_backup*/**"
+note: |
+  todo!() panics at runtime. Consider:
+  - Implementing the functionality
+  - Returning an error: anyhow::bail!("not yet implemented")
+  - Using a Result return type
