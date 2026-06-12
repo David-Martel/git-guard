@@ -3,6 +3,14 @@ name: git-guard QA
 # Self-test git-guard on every push/PR: prove the BLOCK trio fires, a clean
 # commit passes, and the shell engine is shellcheck-clean. This is the public
 # repo validating ITSELF with its own gate.
+#
+# Two jobs run the SAME checks two ways:
+#   * self-test-docker — builds the docker/Dockerfile image (the SAME image
+#     `bin/git-guard-run` uses) and self-tests inside it.
+#   * self-test-native — the non-Docker fallback: installs the toolchain on the
+#     runner and runs the identical assertions on bare ubuntu-latest. This keeps
+#     CI green even if the Docker build is unavailable, and proves the native
+#     backend path that `git-guard-run` falls through to.
 
 on:
   push:
@@ -12,7 +20,54 @@ on:
   workflow_dispatch:
 
 jobs:
-  self-test:
+  # ---------------------------------------------------------------------------
+  # Containerized self-test: build the image, run git-guard verify INSIDE it,
+  # then exercise doctor/rules and the bundled-rule validation in-container.
+  # ---------------------------------------------------------------------------
+  self-test-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build git-guard QA image
+        run: docker build -t git-guard:ci -f docker/Dockerfile .
+
+      - name: Versions (in image)
+        run: |
+          docker run --rm --entrypoint sh git-guard:ci -c '
+            git --version
+            ast-grep --version
+            shellcheck --version | head -3
+            jq --version
+            ruff --version
+            python3 --version'
+
+      - name: git-guard doctor (in image)
+        run: docker run --rm --entrypoint git-guard git-guard:ci doctor
+
+      - name: git-guard rule manifest (in image)
+        run: docker run --rm --entrypoint git-guard git-guard:ci rules
+
+      - name: git-guard verify — BLOCK trio fires, clean commit passes (in image)
+        run: docker run --rm git-guard:ci verify
+
+      - name: validate bundled example rules (in image)
+        run: |
+          docker run --rm --entrypoint sh git-guard:ci -c '
+            cd /opt/git-guard
+            fail=0
+            for f in $(find rules-examples -name "*.yml"); do
+              ast-grep scan --rule "$f" --json=compact . >/dev/null 2>&1 \
+                || { echo "INVALID rule: $f"; fail=1; }
+            done
+            exit $fail'
+
+  # ---------------------------------------------------------------------------
+  # Non-Docker fallback: the original native path. Same assertions, run on the
+  # bare runner. This is the backend `git-guard-run` uses when Docker and WSL
+  # are both unavailable, so CI exercises it directly.
+  # ---------------------------------------------------------------------------
+  self-test-native:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,13 +93,16 @@ jobs:
       - name: git-guard verify (BLOCK trio fires, clean commit passes)
         run: sh ./bin/git-guard verify
 
-      - name: shellcheck the engine + hooks
+      - name: git-guard-run native backend (smoke test)
+        run: GIT_GUARD_BACKEND=native sh ./bin/git-guard-run verify
+
+      - name: shellcheck the engine + hooks + runner
         run: |
           shellcheck -S warning \
             hooks/pre-commit hooks/post-commit hooks/pre-push \
             hooks/common/qa_gate.sh hooks/common/secret_scan.sh \
-            hooks/common/nul-cleanup.sh bin/git-guard install.sh \
-            branch-protection.sh
+            hooks/common/nul-cleanup.sh bin/git-guard bin/git-guard-run \
+            install.sh branch-protection.sh
 
       - name: validate bundled example rules
         run: |
