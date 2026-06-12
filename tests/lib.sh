@@ -19,9 +19,8 @@
 GG_T_PASS=0
 GG_T_FAIL=0
 GG_T_SKIP=0
-GG_T_CURRENT="?"
 
-t_begin() { GG_T_CURRENT="$1"; printf '\n=== %s ===\n' "$1" >&2; }
+t_begin() { printf '\n=== %s ===\n' "$1" >&2; }
 
 # t_ok   MSG     — record a passed assertion.
 t_ok()   { GG_T_PASS=$((GG_T_PASS + 1)); printf '  [ok]   %s\n' "$1" >&2; }

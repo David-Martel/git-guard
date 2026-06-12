@@ -29,16 +29,14 @@ t_case_blockers() {
     rm -f /tmp/gg_b_gr.$$; gg_rmrepo "$r"
 
     # --- BLOCK trio: unsafe-with-panic ---
-    # The committed rule's pattern (an `inside:` panic matcher) does not match
-    # ordinary unsafe+panic code, so it cannot be exercised with a live fixture.
-    # Assert instead that its ruleId is wired into the gate's BLOCK case AND that
-    # the rule parses (parse coverage is the rule-integrity category). This keeps
-    # the trio's third member covered without a false-firing fixture.
-    if grep -q 'unsafe-with-panic' "$GG_ROOT/hooks/common/qa_gate.sh"; then
-      t_ok "trio unsafe-with-panic is wired into the gate BLOCK case"
-    else
-      t_fail "unsafe-with-panic not wired into the gate BLOCK case"
-    fi
+    r="$(gg_mktemp_repo)"
+    gg_fixture_unsafe_panic "$r"; ( cd "$r" && git add -A )
+    gg_run_gate_log "$r" /tmp/gg_b_up.$$; rc=$?
+    t_expect_rc 1 "$rc" "trio unsafe-with-panic blocks"
+    grep -q "unsafe-with-panic" /tmp/gg_b_up.$$ 2>/dev/null \
+      && t_ok "block message names unsafe-with-panic" \
+      || t_fail "block message missing unsafe-with-panic"
+    rm -f /tmp/gg_b_up.$$; gg_rmrepo "$r"
   else
     t_skip "BLOCK trio: ast-grep CLI absent (no genuine ast-grep on PATH)"
   fi
