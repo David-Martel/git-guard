@@ -7,6 +7,7 @@
 #   doctor     check prerequisites (git, ast-grep, shellcheck, ruff, cygpath…)
 #   rules      print the rule manifest (categories, counts, the BLOCK trio)
 #   verify     self-test: BLOCK trio fires, clean commit passes (scratch repo)
+#   test       run the comprehensive validation suite (tests/), hermetic temp repos
 #   install    install/refresh the hooks (delegates to install.sh)
 #   uninstall  remove the hooks (delegates to install.sh --uninstall)
 #   version    print the version
@@ -94,7 +95,12 @@ cmd_rules() {
 
 cmd_verify() {
   echo "git-guard verify — self-test"
-  if ! have sg && ! have ast-grep; then echo "  SKIP: no ast-grep CLI (cannot test the trio)"; return 0; fi
+  # Skip cleanly unless a GENUINE ast-grep CLI is available. A bare `have sg` is
+  # NOT enough: on Linux/WSL /usr/bin/sg is util-linux's set-group, which shadows
+  # ast-grep and makes the structural trio silently no-op. Use the same
+  # sg_is_astgrep probe doctor uses, so the WSL backend SKIPs (rc 0) instead of
+  # reporting a spurious FAIL when ast-grep is genuinely absent.
+  if ! sg_is_astgrep && ! have ast-grep; then echo "  SKIP: no ast-grep CLI (cannot test the trio)"; return 0; fi
   t="$(mktemp -d)" || { echo "  FAIL: mktemp"; return 1; }
   ( cd "$t" && git init -q && git config user.email t@t.t && git config user.name t && git config commit.gpgsign false
     mkdir -p src; printf 'static mut C: u32 = 0;\nfn main(){ unsafe { C += 1; } }\n' > src/bad.rs; git add -A )
@@ -112,13 +118,24 @@ cmd_verify() {
 cmd_install()   { sh "$GG_ROOT/install.sh" "$@"; }
 cmd_uninstall() { sh "$GG_ROOT/install.sh" --uninstall "$@"; }
 
+# Run the comprehensive validation suite under tests/ (hermetic temp repos).
+# Each test self-skips with a reason when a required tool/platform is absent, so
+# this stays green across native / WSL / Docker / CI. Passes any args through to
+# the runner (e.g. a single test name).
+cmd_test() {
+  runner="$GG_ROOT/tests/run.sh"
+  [ -f "$runner" ] || { echo "git-guard test: tests/run.sh not found at $runner" >&2; return 2; }
+  sh "$runner" "$@"
+}
+
 case "${1:-help}" in
   status)     cmd_status ;;
   doctor)     cmd_doctor ;;
   rules)      cmd_rules ;;
   verify)     cmd_verify ;;
+  test)       shift; cmd_test "$@" ;;
   install)    shift; cmd_install "$@" ;;
   uninstall)  shift; cmd_uninstall "$@" ;;
   version|--version|-v) gg_version ;;
-  help|--help|-h|*) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help|--help|-h|*) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac
