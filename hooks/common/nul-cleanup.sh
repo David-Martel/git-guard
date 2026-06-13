@@ -24,11 +24,26 @@ if [ -z "$REPO_ROOT" ]; then
 fi
 
 # Optional native NukeNul.exe accelerator (Windows). Point $NUKENUL_BIN at it to
-# use the fast native cleanup; otherwise the portable POSIX shell fallback below
-# handles every platform. No machine-specific path is hardcoded (public-safe):
-# the pure-shell path is the universal default.
+# force a specific binary, or let PATH discovery find NukeNul.exe/NukNul.exe.
+# Otherwise the portable POSIX shell fallback handles every platform.
 NUKENUL_WIN="${NUKENUL_BIN:-}"
 NUKENUL_UNIX="${NUKENUL_BIN:-}"
+if [ -z "$NUKENUL_WIN" ]; then
+    if command -v NukeNul.exe >/dev/null 2>&1; then
+        _NUKENUL_DISCOVERED=$(command -v NukeNul.exe)
+    elif command -v NukNul.exe >/dev/null 2>&1; then
+        _NUKENUL_DISCOVERED=$(command -v NukNul.exe)
+    else
+        _NUKENUL_DISCOVERED=""
+    fi
+    if [ -n "$_NUKENUL_DISCOVERED" ]; then
+        case "$(uname -s 2>/dev/null || echo)" in
+            MINGW*|MSYS*|CYGWIN*|Windows_NT) NUKENUL_WIN="$_NUKENUL_DISCOVERED" ;;
+            Linux*) NUKENUL_UNIX="$_NUKENUL_DISCOVERED" ;;
+            *) NUKENUL_UNIX="$_NUKENUL_DISCOVERED" ;;
+        esac
+    fi
+fi
 
 FIND_BIN="find"
 if [ -x /usr/bin/find ]; then
@@ -42,15 +57,21 @@ fi
 # Function to check if running on Windows or WSL with access to Windows binaries
 detect_windows_env() {
     # Check for native Windows (Git Bash, MSYS2, Cygwin)
-    if [ -f "$NUKENUL_WIN" ]; then
-        echo "windows"
-        return 0
-    fi
-    # Check for WSL with access to Windows filesystem
-    if [ -f "$NUKENUL_UNIX" ]; then
-        echo "wsl"
-        return 0
-    fi
+    case "$(uname -s 2>/dev/null || echo)" in
+        MINGW*|MSYS*|CYGWIN*|Windows_NT)
+            if [ -f "$NUKENUL_WIN" ]; then
+                echo "windows"
+                return 0
+            fi
+            ;;
+        Linux*)
+            # Check for WSL with access to Windows filesystem
+            if [ -f "$NUKENUL_UNIX" ] && grep -qi microsoft /proc/version 2>/dev/null; then
+                echo "wsl"
+                return 0
+            fi
+            ;;
+    esac
     echo "unix"
     return 0
 }
