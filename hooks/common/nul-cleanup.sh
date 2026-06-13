@@ -30,6 +30,15 @@ fi
 NUKENUL_WIN="${NUKENUL_BIN:-}"
 NUKENUL_UNIX="${NUKENUL_BIN:-}"
 
+FIND_BIN="find"
+if [ -x /usr/bin/find ]; then
+    FIND_BIN=/usr/bin/find
+elif command -v gfind >/dev/null 2>&1; then
+    FIND_BIN=$(command -v gfind)
+elif command -v find >/dev/null 2>&1; then
+    FIND_BIN=$(command -v find)
+fi
+
 # Function to check if running on Windows or WSL with access to Windows binaries
 detect_windows_env() {
     # Check for native Windows (Git Bash, MSYS2, Cygwin)
@@ -112,7 +121,7 @@ shell_cleanup() {
 
     for pattern in $RESERVED_PATTERNS; do
         # Find files matching the pattern (case-insensitive)
-        FILES=$(find "$target" -iname "$pattern" -type f 2>/dev/null || true)
+        FILES=$("$FIND_BIN" "$target" -iname "$pattern" -type f 2>/dev/null || true)
         if [ -n "$FILES" ]; then
             echo "$FILES" | while read -r file; do
                 if [ -f "$file" ]; then
@@ -123,7 +132,7 @@ shell_cleanup() {
         fi
 
         # Also check for files with extensions (e.g., nul.txt)
-        FILES_EXT=$(find "$target" -iname "${pattern}.*" -type f 2>/dev/null || true)
+        FILES_EXT=$("$FIND_BIN" "$target" -iname "${pattern}.*" -type f 2>/dev/null || true)
         if [ -n "$FILES_EXT" ]; then
             echo "$FILES_EXT" | while read -r file; do
                 if [ -f "$file" ]; then

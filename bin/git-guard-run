@@ -75,20 +75,20 @@ run_docker() {
     docker build -t "$GGR_IMAGE" -f "$GGR_ROOT/docker/Dockerfile" "$GGR_ROOT" >&2 || return 1
   fi
 
-  # Assemble the rules-overlay mount/env if requested.
-  rules_args=""
-  if [ -n "${GIT_GUARD_RULES_DIR:-}" ] && [ -d "${GIT_GUARD_RULES_DIR}" ]; then
-    rules_args="-v ${GIT_GUARD_RULES_DIR}:/rules:ro -e GIT_GUARD_RULES_DIR=/rules"
-  fi
+  docker_run() {
+    if [ -n "${GIT_GUARD_RULES_DIR:-}" ] && [ -d "${GIT_GUARD_RULES_DIR}" ]; then
+      docker run --rm -v "$GIT_GUARD_RULES_DIR:/rules:ro" -e GIT_GUARD_RULES_DIR=/rules "$@"
+    else
+      docker run --rm "$@"
+    fi
+  }
 
   case "$ACTION" in
     verify)
       # Self-test runs entirely inside the image; no repo mount needed.
-      # shellcheck disable=SC2086
-      docker run --rm $rules_args "$GGR_IMAGE" verify; return $? ;;
+      docker_run "$GGR_IMAGE" verify; return $? ;;
     gate)
-      # shellcheck disable=SC2086
-      docker run --rm $rules_args -v "$TARGET:/work" -w /work \
+      docker_run -v "$TARGET:/work" -w /work \
         "$GGR_IMAGE" sh /opt/git-guard/hooks/common/qa_gate.sh; return $? ;;
     *) say "unknown action: $ACTION"; return 2 ;;
   esac
@@ -109,16 +109,15 @@ run_wsl() {
     wsl_rules="$(to_wsl_path "$GIT_GUARD_RULES_DIR")"
     rules_env="GIT_GUARD_RULES_DIR='$wsl_rules'"
   fi
-  # A repo checked out on Windows (core.autocrlf=true) gives the scripts CRLF
-  # line endings; dash/sh under WSL chokes on the trailing \r. Strip CR on the
-  # fly so the WSL backend works against a Windows working tree.
+  # Run from the real checkout path so git-guard can resolve its root from $0.
+  # Repos should keep these shell entrypoints LF-normalized via .gitattributes.
   case "$ACTION" in
     verify)
-      wsl.exe bash -lc "${rules_env} sed 's/\r\$//' '$wsl_root/bin/git-guard' | sh -s -- verify"
+      wsl.exe bash -lc "cd '$wsl_root' && ${rules_env} sh ./bin/git-guard verify"
       return $? ;;
     gate)
       wsl_target="$(to_wsl_path "$TARGET")"
-      wsl.exe bash -lc "${rules_env} cd '$wsl_target' && sed 's/\r\$//' '$wsl_root/hooks/common/qa_gate.sh' | sh"
+      wsl.exe bash -lc "cd '$wsl_target' && ${rules_env} sh '$wsl_root/hooks/common/qa_gate.sh'"
       return $? ;;
     *) say "unknown action: $ACTION"; return 2 ;;
   esac

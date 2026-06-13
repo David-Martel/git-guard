@@ -61,6 +61,7 @@ cmd_status() {
 
 # True only when `sg` on PATH is genuinely ast-grep (not util-linux set-group).
 sg_is_astgrep() { have sg && sg --version 2>/dev/null | grep -qi 'ast-grep'; }
+astgrep_is_astgrep() { have ast-grep && ast-grep --version 2>/dev/null | grep -qi 'ast-grep'; }
 cmd_doctor() {
   echo "git-guard doctor — prerequisite check"
   for t in git sg ast-grep shellcheck ruff python pwsh cygpath dotnet cargo; do
@@ -72,7 +73,7 @@ cmd_doctor() {
     else printf '  [--]   %-12s (absent — related checks self-skip)\n' "$t"; fi
   done
   echo ""
-  if sg_is_astgrep || have ast-grep; then echo "  ast-grep present -> structural BLOCK trio active"; else echo "  ast-grep ABSENT -> ast-grep layer self-skips (trio inactive)"; fi
+  if sg_is_astgrep || astgrep_is_astgrep; then echo "  ast-grep present -> structural BLOCK trio active"; else echo "  ast-grep ABSENT -> ast-grep layer self-skips (trio inactive)"; fi
 }
 
 cmd_rules() {
@@ -100,7 +101,7 @@ cmd_verify() {
   # ast-grep and makes the structural trio silently no-op. Use the same
   # sg_is_astgrep probe doctor uses, so the WSL backend SKIPs (rc 0) instead of
   # reporting a spurious FAIL when ast-grep is genuinely absent.
-  if ! sg_is_astgrep && ! have ast-grep; then echo "  SKIP: no ast-grep CLI (cannot test the trio)"; return 0; fi
+  if ! sg_is_astgrep && ! astgrep_is_astgrep; then echo "  SKIP: no ast-grep CLI (cannot test the trio)"; return 0; fi
   t="$(mktemp -d)" || { echo "  FAIL: mktemp"; return 1; }
   ( cd "$t" && git init -q && git config user.email t@t.t && git config user.name t && git config commit.gpgsign false
     mkdir -p src; printf 'static mut C: u32 = 0;\nfn main(){ unsafe { C += 1; } }\n' > src/bad.rs; git add -A )
@@ -128,6 +129,14 @@ cmd_test() {
   sh "$runner" "$@"
 }
 
+cmd_help() {
+  awk '
+    NR == 1 { next }
+    /^#/ { sub(/^# ?/, ""); print; next }
+    { exit }
+  ' "$0"
+}
+
 case "${1:-help}" in
   status)     cmd_status ;;
   doctor)     cmd_doctor ;;
@@ -137,5 +146,5 @@ case "${1:-help}" in
   install)    shift; cmd_install "$@" ;;
   uninstall)  shift; cmd_uninstall "$@" ;;
   version|--version|-v) gg_version ;;
-  help|--help|-h|*) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help|--help|-h|*) cmd_help ;;
 esac

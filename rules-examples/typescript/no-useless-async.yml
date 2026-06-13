@@ -6,6 +6,5 @@ rule:
   all:
   - pattern: "async function $NAME($PARAMS) { $BODY }"
   - not:
-      inside:
+      has:
         pattern: "await $EXPR"
-fix: "function $NAME($PARAMS) { $BODY }"
