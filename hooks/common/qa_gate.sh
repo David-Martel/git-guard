@@ -184,6 +184,12 @@ qa_restage_safe() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+QA_FIND="find"
+if [ -x /usr/bin/find ]; then QA_FIND=/usr/bin/find
+elif have gfind; then QA_FIND="$(command -v gfind)"
+elif have find; then QA_FIND="$(command -v find)"
+fi
+
 # Resolve a Python interpreter ONCE: prefer `python`, fall back to `python3`.
 # Debian/Ubuntu (and the slim Docker base) ship only `python3`, so hardcoding
 # `python` would silently no-op the JSON/YAML validation (a default BLOCK check)
@@ -215,7 +221,7 @@ QA_SG=""
 # would make the structural scan silently no-op (trio never fires). Validate
 # via `sg --version` before trusting it; otherwise fall back to `ast-grep`.
 if have sg && sg --version 2>/dev/null | grep -qi 'ast-grep'; then QA_SG="sg"
-elif have ast-grep; then QA_SG="ast-grep"; fi
+elif have ast-grep && ast-grep --version 2>/dev/null | grep -qi 'ast-grep'; then QA_SG="ast-grep"; fi
 QA_RULE_CACHE="$QA_SELF_DIR/qa-rules"
 # The EFFECTIVE sgconfig is GENERATED at runtime with ABSOLUTE ruleDirs (see
 # qa_write_sgconfig). ast-grep resolves `ruleDirs` relative to the scan CWD (the
@@ -269,7 +275,7 @@ qa_refresh_rule_cache() {
   [ -d "$src" ] || return 0
   # Stamp marks the source mtime the cache was built from.
   stamp="$QA_RULE_CACHE/.built-from"
-  newest="$(find "$src" -name '*.yml' -newer "$stamp" -print 2>/dev/null | head -n1)"
+  newest="$("$QA_FIND" "$src" -name '*.yml' -newer "$stamp" -print 2>/dev/null | head -n1)"
   if [ -d "$QA_RULE_CACHE" ] && [ -f "$stamp" ] && [ -z "$newest" ]; then
     [ -f "$QA_SGCONFIG" ] || qa_write_sgconfig   # ensure the generated sgconfig exists
     return 0   # cache fresh

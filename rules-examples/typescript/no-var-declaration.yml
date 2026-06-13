@@ -4,4 +4,3 @@ severity: warning
 message: "Use let/const instead of var"
 rule:
   pattern: "var $NAME = $VALUE"
-fix: "let $NAME = $VALUE"

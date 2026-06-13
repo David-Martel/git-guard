@@ -12,7 +12,7 @@ GG_RUN="$GG_ROOT/bin/git-guard-run"
 # Did a backend actually run as the one we forced? Asserts the "backend = X"
 # banner git-guard-run prints to stderr AND a non-FAIL self-test result.
 t_backend_runs() {
-  want="$1"; logf="/tmp/gg_be_${want}.$$"
+  want="$1"; logf="$(gg_tmp_log)"
   # Capture BOTH streams: the "backend = X" banner is on stderr, but the
   # self-test's "RESULT: PASS" / "SKIP:" line is on stdout.
   GIT_GUARD_BACKEND="$want" GIT_GUARD_RULES_DIR="$GG_BUNDLED" \
@@ -44,7 +44,7 @@ t_case_backends() {
     # WSL is the documented Windows fallback when Docker is down — assert the
     # auto path reaches it (banner appears) on Windows.
     if gg_is_windows; then
-      logf="/tmp/gg_auto.$$"
+      logf="$(gg_tmp_log)"
       GIT_GUARD_RULES_DIR="$GG_BUNDLED" sh "$GG_RUN" verify >/dev/null 2>"$logf" </dev/null
       if tr -d '\r' < "$logf" | grep -q "backend = wsl"; then
         t_ok "auto-detect falls through Docker(down)->WSL on Windows"

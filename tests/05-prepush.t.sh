@@ -18,12 +18,13 @@ t_case_prepush() {
   chmod +x "$r/.git-guard/pre-push.local"
 
   # 1. A failing downstream gate must make pre-push refuse (non-zero).
-  ( cd "$r" && sh "$GG_ROOT/hooks/pre-push" origin git@example >/dev/null 2>/tmp/gg_pp.$$ </dev/null ); rc=$?
+  logf="$(gg_tmp_log)"
+  ( cd "$r" && sh "$GG_ROOT/hooks/pre-push" origin git@example >/dev/null 2>"$logf" </dev/null ); rc=$?
   if [ "$rc" -ne 0 ]; then t_ok "pre-push refuses when downstream gate fails (rc=$rc)"; else t_fail "pre-push did NOT refuse a failing downstream gate"; fi
-  grep -q "downstream pre-push gate FAILED" /tmp/gg_pp.$$ 2>/dev/null \
+  grep -q "downstream pre-push gate FAILED" "$logf" 2>/dev/null \
     && t_ok "downstream pre-push gate output surfaced" \
     || t_fail "downstream pre-push gate output missing"
-  rm -f /tmp/gg_pp.$$
+  rm -f "$logf"
 
   # 2. GIT_GUARD=0 is the documented conscious bypass (push proceeds).
   ( cd "$r" && GIT_GUARD=0 sh "$GG_ROOT/hooks/pre-push" origin git@example >/dev/null 2>&1 </dev/null ); rc=$?

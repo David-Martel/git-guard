@@ -1,10 +1,6 @@
 id: prefer-const
 language: TypeScript
 severity: info
-message: "Prefer const for variables never reassigned"
+message: "Review whether this let binding can be const"
 rule:
-  all:
-  - pattern: "let $NAME = $VALUE"
-  - not:
-      pattern: "$NAME = $ANY"
-fix: "const $NAME = $VALUE"
+  pattern: "let $NAME = $VALUE"

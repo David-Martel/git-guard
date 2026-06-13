@@ -40,11 +40,18 @@ t_assert() { if [ "$1" = "0" ]; then t_ok "$2"; else t_fail "$2"; fi }
 # --- capability probes -------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
 
+gg_find() {
+  if [ -x /usr/bin/find ]; then /usr/bin/find "$@"
+  elif have gfind; then gfind "$@"
+  else find "$@"
+  fi
+}
+
 # True only when `sg`/`ast-grep` on PATH is GENUINELY ast-grep (not util-linux
 # set-group, which shadows it on Linux/WSL and makes the structural scan no-op).
 gg_has_astgrep() {
   if have sg && sg --version 2>/dev/null | grep -qi 'ast-grep'; then return 0; fi
-  have ast-grep
+  have ast-grep && ast-grep --version 2>/dev/null | grep -qi 'ast-grep'
 }
 gg_has_shellcheck() { have shellcheck; }
 gg_has_ruff()       { have ruff; }
@@ -56,7 +63,7 @@ gg_has_docker()     { have docker && docker info >/dev/null 2>&1; }
 # Are we on native Windows (Git-Bash/MSYS/Cygwin)? Reserved-name (NUL) files
 # cannot be created there, so the NUL-cleanup case skips on Windows.
 gg_is_windows() {
-  case "$(uname -s 2>/dev/null || echo)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; *) return 1 ;; esac
+  case "$(uname -s 2>/dev/null || echo)" in MINGW*|MSYS*|CYGWIN*|Windows_NT) return 0 ;; *) return 1 ;; esac
 }
 
 # --- hermetic temp repo ------------------------------------------------------
@@ -78,6 +85,8 @@ gg_mktemp_repo() {
 }
 
 gg_rmrepo() { [ -n "${1:-}" ] && rm -rf "$1" 2>/dev/null; return 0; }
+
+gg_tmp_log() { mktemp "${GG_T_TMPROOT:-/tmp}/gg.log.XXXXXX"; }
 
 # Run the QA gate directly inside a prepared repo (staged files already added).
 # Echoes nothing; returns the gate's exit code (0 = pass/all-warn, 1 = blocked).

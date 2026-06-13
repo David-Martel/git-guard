@@ -12,12 +12,13 @@ t_case_warn() {
   mkdir -p "$r/src"
   printf 'fn main() { println!("hi"); }\n' > "$r/src/m.rs"   # avoid-println = warn
   ( cd "$r" && git add -A )
-  gg_run_gate_log "$r" /tmp/gg_warn.$$; rc=$?
+  logf="$(gg_tmp_log)"
+  gg_run_gate_log "$r" "$logf"; rc=$?
   t_expect_rc 0 "$rc" "warn-level avoid-println does NOT block"
-  grep -qi "avoid-println" /tmp/gg_warn.$$ 2>/dev/null \
+  grep -qi "avoid-println" "$logf" 2>/dev/null \
     && t_ok "warn message names avoid-println (non-blocking)" \
     || t_fail "warn message for avoid-println missing"
-  rm -f /tmp/gg_warn.$$; gg_rmrepo "$r"
+  rm -f "$logf"; gg_rmrepo "$r"
 }
 
 # Category 3 — auto-fix path (OPT-IN via astgrep_autofix=on). avoid-println has a
