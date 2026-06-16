@@ -79,7 +79,7 @@ jobs:
 
       - name: Install ast-grep
         run: |
-          npm install --prefix "$RUNNER_TEMP/ast-grep" @ast-grep/cli
+          npm install --prefix "$RUNNER_TEMP/ast-grep" @ast-grep/cli@0.39.5
           echo "$RUNNER_TEMP/ast-grep/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
