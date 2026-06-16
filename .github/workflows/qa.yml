@@ -1,8 +1,14 @@
 name: git-guard QA
 
-# Self-test git-guard on every push/PR: prove the BLOCK trio fires, a clean
-# commit passes, and the shell engine is shellcheck-clean. This is the public
-# repo validating ITSELF with its own gate.
+# Manually self-test git-guard on the repo-local runner: prove the BLOCK trio
+# fires, a clean commit passes, and the shell engine is shellcheck-clean. This
+# is the public repo validating ITSELF without GitHub-hosted minutes.
+#
+# 2026-06-16 local-runner policy:
+#   Automatic push/PR CI must not consume GitHub-hosted minutes or create
+#   billing-blocked checks. Keep this workflow manual-only and restricted to
+#   the repo-local Ubuntu 24.04 runner registered with labels:
+#     [self-hosted, Linux, X64, git-guard-local]
 #
 # Two jobs run the SAME checks two ways:
 #   * self-test-docker — builds the docker/Dockerfile image (the SAME image
@@ -13,10 +19,6 @@ name: git-guard QA
 #     backend path that `git-guard-run` falls through to.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -25,9 +27,9 @@ jobs:
   # then exercise doctor/rules and the bundled-rule validation in-container.
   # ---------------------------------------------------------------------------
   self-test-docker:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, git-guard-local]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build git-guard QA image
         run: docker build -t git-guard:ci -f docker/Dockerfile .
@@ -67,19 +69,21 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Non-Docker fallback: the original native path. Same assertions, run on the
-  # bare runner. This is the backend `git-guard-run` uses when Docker and WSL
-  # are both unavailable, so CI exercises it directly.
+  # bare self-hosted runner. This is the backend `git-guard-run` uses when
+  # Docker and WSL are both unavailable, so manual QA exercises it directly.
   # ---------------------------------------------------------------------------
   self-test-native:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, git-guard-local]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install ast-grep
-        run: npm install -g @ast-grep/cli
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ast-grep" @ast-grep/cli@0.39.5
+          echo "$RUNNER_TEMP/ast-grep/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck python3-venv
 
       - name: Versions
         run: |
@@ -101,8 +105,10 @@ jobs:
 
       - name: Install pyyaml + ruff (so YAML-block + ruff categories actually run)
         run: |
-          python3 -m pip install --quiet --user pyyaml ruff || pip install --quiet pyyaml ruff
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          python3 -m venv "$RUNNER_TEMP/gitguard-py"
+          "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet --upgrade pip
+          "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet pyyaml ruff
+          echo "$RUNNER_TEMP/gitguard-py/bin" >> "$GITHUB_PATH"
 
       - name: git-guard test — comprehensive validation suite
         run: sh ./bin/git-guard test
