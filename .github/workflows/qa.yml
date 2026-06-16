@@ -83,7 +83,7 @@ jobs:
           echo "$RUNNER_TEMP/ast-grep/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck python3-venv
 
       - name: Versions
         run: |
@@ -105,8 +105,10 @@ jobs:
 
       - name: Install pyyaml + ruff (so YAML-block + ruff categories actually run)
         run: |
-          python3 -m pip install --quiet --user pyyaml ruff || pip install --quiet pyyaml ruff
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          python3 -m venv "$RUNNER_TEMP/gitguard-py"
+          "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet --upgrade pip
+          "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet pyyaml ruff
+          echo "$RUNNER_TEMP/gitguard-py/bin" >> "$GITHUB_PATH"
 
       - name: git-guard test — comprehensive validation suite
         run: sh ./bin/git-guard test
