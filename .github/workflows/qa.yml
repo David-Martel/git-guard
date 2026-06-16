@@ -5,10 +5,9 @@ name: git-guard QA
 # repo validating ITSELF with its own gate.
 #
 # 2026-06-16 local-runner policy:
-#   This personal repository has no registered repository self-hosted runner.
-#   Automatic push/PR CI therefore must not consume GitHub-hosted minutes or
-#   create billing-blocked checks. Keep this workflow manual-only until a
-#   repo-local runner is registered with labels:
+#   Automatic push/PR CI must not consume GitHub-hosted minutes or create
+#   billing-blocked checks. Keep this workflow manual-only and restricted to
+#   the repo-local Ubuntu 24.04 runner registered with labels:
 #     [self-hosted, Linux, X64, git-guard-local]
 #
 # Two jobs run the SAME checks two ways:
@@ -30,7 +29,7 @@ jobs:
   self-test-docker:
     runs-on: [self-hosted, Linux, X64, git-guard-local]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build git-guard QA image
         run: docker build -t git-guard:ci -f docker/Dockerfile .
@@ -76,10 +75,12 @@ jobs:
   self-test-native:
     runs-on: [self-hosted, Linux, X64, git-guard-local]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install ast-grep
-        run: npm install -g @ast-grep/cli
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ast-grep" @ast-grep/cli
+          echo "$RUNNER_TEMP/ast-grep/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
