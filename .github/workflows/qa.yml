@@ -4,6 +4,13 @@ name: git-guard QA
 # commit passes, and the shell engine is shellcheck-clean. This is the public
 # repo validating ITSELF with its own gate.
 #
+# 2026-06-16 local-runner policy:
+#   This personal repository has no registered repository self-hosted runner.
+#   Automatic push/PR CI therefore must not consume GitHub-hosted minutes or
+#   create billing-blocked checks. Keep this workflow manual-only until a
+#   repo-local runner is registered with labels:
+#     [self-hosted, Linux, X64, git-guard-local]
+#
 # Two jobs run the SAME checks two ways:
 #   * self-test-docker — builds the docker/Dockerfile image (the SAME image
 #     `bin/git-guard-run` uses) and self-tests inside it.
@@ -13,10 +20,6 @@ name: git-guard QA
 #     backend path that `git-guard-run` falls through to.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -25,7 +28,7 @@ jobs:
   # then exercise doctor/rules and the bundled-rule validation in-container.
   # ---------------------------------------------------------------------------
   self-test-docker:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, git-guard-local]
     steps:
       - uses: actions/checkout@v4
 
@@ -71,7 +74,7 @@ jobs:
   # are both unavailable, so CI exercises it directly.
   # ---------------------------------------------------------------------------
   self-test-native:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, git-guard-local]
     steps:
       - uses: actions/checkout@v4
 

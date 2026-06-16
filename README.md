@@ -120,7 +120,7 @@ git-guard/
 ├── install.sh             idempotent, reversible installer (symlinks + overlay)
 ├── branch-protection.sh   optional GitHub ruleset applier
 ├── docs/                  QA_TOOLING.md, GIT_COMMIT_SAFETY.md
-└── .github/workflows/qa.yml   CI: git-guard self-tests itself
+└── .github/workflows/qa.yml   Manual self-hosted QA: git-guard self-tests itself
 ```
 
 ## Requirements
@@ -156,7 +156,7 @@ WSL is tried (`wsl.exe bash …`); otherwise the local POSIX shell runs it. The
 chosen backend is printed to stderr. Build the image directly with
 `docker build -t git-guard:local -f docker/Dockerfile .`.
 
-CI (`.github/workflows/qa.yml`) runs the SAME image in `self-test-docker` and
+Manual self-hosted QA (`.github/workflows/qa.yml`) runs the SAME image in `self-test-docker` and
 keeps a `self-test-native` fallback job with the identical assertions.
 
 ## License
