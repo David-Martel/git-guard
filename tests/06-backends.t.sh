@@ -34,14 +34,16 @@ t_case_backends() {
     t_fail "forced native backend did not run cleanly"
   fi
 
-  # --- wsl backend (Windows only; util-linux sg there → verify SKIPs cleanly) ---
-  if have wsl.exe && wsl.exe true >/dev/null 2>&1; then
+  # --- wsl backend (Windows only; util-linux sg there -> verify SKIPs cleanly) ---
+  # WSL interop can expose wsl.exe inside a Linux self-hosted runner, but nested
+  # WSL is not a supported or required backend there. Only Windows hosts assert it.
+  if gg_is_windows && have wsl.exe && wsl.exe true >/dev/null 2>&1; then
     if t_backend_runs wsl; then
       t_ok "GIT_GUARD_BACKEND=wsl runs the WSL backend (PASS or clean SKIP)"
     else
       t_fail "forced wsl backend did not run cleanly"
     fi
-    # WSL is the documented Windows fallback when Docker is down — assert the
+    # WSL is the documented Windows fallback when Docker is down - assert the
     # auto path reaches it (banner appears) on Windows.
     if gg_is_windows; then
       logf="$(gg_tmp_log)"
@@ -54,7 +56,7 @@ t_case_backends() {
       rm -f "$logf"
     fi
   else
-    t_skip "wsl backend: wsl.exe / default distro unavailable"
+    t_skip "wsl backend: Windows host with wsl.exe unavailable"
   fi
 
   # --- docker backend: build OR skip-with-reason if the engine is down ---
@@ -65,7 +67,7 @@ t_case_backends() {
       t_fail "docker image build failed"
     fi
   else
-    t_skip "docker backend: engine down/absent — Dockerfile structural sanity checked instead"
+    t_skip "docker backend: engine down/absent - Dockerfile structural sanity checked instead"
     # Best-available offline check: the Dockerfile is well-formed (the required
     # instructions are present and ordered sanely).
     df="$GG_ROOT/docker/Dockerfile"
