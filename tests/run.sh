@@ -69,6 +69,7 @@ t_case_precommit
 t_case_prepush
 t_case_backends
 t_case_rule_integrity
+t_case_panic_set
 "
 
 # Optional filtering: `git-guard test blockers warn` runs only those.

@@ -149,10 +149,40 @@ source `.yml` is newer than the cache stamp `qa-rules/.built-from` (a `find
 ### Classification (which rule blocks)
 - **BLOCK trio** (by ruleId): `avoid-static-mut`, `no-glob-reexport`,
   `unsafe-with-panic`. Precedent: `~/.claude/hooks/rust-pre-commit.sh:44-46`.
-- **Panic-set → WARN even in block mode** (ids matching
-  `*unwrap*|*panic*|*unreachable*|*unchecked*|…`): blocking every `.unwrap()`
-  across 40 repos would be a disaster.
+- **Panic-set → governed by `astgrep_panics`, independent of `astgrep`.**
+  Blocking every `.unwrap()` across 40 repos by default would be a disaster, so
+  the default stays `warn`. But it used to be *unconditionally* warn-only — a
+  repo that had done the cleanup and set `astgrep=block` still could not make
+  "no `unwrap()` in production code" hold, because the classifier ignored config
+  entirely. The rules fired, carried `severity: error`, and gated nothing.
+  `astgrep_panics` is the opt-in that closes that gap:
+
+  | value | effect |
+  |---|---|
+  | `warn` *(default)* | whole panic set warns — unchanged account-wide behaviour |
+  | `block` | **unconditional** panics block; **heuristic** ones still warn |
+  | `strict` | the whole panic set blocks |
+
+  - **unconditional** — panics every time the line executes off the happy path;
+    no input makes it safe: `unwrap-call`, `library-unwrap`, `avoid-unwrap`,
+    `as-ref-unwrap`, `match-arm-unwrap`, `try-into-unwrap`, `expect-call`,
+    `panic-macro`, `todo-macro`, `unimplemented-macro`, `unreachable-macro`.
+  - **heuristic** — panics only for *some* inputs, and a caller-side check can
+    make it genuinely unreachable (an index inside a region whose length the
+    caller already validated is a real defence, not a latent crash):
+    `unchecked-index`, `unchecked-division`, `string-slice-panic`,
+    `fixed-size-init`. These need `strict`.
+  - `astgrep=off` still overrides every tier — the escape hatch is absolute.
+  - Note `prefer-expect-over-allow` is **not** a panic rule (it is about
+    `#[allow]` vs `#[expect]` attributes). The old fuzzy `*expect*` glob swept it
+    into the deny-set and made it permanently un-blockable; classification is now
+    by exact ruleId, with the fuzzy globs kept only as a conservative fallback so
+    a newly added rule lands in `heuristic` rather than silently blocking.
 - **Everything else → WARN** (or BLOCK only if a repo sets `astgrep=block`).
+
+Adopting `block`/`strict` on an existing crate is a cleanup project, not a flag
+day — measure first (`sg scan` the panic set, count findings), fix or defend each
+site, then flip the key so it cannot regress.
 
 ### How to ADD / UPDATE an ast-grep rule
 1. Drop/edit the `.yml` in the appropriate `~/.claude/rules/<lang>/` dir (the
@@ -186,6 +216,9 @@ internally (`python.ruff_check` → `qacfg_python_ruff_check`).
 qa.enabled=on             # master kill-switch for the whole QA layer
 nul_cleanup=block
 astgrep=warn              # warn|block|off (trio blocks unless off)
+astgrep_panics=warn       # warn|block|strict — panic set (unwrap/expect/panic!/index…).
+                          #   block  = unconditional panics only; strict = whole set.
+                          #   Independent of `astgrep`; `astgrep=off` overrides both.
 astgrep_autofix=off       # OPT-IN: apply fix: rules + restage (see WARNING below)
 rust.fmt=warn   rust.clippy=off
 python.ruff_check=block   python.ruff_format=warn   python.mypy=warn   python.basedpyright=warn
