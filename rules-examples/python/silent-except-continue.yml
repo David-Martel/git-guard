@@ -10,6 +10,13 @@ rule:
       - has: {kind: continue_statement}
       - not: {has: {kind: expression_statement}}
       - not: {has: {kind: raise_statement}}
+  # `queue.Empty` / `TimeoutError` in a polling loop is not a failure being
+  # swallowed -- it is the loop's normal "nothing yet, go round again" signal.
+  # The upstream pyclarius gate carries the same exemption
+  # (EXPECTED_EMPTY_EXCEPTIONS). Without it this rule flags every idiomatic
+  # producer/consumer loop, and a rule that flags correct code gets turned off.
+  not:
+    regex: 'except\s+\(?\s*(queue\.)?(Empty|TimeoutError|asyncio\.TimeoutError)'
 files:
   - "**/*.py"
   - "!**/tests/**"
