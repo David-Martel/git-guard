@@ -8,7 +8,14 @@ rule:
     kind: block
     all:
       - has: {kind: continue_statement}
-      - not: {has: {kind: expression_statement}}
+      # Exempt only handlers that REPORT or RECORD the failure — see
+      # silent-except-sentinel.yml for why matching any expression_statement was
+      # wrong. `.append(...)` is in the allowlist deliberately: the note below
+      # recommends collecting failures, so that fix must not become a finding.
+      - not:
+          has:
+            kind: expression_statement
+            regex: '(?i)(\b(logger|logging|log|_log|_logger)\s*\.\s*\w+|\.\s*(debug|info|warn|warning|error|exception|critical)|\bprint|\bwarnings\s*\.\s*warn|\btraceback\s*\.\s*(print_exc|format_exc)|\bsys\s*\.\s*std(err|out)\s*\.\s*write|\.\s*(append|add|extend|insert|update|setdefault|add_note)|\b(capture_exception|report|record|emit)\w*)\s*\('
       - not: {has: {kind: raise_statement}}
   # `queue.Empty` / `TimeoutError` in a polling loop is not a failure being
   # swallowed -- it is the loop's normal "nothing yet, go round again" signal.

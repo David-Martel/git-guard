@@ -259,6 +259,14 @@ qa_panic_class() {
     # about #[allow] vs #[expect] ATTRIBUTES. The fuzzy match silently made it
     # un-blockable even under astgrep=block. Listed first so it wins.
     prefer-expect-over-allow) QA_PCLASS="" ;;
+    # NOT a panic rule either. Its pattern is `let $VAR: [$TYPE; $SIZE] = $INIT;`
+    # — i.e. EVERY explicitly-typed fixed-size array declaration. Rust checks
+    # array length and element type at COMPILE time, so a mismatch is a build
+    # error, never a runtime panic; there is no panic condition to gate on. Left
+    # in the heuristic tier it made `astgrep_panics=strict` reject ordinary valid
+    # declarations like `let bytes: [u8; 4] = [0; 4];` (reproduced with
+    # ast-grep 0.27.3). Its own severity is `info`, which is the honest level.
+    fixed-size-init) QA_PCLASS="" ;;
     unwrap-call|library-unwrap|avoid-unwrap|as-ref-unwrap|match-arm-unwrap|try-into-unwrap|expect-call|panic-macro|todo-macro|unimplemented-macro|unreachable-macro)
       QA_PCLASS="unconditional" ;;
     unchecked-index|unchecked-division|string-slice-panic|fixed-size-init)

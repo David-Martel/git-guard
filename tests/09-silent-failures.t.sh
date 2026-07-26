@@ -43,6 +43,32 @@ gg_fixture_py_reports() {
     > "$1/src/app.py"
 }
 
+# Does NOT report — but the handler is non-empty. The exemption used to be "the
+# block contains any expression_statement", so `cleanup()` bought silence while
+# recording nothing and the exception was still destroyed. Must be a finding.
+gg_fixture_py_nonreporting_call() {
+  mkdir -p "$1/src"
+  printf 'def probe():\n    try:\n        connect()\n    except OSError:\n        cleanup()\n        return None\n' \
+    > "$1/src/app.py"
+}
+
+# RECORDS the failure into a collection instead of logging it. This is the exact
+# shape silent-except-continue's own note recommends, so it must stay quiet.
+gg_fixture_py_records() {
+  mkdir -p "$1/src"
+  printf 'def probe(items):\n    failures = []\n    for item in items:\n        try:\n            connect(item)\n        except OSError as exc:\n            failures.append((item, exc))\n            continue\n    return failures\n' \
+    > "$1/src/app.py"
+}
+
+# Re-raises, so the failure propagates with full context. The two sibling rules
+# already excluded raise_statement; silent-except-pass did not, so this shape was
+# flagged as "invisible at runtime" while being the opposite.
+gg_fixture_py_pass_then_raise() {
+  mkdir -p "$1/src"
+  printf 'def probe():\n    try:\n        connect()\n    except OSError:\n        pass\n        raise\n' \
+    > "$1/src/app.py"
+}
+
 t_case_silent_failures() {
   t_begin "09 python silent-failure rules"
 
@@ -84,5 +110,45 @@ t_case_silent_failures() {
   grep -q "silent-except" "$logf" 2>/dev/null \
     && t_fail "false positive: reporting handler flagged as silent" \
     || t_ok "no silent-failure finding on a reporting handler"
+  rm -f "$logf"; gg_rmrepo "$r"
+
+  # --- a NON-reporting call must not buy silence (the missed-detection bug) ---
+  # `cleanup(); return None` destroys the exception. The old predicate exempted
+  # the handler merely because the block held an expression_statement.
+  r="$(gg_mktemp_repo)"
+  gg_fixture_py_nonreporting_call "$r"; gg_conf_py_off "$r"
+  ( cd "$r" && git add -A )
+  logf="$(gg_tmp_log)"
+  gg_run_gate_log "$r" "$logf"; rc=$?
+  t_expect_rc 0 "$rc" "default: non-reporting call + return None warns, does NOT block"
+  grep -q "silent-except-sentinel" "$logf" 2>/dev/null \
+    && t_ok "cleanup() does not exempt the handler (missed detection closed)" \
+    || t_fail "missed detection: cleanup() still suppresses silent-except-sentinel"
+  rm -f "$logf"; gg_rmrepo "$r"
+
+  # --- recording into a collection is reporting enough ---
+  # The false-positive guard for the fix above: the allowlist must cover the
+  # `failures.append(...)` shape the continue rule's own note prescribes.
+  r="$(gg_mktemp_repo)"
+  gg_fixture_py_records "$r"; gg_conf_py_off "$r" "astgrep=block"
+  ( cd "$r" && git add -A )
+  logf="$(gg_tmp_log)"
+  gg_run_gate_log "$r" "$logf"; rc=$?
+  t_expect_rc 0 "$rc" "recording the failure into a list does NOT trip the rules"
+  grep -q "silent-except" "$logf" 2>/dev/null \
+    && t_fail "false positive: failures.append() handler flagged as silent" \
+    || t_ok "no silent-failure finding on a recording handler"
+  rm -f "$logf"; gg_rmrepo "$r"
+
+  # --- a handler that re-raises is never a silent failure ---
+  r="$(gg_mktemp_repo)"
+  gg_fixture_py_pass_then_raise "$r"; gg_conf_py_off "$r" "astgrep=block"
+  ( cd "$r" && git add -A )
+  logf="$(gg_tmp_log)"
+  gg_run_gate_log "$r" "$logf"; rc=$?
+  t_expect_rc 0 "$rc" "pass followed by re-raise does NOT block"
+  grep -q "silent-except-pass" "$logf" 2>/dev/null \
+    && t_fail "false positive: re-raising handler flagged by silent-except-pass" \
+    || t_ok "silent-except-pass excludes handlers that re-raise"
   rm -f "$logf"; gg_rmrepo "$r"
 }

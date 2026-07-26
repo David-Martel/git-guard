@@ -33,6 +33,17 @@ gg_fixture_allow_attr() {
   printf '#[allow(dead_code)]\npub fn f() {}\n' > "$1/src/lib.rs"
 }
 
+# A provably-safe fixed-size array declaration. Rust checks array length and
+# element type at COMPILE time, so this cannot panic at runtime — but it matches
+# fixed-size-init's pattern (`let $VAR: [$TYPE; $SIZE] = $INIT;`), which is every
+# explicitly-typed fixed-size array. While that rule sat in the heuristic tier,
+# `astgrep_panics=strict` rejected this ordinary declaration.
+gg_fixture_fixed_size_init() {
+  mkdir -p "$1/src"
+  printf 'pub fn f() -> usize {\n    let bytes: [u8; 4] = [0; 4];\n    bytes.len()\n}\n' \
+    > "$1/src/lib.rs"
+}
+
 # Write a per-repo .qa-gate.conf. $2.. are literal `key=value` lines.
 gg_write_conf() {
   _r="$1"; shift
@@ -118,6 +129,18 @@ t_case_panic_set() {
   grep -q "prefer-expect-over-allow" "$logf" 2>/dev/null \
     && t_ok "block message names prefer-expect-over-allow" \
     || t_fail "block message missing prefer-expect-over-allow"
+  rm -f "$logf"; gg_rmrepo "$r"
+
+  # --- fixed-size-init is NOT a panic rule ---
+  # Regression: it was classified `heuristic`, so the strictest tier rejected
+  # `let bytes: [u8; 4] = [0; 4];` — a declaration the COMPILER proves correct.
+  # A gate that forbids valid fixed-size locals is a gate people turn off.
+  r="$(gg_mktemp_repo)"
+  gg_fixture_fixed_size_init "$r"; gg_write_conf "$r" "astgrep_panics=strict"
+  ( cd "$r" && git add -A )
+  logf="$(gg_tmp_log)"
+  gg_run_gate_log "$r" "$logf"; rc=$?
+  t_expect_rc 0 "$rc" "astgrep_panics=strict: safe fixed-size array does NOT block"
   rm -f "$logf"; gg_rmrepo "$r"
 
   # --- astgrep=off still wins over every panic tier ---

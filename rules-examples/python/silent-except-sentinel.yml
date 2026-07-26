@@ -14,7 +14,17 @@ rule:
           - {has: {pattern: "return []"}}
           - {has: {pattern: "return {}"}}
           - {has: {pattern: 'return ""'}}
-      - not: {has: {kind: expression_statement}}
+      # A handler is exempt only when it actually REPORTS or RECORDS the failure.
+      # Matching ANY expression_statement was wrong: in
+      #     except OSError: cleanup(); return None
+      # `cleanup()` reports nothing, yet it satisfied the old predicate and
+      # suppressed the finding. Allowlist recognized logging/recording calls
+      # instead. Kept in sync with silent-except-pass.yml and
+      # silent-except-continue.yml — the same predicate governs all three.
+      - not:
+          has:
+            kind: expression_statement
+            regex: '(?i)(\b(logger|logging|log|_log|_logger)\s*\.\s*\w+|\.\s*(debug|info|warn|warning|error|exception|critical)|\bprint|\bwarnings\s*\.\s*warn|\btraceback\s*\.\s*(print_exc|format_exc)|\bsys\s*\.\s*std(err|out)\s*\.\s*write|\.\s*(append|add|extend|insert|update|setdefault|add_note)|\b(capture_exception|report|record|emit)\w*)\s*\('
       - not: {has: {kind: raise_statement}}
   # `queue.Empty` / `TimeoutError` in a polling loop is not a failure being
   # swallowed -- it is the loop's normal "nothing yet, go round again" signal.
