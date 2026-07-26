@@ -1,0 +1,29 @@
+id: silent-except-pass
+language: python
+severity: warning
+message: "Exception swallowed by a bare `pass` — the failure becomes invisible at runtime"
+rule:
+  kind: except_clause
+  has:
+    kind: block
+    has: {kind: pass_statement}
+    not: {has: {kind: expression_statement}}
+files:
+  - "**/*.py"
+  - "!**/tests/**"
+  - "!**/test_*.py"
+  - "!**/*_test.py"
+  - "!**/conftest.py"
+note: |
+  A handler whose entire body is `pass` discards the error with no trace: no log,
+  no re-raise, no recorded state. The operation silently did not happen and the
+  caller cannot tell. This is the single most common source of "it worked in
+  testing but does nothing in production".
+
+  Fix by making the outcome observable:
+    except FooError:
+        logger.warning("skipping X: %s", exc)   # at minimum, say it happened
+    except FooError as exc:
+        raise RuntimeError("context") from exc  # or propagate with context
+  If the exception really is expected and uninteresting, say so explicitly:
+    with contextlib.suppress(FileNotFoundError):  # narrow, self-documenting

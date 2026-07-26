@@ -1,0 +1,21 @@
+id: bare-except
+language: python
+severity: warning
+message: "Bare `except:` also catches KeyboardInterrupt and SystemExit — use `except Exception:`"
+rule:
+  kind: except_clause
+  regex: '^except\s*:'
+files:
+  - "**/*.py"
+  - "!**/tests/**"
+  - "!**/test_*.py"
+  - "!**/*_test.py"
+note: |
+  A bare `except:` catches BaseException, which includes KeyboardInterrupt and
+  SystemExit. At runtime that means Ctrl-C and sys.exit() get swallowed by
+  ordinary error handling — a process that will not die on request, and a
+  shutdown path that silently does not shut down.
+
+  Use `except Exception:` to catch program errors, and name the exception when
+  you can. If you genuinely must catch BaseException, say it explicitly so the
+  intent is reviewable.

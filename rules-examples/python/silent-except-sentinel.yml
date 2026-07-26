@@ -1,0 +1,40 @@
+id: silent-except-sentinel
+language: python
+severity: warning
+message: "Exception converted to a falsy sentinel with no log or re-raise — the cause is destroyed"
+rule:
+  kind: except_clause
+  has:
+    kind: block
+    all:
+      - any:
+          - {has: {pattern: "return False"}}
+          - {has: {pattern: "return None"}}
+          - {has: {pattern: "return 0"}}
+          - {has: {pattern: "return []"}}
+          - {has: {pattern: "return {}"}}
+          - {has: {pattern: 'return ""'}}
+      - not: {has: {kind: expression_statement}}
+      - not: {has: {kind: raise_statement}}
+files:
+  - "**/*.py"
+  - "!**/tests/**"
+  - "!**/test_*.py"
+  - "!**/*_test.py"
+  - "!**/conftest.py"
+note: |
+  Returning a bare falsy value from an except handler collapses "it failed, and
+  here is why" into a value indistinguishable from a legitimate negative result.
+  The caller cannot branch on the cause, and the traceback is gone.
+
+  This is deliberately narrow: it fires only when the handler ALSO does not log
+  and does not re-raise. A handler that reports before returning is fine.
+
+  Fix by carrying the reason:
+    except OSError as exc:
+        logger.warning("probe failed: %s", exc)
+        return None                       # reported, then degraded
+    except OSError as exc:
+        raise ProbeError("probe failed") from exc
+  Or return a typed outcome (an enum / Result-like object) instead of a bool, so
+  "unsupported", "timed out" and "genuinely false" stay distinguishable.
