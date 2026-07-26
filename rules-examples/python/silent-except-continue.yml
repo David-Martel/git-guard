@@ -1,0 +1,42 @@
+id: silent-except-continue
+language: python
+severity: warning
+message: "Loop iteration skipped on error with no record — partial results look complete"
+rule:
+  kind: except_clause
+  has:
+    kind: block
+    all:
+      - has: {kind: continue_statement}
+      # Exempt only handlers that REPORT or RECORD the failure — see
+      # silent-except-sentinel.yml for why matching any expression_statement was
+      # wrong. `.append(...)` is in the allowlist deliberately: the note below
+      # recommends collecting failures, so that fix must not become a finding.
+      - not:
+          has:
+            kind: expression_statement
+            regex: '(?i)(\b(logger|logging|log|_log|_logger)\s*\.\s*\w+|\.\s*(debug|info|warn|warning|error|exception|critical)|\bprint|\bwarnings\s*\.\s*warn|\btraceback\s*\.\s*(print_exc|format_exc)|\bsys\s*\.\s*std(err|out)\s*\.\s*write|\.\s*(append|add|extend|insert|update|setdefault|add_note)|\b(capture_exception|report|record|emit)\w*)\s*\('
+      - not: {has: {kind: raise_statement}}
+  # `queue.Empty` / `TimeoutError` in a polling loop is not a failure being
+  # swallowed -- it is the loop's normal "nothing yet, go round again" signal.
+  # The upstream pyclarius gate carries the same exemption
+  # (EXPECTED_EMPTY_EXCEPTIONS). Without it this rule flags every idiomatic
+  # producer/consumer loop, and a rule that flags correct code gets turned off.
+  not:
+    regex: 'except\s+\(?\s*(queue\.)?(Empty|TimeoutError|asyncio\.TimeoutError)'
+files:
+  - "**/*.py"
+  - "!**/tests/**"
+  - "!**/test_*.py"
+  - "!**/*_test.py"
+note: |
+  Skipping the failed item without recording it makes a partial result
+  indistinguishable from a complete one. A batch that processed 3 of 500 inputs
+  returns successfully and nothing downstream can tell.
+
+  Fix by counting or collecting the failures:
+    except ValueError as exc:
+        logger.warning("skipping %s: %s", item, exc)
+        failures.append((item, exc))
+        continue
+  Then surface `failures` in the return value or fail loudly if it is non-empty.

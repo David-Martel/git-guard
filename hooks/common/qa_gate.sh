@@ -232,15 +232,51 @@ QA_RULE_CACHE="$QA_SELF_DIR/qa-rules"
 QA_SGCONFIG="$QA_RULE_CACHE/sgconfig.generated.yml"
 # The narrow BLOCK trio is matched inline in qa_astgrep_run's case statement
 # (avoid-static-mut / no-glob-reexport / unsafe-with-panic).
-# Panic-set ruleIds that stay WARN-ONLY even when astgrep=block (blocking every
-# .unwrap() across many repos would be a disaster). Matched by id prefix/keyword.
-# The deny-list is intentionally broad; some sub-patterns are subsumed by wider
-# ones (e.g. *unwrap* covers library-unwrap) — that redundancy is for readability.
+#
+# Panic-set classification. Historically this was a single `qa_is_panic_id` that
+# forced the WHOLE set to WARN-ONLY *unconditionally* — even for a repo that
+# explicitly set `astgrep=block`. The rules fired, carried `severity: error`, and
+# could never block anything, so "no unwrap() in production code" was advice, not
+# a gate. Keeping the account-wide DEFAULT at warn is right (blocking every
+# .unwrap() across dozens of legacy repos would brick commits); making it
+# *unreachable* was not. `astgrep_panics` (below) is the opt-in that lets a repo
+# which has done the cleanup actually hold the line.
+#
+# Sets QA_PCLASS rather than echoing, to stay spawn-free like qa_cfg:
+#   unconditional — panics EVERY time the line executes if the value isn't the
+#                   happy case; there is no input for which it is safe. This is
+#                   the class the "no unwrap" policy is actually about.
+#   heuristic     — panics only for SOME inputs, and a caller-side check can make
+#                   it genuinely unreachable (e.g. an index inside a region whose
+#                   length the caller already validated). Real code defends these
+#                   correctly often enough that blocking them account-wide would
+#                   punish correct work, so they need the stricter opt-in.
+#   ""            — not a panic-set rule at all.
 # shellcheck disable=SC2221,SC2222
-qa_is_panic_id() {
+qa_panic_class() {
   case "$1" in
-    *unwrap*|*panic*|*unreachable*|*unchecked*|*string-slice*|*try-into*|*match-arm*|*todo*|*expect*) return 0 ;;
-    *) return 1 ;;
+    # NOT a panic rule, despite matching the old `*expect*` glob: this one is
+    # about #[allow] vs #[expect] ATTRIBUTES. The fuzzy match silently made it
+    # un-blockable even under astgrep=block. Listed first so it wins.
+    prefer-expect-over-allow) QA_PCLASS="" ;;
+    # NOT a panic rule either. Its pattern is `let $VAR: [$TYPE; $SIZE] = $INIT;`
+    # — i.e. EVERY explicitly-typed fixed-size array declaration. Rust checks
+    # array length and element type at COMPILE time, so a mismatch is a build
+    # error, never a runtime panic; there is no panic condition to gate on. Left
+    # in the heuristic tier it made `astgrep_panics=strict` reject ordinary valid
+    # declarations like `let bytes: [u8; 4] = [0; 4];` (reproduced with
+    # ast-grep 0.27.3). Its own severity is `info`, which is the honest level.
+    fixed-size-init) QA_PCLASS="" ;;
+    unwrap-call|library-unwrap|avoid-unwrap|as-ref-unwrap|match-arm-unwrap|try-into-unwrap|expect-call|panic-macro|todo-macro|unimplemented-macro|unreachable-macro)
+      QA_PCLASS="unconditional" ;;
+    unchecked-index|unchecked-division|string-slice-panic|fixed-size-init)
+      QA_PCLASS="heuristic" ;;
+    # A newly added rule whose id looks panic-ish stays in the set, but lands in
+    # the conservative tier: adding a rule file must never silently start
+    # blocking commits in every repo that opted into `block`.
+    *unwrap*|*panic*|*unreachable*|*unchecked*|*string-slice*|*try-into*|*match-arm*|*todo*|*expect*)
+      QA_PCLASS="heuristic" ;;
+    *) QA_PCLASS="" ;;
   esac
 }
 
@@ -337,8 +373,11 @@ qa_check_nul() {
 # CHECK: ast-grep structural rules — ONE batched scan, classified by ruleId.
 #   - autofix (OPT-IN, default off): apply fixable rules, safe-restage.
 #   - BLOCK trio always blocks (unless astgrep=off).
-#   - panic-set ids WARN even in block mode; everything else WARN (or block if
-#     astgrep=block).
+#   - panic-set ids follow `astgrep_panics` (warn default | block = unconditional
+#     panics only | strict = the whole set) — INDEPENDENT of `astgrep`, so a repo
+#     can hold a hard no-unwrap line without blocking on every other style rule,
+#     or vice versa.
+#   - everything else WARN (or block if astgrep=block).
 # The rule cache validates each rule, so ruleDirs load cleanly in one process.
 # ast-grep's own `files:` globs handle per-language file targeting, so we pass
 # ALL staged source files and let the rules self-gate by language/path.
@@ -386,8 +425,21 @@ qa_astgrep_run() {
       *" avoid-static-mut "*|*" no-glob-reexport "*|*" unsafe-with-panic "*)
         qa_block "ast-grep rule '$rid' (BLOCK trio)." ;;
       *)
-        if qa_is_panic_id "$rid"; then
-          qa_warn "ast-grep panic-set '$rid' — consider ?/explicit handling (non-blocking)."
+        qa_panic_class "$rid"
+        if [ -n "$QA_PCLASS" ]; then
+          # Default `warn` keeps the account-wide anti-brick promise intact.
+          case "$(qa_cfg astgrep_panics warn)" in
+            strict)
+              qa_block "ast-grep panic-set '$rid' (astgrep_panics=strict)." ;;
+            block)
+              if [ "$QA_PCLASS" = "unconditional" ]; then
+                qa_block "ast-grep panic-set '$rid' — unconditional panic (astgrep_panics=block)."
+              else
+                qa_warn "ast-grep panic-set '$rid' — input-dependent panic; defend it or set astgrep_panics=strict to block."
+              fi ;;
+            *)
+              qa_warn "ast-grep panic-set '$rid' — consider ?/explicit handling (non-blocking)." ;;
+          esac
         elif [ "$master" = "block" ]; then
           qa_block "ast-grep rule '$rid'."
         else

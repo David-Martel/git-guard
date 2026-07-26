@@ -1,0 +1,57 @@
+id: silent-except-sentinel
+language: python
+severity: warning
+message: "Exception converted to a falsy sentinel with no log or re-raise — the cause is destroyed"
+rule:
+  kind: except_clause
+  has:
+    kind: block
+    all:
+      - any:
+          - {has: {pattern: "return False"}}
+          - {has: {pattern: "return None"}}
+          - {has: {pattern: "return 0"}}
+          - {has: {pattern: "return []"}}
+          - {has: {pattern: "return {}"}}
+          - {has: {pattern: 'return ""'}}
+      # A handler is exempt only when it actually REPORTS or RECORDS the failure.
+      # Matching ANY expression_statement was wrong: in
+      #     except OSError: cleanup(); return None
+      # `cleanup()` reports nothing, yet it satisfied the old predicate and
+      # suppressed the finding. Allowlist recognized logging/recording calls
+      # instead. Kept in sync with silent-except-pass.yml and
+      # silent-except-continue.yml — the same predicate governs all three.
+      - not:
+          has:
+            kind: expression_statement
+            regex: '(?i)(\b(logger|logging|log|_log|_logger)\s*\.\s*\w+|\.\s*(debug|info|warn|warning|error|exception|critical)|\bprint|\bwarnings\s*\.\s*warn|\btraceback\s*\.\s*(print_exc|format_exc)|\bsys\s*\.\s*std(err|out)\s*\.\s*write|\.\s*(append|add|extend|insert|update|setdefault|add_note)|\b(capture_exception|report|record|emit)\w*)\s*\('
+      - not: {has: {kind: raise_statement}}
+  # `queue.Empty` / `TimeoutError` in a polling loop is not a failure being
+  # swallowed -- it is the loop's normal "nothing yet, go round again" signal.
+  # The upstream pyclarius gate carries the same exemption
+  # (EXPECTED_EMPTY_EXCEPTIONS). Without it this rule flags every idiomatic
+  # producer/consumer loop, and a rule that flags correct code gets turned off.
+  not:
+    regex: 'except\s+\(?\s*(queue\.)?(Empty|TimeoutError|asyncio\.TimeoutError)'
+files:
+  - "**/*.py"
+  - "!**/tests/**"
+  - "!**/test_*.py"
+  - "!**/*_test.py"
+  - "!**/conftest.py"
+note: |
+  Returning a bare falsy value from an except handler collapses "it failed, and
+  here is why" into a value indistinguishable from a legitimate negative result.
+  The caller cannot branch on the cause, and the traceback is gone.
+
+  This is deliberately narrow: it fires only when the handler ALSO does not log
+  and does not re-raise. A handler that reports before returning is fine.
+
+  Fix by carrying the reason:
+    except OSError as exc:
+        logger.warning("probe failed: %s", exc)
+        return None                       # reported, then degraded
+    except OSError as exc:
+        raise ProbeError("probe failed") from exc
+  Or return a typed outcome (an enum / Result-like object) instead of a bool, so
+  "unsupported", "timed out" and "genuinely false" stay distinguishable.

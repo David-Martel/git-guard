@@ -1,0 +1,23 @@
+id: broad-suppress
+language: python
+severity: warning
+message: "contextlib.suppress(Exception) hides every error in the block, not one expected case"
+rule:
+  any:
+    - {pattern: "contextlib.suppress(Exception)"}
+    - {pattern: "suppress(Exception)"}
+    - {pattern: "contextlib.suppress(BaseException)"}
+    - {pattern: "suppress(BaseException)"}
+files:
+  - "**/*.py"
+  - "!**/tests/**"
+  - "!**/test_*.py"
+  - "!**/*_test.py"
+note: |
+  `suppress` is the right tool for ONE anticipated, uninteresting exception
+  (`suppress(FileNotFoundError)` around an unlink). Widened to `Exception` it
+  silently discards every failure in the block, including typos and programming
+  errors that would otherwise surface immediately.
+
+  Narrow it to the exception you actually expect. If several are expected, list
+  them: `suppress(FileNotFoundError, PermissionError)`.

@@ -5,6 +5,17 @@ language: rust
 rule:
   pattern: "match $EXPR {\n  $$$BEFORE\n  $PATTERN => $$$UNWRAP.unwrap(),\n  $$$AFTER\n\
     }\n"
+  # Unit tests live in `#[cfg(test)] mod tests` INSIDE the source file, so the
+  # `!**/tests/**` path glob cannot see them. Without this clause the rule reports
+  # test code as production risk: on vigil_device_resources that was 87 findings
+  # where only 1 was real, which is noise, not a gate.
+  not:
+    inside:
+      kind: mod_item
+      stopBy: end
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
 note: 'Ensure the match pattern guarantees the unwrap() will succeed,
 
   or use proper error handling instead.
