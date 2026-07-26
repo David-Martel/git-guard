@@ -4,6 +4,17 @@ severity: error
 language: rust
 rule:
   pattern: unreachable!($$$ARGS)
+  # Unit tests live in `#[cfg(test)] mod tests` INSIDE the source file, so the
+  # `!**/tests/**` path glob cannot see them. Without this clause the rule reports
+  # test code as production risk: on vigil_device_resources that was 87 findings
+  # where only 1 was real, which is noise, not a gate.
+  not:
+    inside:
+      kind: mod_item
+      stopBy: end
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
 note: 'Verify this is truly unreachable. If not, return an error:
 
   return Err(Error::UnexpectedState("$$$ARGS".into()))
