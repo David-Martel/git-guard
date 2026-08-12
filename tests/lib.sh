@@ -73,6 +73,14 @@ gg_is_windows() {
 # gate's internal scratch commits never prompt or fail.
 gg_mktemp_repo() {
   d="$(mktemp -d "${GG_T_TMPROOT:-/tmp}/gg.XXXXXX")" || return 1
+  # Neutralise the user's GLOBAL gitignore. Without this a machine-local
+  # core.excludesFile silently decides what a fixture can stage: on dtm-p1gen7
+  # ~/.config/git/ignore lists `.env`, so a `.env` fixture was never added to
+  # the index and the secret-scan case "passed" by scanning nothing. Same class
+  # of leak as run.sh pinning GIT_GUARD_RULES_DIR — the suite must assert on the
+  # tool, not on whoever's dotfiles happen to be installed.
+  ge="${GG_T_TMPROOT:-/tmp}/gg-empty-excludes"
+  : > "$ge" 2>/dev/null || ge=""
   (
     cd "$d" || exit 1
     git init -q
@@ -80,6 +88,8 @@ gg_mktemp_repo() {
     git config user.name  git-guard-tester
     git config commit.gpgsign false
     git config core.autocrlf false
+    [ -n "$ge" ] && git config core.excludesFile "$ge"
+    exit 0
   ) || return 1
   printf '%s' "$d"
 }

@@ -72,6 +72,7 @@ t_case_rule_integrity
 t_case_panic_set
 t_case_silent_failures
 t_case_attribution
+t_case_secret_scan
 "
 
 # Optional filtering: `git-guard test blockers warn` runs only those.
