@@ -64,5 +64,20 @@ t_case_attribution() {
     t_fail "blocked conflicting commit does not land"
   fi
 
+  printf 'variant conflict\n\nagent : CLAUDE\n' > "$r/variant-message"
+  (cd "$r" && CODEX_THREAD_ID=test-thread "$r/test-hooks/prepare-commit-msg" "$r/variant-message" >/dev/null 2>&1)
+  rc=$?
+  t_expect_rc 1 "$rc" "case and whitespace variant Agent trailer blocks"
+
+  printf 'mixed conflict\n\nAgent: claude\nAgent: codex\n' > "$r/mixed-message"
+  (cd "$r" && CODEX_THREAD_ID=test-thread "$r/test-hooks/prepare-commit-msg" "$r/mixed-message" >/dev/null 2>&1)
+  rc=$?
+  t_expect_rc 1 "$rc" "any conflicting Agent trailer blocks even when Codex is last"
+  if grep -q '^Co-authored-by: Codex ' "$r/mixed-message"; then
+    t_fail "blocked mixed attribution is not partially rewritten"
+  else
+    t_ok "blocked mixed attribution is not partially rewritten"
+  fi
+
   gg_rmrepo "$r"
 }

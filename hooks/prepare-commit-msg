@@ -30,17 +30,36 @@ if [ "$is_codex" != "1" ]; then
   exit 0
 fi
 
-# Inspect exact trailer-shaped lines as well as Git's parsed trailer block.
-# Multiple `git commit -m` paragraphs can place a blank line between trailers,
-# which makes an existing Agent line invisible to `interpret-trailers --parse`.
-existing_agent="$(sed -n 's/^Agent:[[:space:]]*//p' "$message_file" | tail -n 1)"
-if [ -n "$existing_agent" ] && [ "$existing_agent" != "codex" ]; then
-  printf 'git-guard prepare-commit-msg: conflicting Agent trailer: %s\n' "$existing_agent" >&2
+# Inspect every trailer-shaped Agent line, including case and whitespace forms
+# Git accepts. Multiple `git commit -m` paragraphs can put blank lines between
+# trailers, so checking only `interpret-trailers --parse` is insufficient.
+agent_state="$(awk '
+  BEGIN { count = 0; conflict = "" }
+  {
+    line = $0
+    lower = tolower(line)
+    if (lower ~ /^agent[[:space:]]*:/) {
+      sub(/^[^:]*:[[:space:]]*/, "", line)
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      count++
+      if (tolower(line) != "codex" && conflict == "") {
+        conflict = (line == "" ? "<empty>" : line)
+      }
+    }
+  }
+  END { printf "%d\n%s\n", count, conflict }
+' "$message_file")"
+agent_count="$(printf '%s\n' "$agent_state" | sed -n '1p')"
+conflicting_agent="$(printf '%s\n' "$agent_state" | sed -n '2p')"
+
+if [ -n "$conflicting_agent" ]; then
+  printf 'git-guard prepare-commit-msg: conflicting Agent trailer: %s\n' "$conflicting_agent" >&2
   printf 'Set GIT_GUARD=0 only for an intentional human emergency commit.\n' >&2
   exit 1
 fi
 
-if [ -z "$existing_agent" ]; then
+if [ "$agent_count" = "0" ]; then
   git interpret-trailers --in-place \
     --if-exists doNothing \
     --if-missing add \
