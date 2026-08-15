@@ -222,9 +222,15 @@ scan_match() {
   if printf '%s' "$line" | grep -Eq 'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.'; then
     echo "JWT"; return 0
   fi
-  # PEM private key header. Use -e/-- so the leading '-' is not parsed as an
-  # option by grep.
-  if printf '%s' "$line" | grep -Eq -e '-----BEGIN ([A-Z]+ )?PRIVATE KEY-----'; then
+  # PEM private key header. The leading '-' must not be parsed as an option, and
+  # `-e` is NOT a portable way to achieve that: uutils grep (increasingly common
+  # on PATH via ~/bin coreutils shims) rejects `-e` outright, so this test errored
+  # on every line and the detector FAILED OPEN — demonstrated 2026-08-15 by
+  # committing an OPENSSH PRIVATE KEY successfully with uutils grep ahead of GNU
+  # grep, while the AWS detector on the next lines still blocked correctly.
+  # Bracketing the first dash makes the pattern not start with '-' at all, which
+  # needs no flag and is verified matching under BOTH greps.
+  if printf '%s' "$line" | grep -Eq '[-]----BEGIN ([A-Z]+ )?PRIVATE KEY-----'; then
     echo "private key"; return 0
   fi
 
