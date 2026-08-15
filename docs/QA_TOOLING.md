@@ -148,7 +148,13 @@ source `.yml` is newer than the cache stamp `qa-rules/.built-from` (a `find
 
 ### Classification (which rule blocks)
 - **BLOCK trio** (by ruleId): `avoid-static-mut`, `no-glob-reexport`,
-  `unsafe-with-panic`. Precedent: `~/.claude/hooks/rust-pre-commit.sh:44-46`.
+  `unsafe-with-panic`. Precedent: the same three-rule loop in
+  `~/.claude/hooks/rust-pre-commit.sh` (cited by rule name, not line number —
+  the previous `:44-46` reference silently went stale when that file gained a
+  status header and the loop shifted to 66-68). Note that hook is **reference
+  material only**: it installs to `.git/hooks/pre-commit`, which a global
+  `core.hooksPath` pointing here overrides in every repo, so it never runs.
+  It is the *origin* of this trio, not a second enforcement path.
 - **Panic-set → governed by `astgrep_panics`, independent of `astgrep`.**
   Blocking every `.unwrap()` across 40 repos by default would be a disaster, so
   the default stays `warn`. But it used to be *unconditionally* warn-only — a
