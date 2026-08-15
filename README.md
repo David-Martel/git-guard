@@ -107,6 +107,7 @@ shell.shellcheck=off
 git-guard/
 ├── hooks/                 drop-in for a global core.hooksPath
 │   ├── pre-commit         compose: secret-scan → nul → qa_gate → warnings → downstream
+│   ├── prepare-commit-msg deterministic Codex attribution trailers
 │   ├── post-commit        landed-SHA feedback (verify before any reset)
 │   ├── pre-push           optional downstream chaining
 │   └── common/            the engine
@@ -150,6 +151,13 @@ sh bin/git-guard-run gate /path/to/repo  # run the gate against a repo's staged 
 | `GIT_GUARD_BACKEND` | force `docker` \| `wsl` \| `native` (skips auto-detection) |
 | `GIT_GUARD_RULES_DIR` | overlay a private rules dir (mounted `:ro` at `/rules` for Docker) |
 | `GIT_GUARD_IMAGE` | Docker image tag to build/use (default `git-guard:local`) |
+| `GIT_GUARD_AGENT` | explicit commit agent (`codex` enables Codex attribution) |
+
+The `prepare-commit-msg` hook also detects Codex through `CODEX_THREAD_ID` and
+adds `Agent: codex` plus Codex's stable `noreply` co-author trailer. Existing
+matching trailers are not duplicated, and a conflicting `Agent:` trailer blocks
+the commit. `GIT_GUARD=0` is the hook's explicit emergency-human bypass; routine
+agent work must not use it.
 
 Auto-detection: Docker is used when `docker info` succeeds; otherwise on Windows
 WSL is tried (`wsl.exe bash …`); otherwise the local POSIX shell runs it. The

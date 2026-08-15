@@ -19,3 +19,6 @@ hooks/common/qa-gate.conf.local
 .DS_Store
 Thumbs.db
 *~
+
+# In-repository agent worktrees (kept local and removed after merge).
+worktrees/

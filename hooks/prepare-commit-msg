@@ -1,0 +1,74 @@
+#!/bin/sh
+# Deterministically attribute commits created by OpenAI Codex.
+#
+# Git always runs prepare-commit-msg, even with --no-verify. A human who must
+# make an emergency commit can bypass this hook explicitly with GIT_GUARD=0.
+
+set -u
+
+if [ "${GIT_GUARD:-1}" = "0" ]; then
+  exit 0
+fi
+
+message_file="${1:-}"
+if [ -z "$message_file" ] || [ ! -f "$message_file" ]; then
+  printf 'git-guard prepare-commit-msg: commit message file is missing\n' >&2
+  exit 1
+fi
+
+# An explicit agent selector takes precedence. Otherwise, CODEX_THREAD_ID is
+# the stable process-level signal exported by Codex CLI sessions.
+case "${GIT_GUARD_AGENT:-}" in
+  codex) is_codex=1 ;;
+  "")
+    if [ -n "${CODEX_THREAD_ID:-}" ]; then is_codex=1; else is_codex=0; fi
+    ;;
+  *) is_codex=0 ;;
+esac
+
+if [ "$is_codex" != "1" ]; then
+  exit 0
+fi
+
+# Inspect every trailer-shaped Agent line, including case and whitespace forms
+# Git accepts. Multiple `git commit -m` paragraphs can put blank lines between
+# trailers, so checking only `interpret-trailers --parse` is insufficient.
+agent_state="$(awk '
+  BEGIN { count = 0; conflict = "" }
+  {
+    line = $0
+    lower = tolower(line)
+    if (lower ~ /^agent[[:space:]]*:/) {
+      sub(/^[^:]*:[[:space:]]*/, "", line)
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      count++
+      if (tolower(line) != "codex" && conflict == "") {
+        conflict = (line == "" ? "<empty>" : line)
+      }
+    }
+  }
+  END { printf "%d\n%s\n", count, conflict }
+' "$message_file")"
+agent_count="$(printf '%s\n' "$agent_state" | sed -n '1p')"
+conflicting_agent="$(printf '%s\n' "$agent_state" | sed -n '2p')"
+
+if [ -n "$conflicting_agent" ]; then
+  printf 'git-guard prepare-commit-msg: conflicting Agent trailer: %s\n' "$conflicting_agent" >&2
+  printf 'Set GIT_GUARD=0 only for an intentional human emergency commit.\n' >&2
+  exit 1
+fi
+
+if [ "$agent_count" = "0" ]; then
+  git interpret-trailers --in-place \
+    --if-exists doNothing \
+    --if-missing add \
+    --trailer 'Agent: codex' \
+    "$message_file" || exit $?
+fi
+
+git interpret-trailers --in-place \
+  --if-exists addIfDifferent \
+  --if-missing add \
+  --trailer 'Co-authored-by: Codex <codex@users.noreply.github.com>' \
+  "$message_file"
