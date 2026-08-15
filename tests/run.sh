@@ -37,6 +37,17 @@ export PYTHONHOME=
 # Per-suite temp root, cleaned on exit (covers any repo a case forgot to remove).
 GG_T_TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/git-guard-tests.XXXXXX")"
 export GG_T_TMPROOT
+
+# Isolate the validated rule cache for the suite. Pinning GIT_GUARD_RULES_DIR
+# above is only half the job: the cache qa_gate builds from it is MACHINE-GLOBAL
+# (hooks/common/qa-rules/), so without this the suite rebuilt the live cache from
+# rules-examples and left it that way. The next real commit in ANY repo on the
+# machine then ran the bundled rules instead of the user's own overlay.
+#
+# On 2026-08-15 that shipped a stale destructive autofix into a real commit and
+# corrupted a source file. Running the tests must not change what the next commit
+# checks — so the cache goes in the per-suite temp root and dies with it.
+export GIT_GUARD_RULE_CACHE="$GG_T_TMPROOT/qa-rules"
 # shellcheck disable=SC2064  # expand GG_T_TMPROOT now (trap fires after vars may change)
 trap "rm -rf \"$GG_T_TMPROOT\"" EXIT INT TERM
 
@@ -73,7 +84,41 @@ t_case_panic_set
 t_case_silent_failures
 t_case_attribution
 t_case_secret_scan
+t_case_cache_staleness
+t_case_powershell
 "
+
+# --- ORPHAN GUARD: every defined case must be listed above -------------------
+# The list is hand-ordered on purpose (cheap structural cases first), but that
+# makes adding a tests/*.t.sh file a TWO-step operation: the loop above sources
+# it, yet it never runs until its function name is added here. Both halves look
+# fine in isolation, and the suite still prints a green total — it just silently
+# tests less than it appears to.
+#
+# Observed 2026-08-15: tests/11-cache-staleness.t.sh and tests/12-powershell.t.sh
+# were sourced and skipped for a full run, which reported an unchanged "91 passed"
+# while 9 new assertions never executed. A suite that quietly shrinks is the same
+# failure shape the suite exists to catch, so make the omission loud.
+gg_orphan_cases=""
+for cf in "$GG_TESTS_DIR"/*.t.sh; do
+  [ -f "$cf" ] || continue
+  # Case functions are declared at column 0 as `t_case_<name>() {`.
+  for fn in $(sed -n 's/^\(t_case_[A-Za-z0-9_]*\)().*/\1/p' "$cf"); do
+    case "
+$GG_CASES" in
+      *"
+$fn
+"*) : ;;
+      *) gg_orphan_cases="$gg_orphan_cases $fn($(basename "$cf"))" ;;
+    esac
+  done
+done
+if [ -n "$gg_orphan_cases" ]; then
+  printf '\n  [FAIL] test case(s) defined but NOT in GG_CASES — they would never run:\n' >&2
+  for o in $gg_orphan_cases; do printf '           %s\n' "$o" >&2; done
+  printf '         Add them to the GG_CASES list in tests/run.sh.\n\n' >&2
+  GG_T_FAIL=$((GG_T_FAIL + 1))
+fi
 
 # Optional filtering: `git-guard test blockers warn` runs only those.
 run_one() {

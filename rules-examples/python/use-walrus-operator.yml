@@ -2,12 +2,39 @@ id: use-walrus-operator
 language: Python
 severity: info
 message: "Consider using walrus operator (:=) for cleaner code"
+# ADVISORY ONLY -- the `fix:` was REMOVED 2026-08-15 because it silently destroyed
+# program semantics. (The same removal was made in the private corpus on 2026-08-04;
+# this bundled copy was missed, and that gap is what made it fire again -- see below.)
+#
+# It paired this pattern:            with this replacement:
+#     if $COND:                          if ($VAR := $EXPR):
+#         $VAR = $EXPR                       $$$BODY
+#         $$$BODY
+#
+# which DISCARDS $COND and substitutes the assignment as the new condition. Any `if`
+# block whose first statement is an assignment was rewritten into a different program,
+# and because the assigned value is usually truthy the branch then always ran. The
+# result is syntactically valid Python, so formatters and linters stay green.
+#
+# Observed 2026-08-15 on a real commit, in the file whose job is to catch broken rules:
+#     if line.startswith("ruleDirs:"):        ->  if (in_block := True):
+#         in_block = True                             continue
+#         continue
+# That made the config parser return zero rule dirs. severity:info made it look harmless.
+#
+# HOW A FIXED RULE STILL FIRED: tests/run.sh exports GIT_GUARD_RULES_DIR to this
+# bundled directory, but the validated rule cache (hooks/common/qa-rules/) is
+# machine-global. Running the test suite therefore repointed the live commit gate at
+# these bundled rules, so a stale copy here reached a real commit in another repo.
+#
+# The genuine walrus idiom is the OPPOSITE shape -- assign, then test that same variable
+# (`x = f()` / `if x:` -> `if (x := f()):`). Matching that safely needs the pattern to
+# bind the SAME $VAR in both positions; until such a rule is written and proven with a
+# fixture, this stays advisory. Do NOT restore a `fix:` here without one.
 rule:
   pattern: |
     if $COND:
         $VAR = $EXPR
         $$$BODY
-fix: |
-  if ($VAR := $EXPR):
-      $$$BODY
-note: "Python 3.8+ assignment expression - assigns and returns in one operation"
+fix: null
+note: "Python 3.8+ assignment expression - assigns and returns in one operation. Advisory only: no autofix (see comment above)."

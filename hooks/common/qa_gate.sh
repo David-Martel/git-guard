@@ -244,7 +244,20 @@ QA_SG=""
 # via `sg --version` before trusting it; otherwise fall back to `ast-grep`.
 if have sg && sg --version 2>/dev/null | grep -qi 'ast-grep'; then QA_SG="sg"
 elif have ast-grep && ast-grep --version 2>/dev/null | grep -qi 'ast-grep'; then QA_SG="ast-grep"; fi
-QA_RULE_CACHE="$QA_SELF_DIR/qa-rules"
+# The validated rule cache is MACHINE-GLOBAL by default: one directory shared by
+# every repo whose commits this account-wide hook gates. That is deliberate (the
+# rebuild is expensive, so it should be amortised), but it makes the cache a
+# shared mutable resource, and anything that rebuilds it from a DIFFERENT rules
+# dir silently changes what the next commit in every other repo checks.
+#
+# That is not hypothetical. tests/run.sh exports GIT_GUARD_RULES_DIR to the
+# bundled rules-examples so the suite is overlay-proof; because the cache was
+# unconditionally shared, running the suite repointed the live gate at the
+# bundled rules. On 2026-08-15 that delivered a stale destructive autofix
+# (use-walrus-operator) into a real commit in another repo, corrupting a source
+# file. GIT_GUARD_RULE_CACHE lets a caller that overrides the rules dir also
+# isolate the cache, so testing cannot mutate machine state.
+QA_RULE_CACHE="${GIT_GUARD_RULE_CACHE:-$QA_SELF_DIR/qa-rules}"
 # The EFFECTIVE sgconfig is GENERATED at runtime with ABSOLUTE ruleDirs (see
 # qa_write_sgconfig). ast-grep resolves `ruleDirs` relative to the scan CWD (the
 # target repo), NOT the sgconfig's own location — so a committed sgconfig with
@@ -636,9 +649,109 @@ qa_check_csharp() {
 }
 
 # ----------------------------------------------------------------------------
-# CHECK: PowerShell — covered by the batched ast-grep scan (qa_astgrep_run);
-# the powershell/ rule dir self-gates to *.ps1 via each rule's `language` field.
-# (No separate function needed; kept as a no-op note for the check inventory.)
+# CHECK: PowerShell — PSScriptAnalyzer (warn), with a narrow security BLOCK set.
+#
+# This replaces a comment that claimed PowerShell was "covered by the batched
+# ast-grep scan" because "the powershell/ rule dir self-gates to *.ps1 via each
+# rule's `language` field". It does not, and it never did:
+#
+#   - ast-grep has NO PowerShell grammar. Rules declaring `language: powershell`
+#     fail to parse and are validated OUT of the rule cache entirely.
+#   - The surviving rules use a `language: bash # PowerShell` workaround, which
+#     gates them to *bash* files. A .ps1 is not a bash file, so they never match.
+#
+# Measured 2026-08-15: a .ps1 containing BOTH `Invoke-Expression $payload` and
+# `iex $payload` produced ZERO findings from no-invoke-expression.yml — a rule
+# carrying `severity: error` and the message "critical security vulnerability
+# and is blocked". It blocked nothing, and the comment above asserted otherwise,
+# so nothing ever reported the gap. Same class as a check that cannot report
+# "I did not run".
+#
+# PSScriptAnalyzer flags all of it on the same fixture (PSAvoidUsingInvokeExpression
+# x2, PSAvoidUsingCmdletAliases for the `iex` alias, PSAvoidUsingWriteHost).
+# ~1.7s via pwsh (4.8s via Windows PowerShell 5.1 — prefer pwsh), and only when
+# PowerShell files are actually staged.
+# ----------------------------------------------------------------------------
+qa_check_powershell() {
+  files="$(qa_staged_match '\.(ps1|psm1|psd1)$')"
+  [ -n "$files" ] || return 0
+  mode="$(qa_cfg powershell.psscriptanalyzer warn)"
+  [ "$mode" = "off" ] && return 0
+
+  # Prefer pwsh (fast, cross-platform); fall back to Windows PowerShell.
+  _ps=""
+  if have pwsh; then _ps="pwsh"
+  elif have powershell; then _ps="powershell"
+  else qa_dbg "no pwsh/powershell -> PSScriptAnalyzer skipped"; return 0; fi
+
+  # Severability: a clone without the module must degrade to a no-op, not a
+  # false green. qa_dbg records WHY, so "skipped" is distinguishable from "clean".
+  if ! "$_ps" -NoLogo -NoProfile -NonInteractive \
+        -c "if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) { exit 3 }" >/dev/null 2>&1; then
+    qa_dbg "PSScriptAnalyzer module absent -> PowerShell check skipped"
+    return 0
+  fi
+
+  _out="/tmp/qa_pssa.$$"
+  _lst="/tmp/qa_pssa_files.$$"
+  # Pass the file list through a FILE, not string interpolation into the -c
+  # payload: paths here routinely contain spaces, and a shell loop building a
+  # PowerShell array literal inside a double-quoted -c argument has to survive
+  # two levels of quoting. One mis-escape silently scans nothing and reports
+  # clean — the exact failure mode this whole check exists to remove.
+  printf '%s\n' "$files" > "$_lst"
+  # pwsh is a NATIVE binary and cannot open a POSIX path — exactly the hazard
+  # already documented for ast-grep in qa_write_sgconfig. Passing "/tmp/qa_pssa_files.N"
+  # makes Get-Content fail, the scan produce nothing, and the check report CLEAN
+  # on a file containing Invoke-Expression. Caught by this check's own positive
+  # control before it shipped, which is the entire argument for having one.
+  _lst_native="$_lst"
+  if command -v cygpath >/dev/null 2>&1; then
+    _lst_native="$(cygpath -m "$_lst" 2>/dev/null || printf '%s' "$_lst")"
+  fi
+  # Run the payload from a FILE via -File, never inline via -c. An inline payload
+  # crosses the bash->PowerShell quoting boundary, and PowerShell's own sigils
+  # ($_, $paths) do not survive it intact: the -c form silently reported ZERO
+  # findings on a .ps1 containing Invoke-Expression, while the byte-identical
+  # payload run with -File reported PSAvoidUsingInvokeExpression correctly.
+  # A scan that returns nothing is indistinguishable from a clean file, so this
+  # would have shipped as another gate that cannot report "I did not run".
+  # Same lesson as composing commit messages with a file rather than a heredoc.
+  _pl="/tmp/qa_pssa_payload.$$.ps1"
+  {
+    printf '%s\n' '$ErrorActionPreference = "Stop"'
+    printf '$list = Get-Content -LiteralPath "%s" | Where-Object { $_ -ne "" }\n' "$_lst_native"
+    printf '%s\n' '$paths = $list | Where-Object { Test-Path -LiteralPath $_ }'
+    printf '%s\n' 'if (-not $paths) { exit 0 }'
+    printf '%s\n' 'Invoke-ScriptAnalyzer -Path $paths -Severity Error,Warning |'
+    printf '%s\n' '  ForEach-Object { "{0}|{1}|{2}|{3}" -f $_.RuleName, $_.Severity, $_.ScriptName, $_.Line }'
+  } > "$_pl"
+  _pl_native="$_pl"
+  if command -v cygpath >/dev/null 2>&1; then
+    _pl_native="$(cygpath -m "$_pl" 2>/dev/null || printf '%s' "$_pl")"
+  fi
+  ( cd "$REPO_ROOT" && "$_ps" -NoLogo -NoProfile -NonInteractive -File "$_pl_native" ) > "$_out" 2>/dev/null
+  rm -f "$_lst" "$_pl"
+  qa_dbg "PSScriptAnalyzer: $(wc -l < "$_out" 2>/dev/null | tr -d ' ') finding(s) across $(printf '%s\n' "$files" | wc -l | tr -d ' ') staged file(s)"
+
+  # The security subset always blocks (unless the check is off) — mirrors the
+  # narrow ast-grep BLOCK trio. These are the RCE / plaintext-credential rules;
+  # they are near-zero-false-positive, which is the bar for blocking here.
+  _sec="$(grep -E '^(PSAvoidUsingInvokeExpression|PSAvoidUsingPlainTextForPassword|PSAvoidUsingConvertToSecureStringWithPlainText|PSAvoidUsingUserNameAndPasswordParams)\|' "$_out" 2>/dev/null)"
+  if [ -n "$_sec" ]; then
+    qa_block "PowerShell security findings (PSScriptAnalyzer):"
+    printf '%s\n' "$_sec" | head -20 >&2
+  elif [ -s "$_out" ]; then
+    if [ "$mode" = "block" ]; then
+      qa_block "PSScriptAnalyzer findings."
+      head -20 "$_out" >&2 2>/dev/null || true
+    else
+      qa_warn "PSScriptAnalyzer findings (non-blocking): $(wc -l < "$_out" | tr -d ' ') in $(printf '%s\n' "$files" | wc -l | tr -d ' ') file(s)."
+      [ "$QA_DEBUG" = "1" ] && head -20 "$_out" >&2
+    fi
+  fi
+  rm -f "$_out"
+}
 
 # ----------------------------------------------------------------------------
 # CHECK: structured-data validation (json block, yaml warn) — cheap, real.
@@ -714,6 +827,7 @@ qa_main() {
   qa_check_python
   qa_check_rust
   qa_check_csharp
+  qa_check_powershell
 
   # ast-grep: ONE batched scan over core/security/rust/csharp/powershell rules.
   # Rules self-gate by language via their `language:`/`files:` fields. Trio

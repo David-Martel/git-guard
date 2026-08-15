@@ -1,0 +1,33 @@
+id: try-from-unwrap
+message: try_from(...).unwrap() can panic - use ? and keep the explicit type
+severity: error
+language: rust
+rule:
+  all:
+  - pattern: $TYPE::try_from($EXPR).unwrap()
+  # DETECTION ONLY, deliberately. Split out of try-into-unwrap.yml on 2026-08-15,
+  # where this pattern shared that rule's `fix: $EXPR.try_into()?` and therefore
+  # dropped $TYPE -- turning an explicitly-typed conversion into an inference-
+  # dependent one that either fails to compile or silently picks a different
+  # integer type with different overflow behaviour.
+  #
+  # The mechanically-correct rewrite would be `$TYPE::try_from($EXPR)?`, but that
+  # is only valid where the enclosing function returns a compatible Result, and
+  # ast-grep cannot see the return type. A fix that cannot be expressed
+  # mechanically declares `fix: null` rather than shipping an approximation.
+  #
+  # Same cfg(test) exemption as try-into-unwrap: unit tests live in an in-file
+  # `#[cfg(test)] mod tests`, which the `!**/tests/**` path glob cannot see.
+  not:
+    inside:
+      kind: mod_item
+      stopBy: end
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
+fix: null
+note: |
+  Rewrite by hand, keeping the target type explicit:
+    Before: let n = u32::try_from(len).unwrap();
+    After:  let n = u32::try_from(len)?;              // fn returns Result
+    Or:     let n = u32::try_from(len).unwrap_or(0);  // explicit fallback

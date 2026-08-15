@@ -5,7 +5,10 @@ language: rust
 rule:
   any:
   - pattern: $ARRAY[$INDEX]
-  - pattern: $VEC[$INDEX]
+  # `- pattern: $VEC[$INDEX]` REMOVED 2026-08-15: structurally identical to the line
+  # above (both match any expression followed by a subscript), so it never matched
+  # independently, but it bound a metavar the `fix:` does not re-emit -- the signature
+  # of the dropped-metavar corruption class. Verified harmless before removal.
   # Unit tests live in `#[cfg(test)] mod tests` INSIDE the source file, so the
   # `!**/tests/**` path glob cannot see them. Without this clause the rule reports
   # test code as production risk: on vigil_device_resources that was 87 findings
