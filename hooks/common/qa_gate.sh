@@ -309,10 +309,20 @@ qa_refresh_rule_cache() {
   [ -n "$QA_SG" ] || return 0
   src="$QA_RULES_DIR"
   [ -d "$src" ] || return 0
-  # Stamp marks the source mtime the cache was built from.
+  # Stamp records BOTH the source mtime (the file's own mtime) and the source
+  # PATH (its contents). The path half matters: the cache is keyed only by mtime
+  # otherwise, so pointing QA_RULES_DIR at a DIFFERENT rules tree whose files are
+  # older than the stamp reused the previous tree's cache silently — the gate
+  # then scanned with rules the caller never selected. Observed 2026-08-12 on
+  # dtm-p1gen7: a cache built from ~/.claude/rules (70 rules) survived a switch
+  # to rules-examples (56), so the bundled panic/silent-failure rules never
+  # loaded and their gate checks stopped firing. A stamp written by an older
+  # git-guard is empty, so it mismatches and forces exactly one rebuild.
   stamp="$QA_RULE_CACHE/.built-from"
+  stamp_src=""
+  [ -f "$stamp" ] && stamp_src="$(cat "$stamp" 2>/dev/null)"
   newest="$("$QA_FIND" "$src" -name '*.yml' -newer "$stamp" -print 2>/dev/null | head -n1)"
-  if [ -d "$QA_RULE_CACHE" ] && [ -f "$stamp" ] && [ -z "$newest" ]; then
+  if [ -d "$QA_RULE_CACHE" ] && [ -f "$stamp" ] && [ -z "$newest" ] && [ "$stamp_src" = "$src" ]; then
     [ -f "$QA_SGCONFIG" ] || qa_write_sgconfig   # ensure the generated sgconfig exists
     return 0   # cache fresh
   fi
@@ -340,7 +350,8 @@ qa_refresh_rule_cache() {
   if [ "$_src_rules" -gt 0 ] && [ "$_copied" -eq 0 ]; then
     qa_warn "ast-grep rule cache built EMPTY ($_src_rules source rules, 0 validated) — not stamping; will retry next commit."
   else
-    : > "$stamp"
+    # Record the source PATH, not just an mtime — see the staleness check above.
+    printf '%s\n' "$src" > "$stamp"
   fi
 }
 
