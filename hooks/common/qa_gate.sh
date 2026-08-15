@@ -190,6 +190,28 @@ elif have gfind; then QA_FIND="$(command -v gfind)"
 elif have find; then QA_FIND="$(command -v find)"
 fi
 
+# Does $QA_FIND actually support the `-name X -newer Y` predicate combination the
+# rule-cache staleness check depends on? uutils find (common on PATH via a ~/bin
+# coreutils shim) rejects it with "the argument '--name <PATTERN>' cannot be used
+# multiple times". That failure is INVISIBLE at the call site, which discards
+# stderr: the query yields no output, "no files newer than the stamp" is
+# indistinguishable from "the query never ran", and the cache is then treated as
+# fresh FOREVER — silently enforcing stale rules. Probe once, here, so the
+# staleness check can fail SAFE (rebuild) instead of fail FRESH (skip).
+QA_FIND_OK=0
+_qa_ft="$(mktemp -d 2>/dev/null)" || _qa_ft=""
+if [ -n "$_qa_ft" ]; then
+  : > "$_qa_ft/stamp"
+  : > "$_qa_ft/probe.yml"
+  # Make probe.yml strictly newer than stamp regardless of filesystem timestamp
+  # granularity (FAT/ReFS can share an mtime for files created in the same tick).
+  touch -t 202001010000 "$_qa_ft/stamp" 2>/dev/null
+  if [ "$("$QA_FIND" "$_qa_ft" -name '*.yml' -newer "$_qa_ft/stamp" -print 2>/dev/null | wc -l)" -eq 1 ]; then
+    QA_FIND_OK=1
+  fi
+  rm -rf "$_qa_ft"
+fi
+
 # Resolve a Python interpreter ONCE: prefer `python`, fall back to `python3`.
 # Debian/Ubuntu (and the slim Docker base) ship only `python3`, so hardcoding
 # `python` would silently no-op the JSON/YAML validation (a default BLOCK check)
@@ -321,11 +343,26 @@ qa_refresh_rule_cache() {
   stamp="$QA_RULE_CACHE/.built-from"
   stamp_src=""
   [ -f "$stamp" ] && stamp_src="$(cat "$stamp" 2>/dev/null)"
-  newest="$("$QA_FIND" "$src" -name '*.yml' -newer "$stamp" -print 2>/dev/null | head -n1)"
+  # FAIL SAFE, NOT FRESH: only a find we have PROVEN can answer this question is
+  # allowed to certify the cache as up to date. If the probe above failed, treat
+  # the cache as stale and rebuild — an unnecessary rebuild costs ~30s once,
+  # whereas wrongly certifying freshness enforces stale rules indefinitely with
+  # no symptom. Same fail-open class as the `grep -e` PEM hole (git-guard#10).
+  if [ "$QA_FIND_OK" = "1" ]; then
+    newest="$("$QA_FIND" "$src" -name '*.yml' -newer "$stamp" -print 2>/dev/null | head -n1)"
+  else
+    newest="__find_unusable__"
+  fi
   if [ -d "$QA_RULE_CACHE" ] && [ -f "$stamp" ] && [ -z "$newest" ] && [ "$stamp_src" = "$src" ]; then
     [ -f "$QA_SGCONFIG" ] || qa_write_sgconfig   # ensure the generated sgconfig exists
     return 0   # cache fresh
   fi
+  # A cold rebuild spawns one `sg scan --rule` per rule file (~70 files, ~30s on
+  # Windows). That is silent, so it reads as a HANG and invites a GIT_GUARD=0
+  # bypass — which is exactly what it caused on 2026-08-15. Announce it on stderr
+  # (not via qa_dbg, which needs QA_DEBUG=1) so the pause is legible as progress.
+  printf '%s\n' "git-guard: ast-grep rule cache is stale — revalidating rules (one-time, ~30s)…" >&2
+  [ "$QA_FIND_OK" = "1" ] || qa_warn "'$QA_FIND' cannot evaluate '-name X -newer Y'; rebuilding cache unconditionally (safe but slower). Install GNU findutils to restore incremental caching."
   qa_dbg "rebuilding ast-grep rule cache"
   rm -rf "$QA_RULE_CACHE"; mkdir -p "$QA_RULE_CACHE"
   _src_rules=0; _copied=0
