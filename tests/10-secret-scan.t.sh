@@ -159,5 +159,25 @@ t_case_secret_scan() {
   _ss_allows "ordinary code with no credential keys" "main.rs" \
     'fn main() { println!("hello"); }'
 
+  # ---- portability: no `grep -e` anywhere in the scanner --------------------
+  # The "PEM private key header" case above passed for months while the detector
+  # was FAILING OPEN in the field: it used `grep -Eq -e PATTERN` (needed only
+  # because the pattern starts with '-'), and uutils grep — common on PATH via a
+  # ~/bin coreutils shim — rejects `-e`. The behavioural test could not see it
+  # because the suite runs wherever GNU grep wins the PATH. Proven 2026-08-15 by
+  # committing an OPENSSH PRIVATE KEY with uutils grep ahead of GNU grep while the
+  # AWS detector still blocked.
+  #
+  # So assert the STRUCTURE, not just the behaviour: a leading-'-' pattern must be
+  # written with a bracket ('[-]----BEGIN'), which needs no flag and works on both.
+  # Match only real invocations: a non-comment line calling grep with a standalone
+  # -e argument. (`sed -e` is fine — sed accepts it everywhere.)
+  if grep -Eq '^[[:space:]]*[^#]*[^a-z]grep[^|;]*[[:space:]]-e[[:space:]]' \
+       "$GG_ROOT/hooks/common/secret_scan.sh" 2>/dev/null; then
+    t_fail "portability: secret_scan.sh must not use 'grep -e' (uutils grep rejects it; bracket the leading dash instead)"
+  else
+    t_ok "portability: no 'grep -e' in secret_scan.sh"
+  fi
+
   return 0
 }
