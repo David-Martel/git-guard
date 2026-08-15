@@ -34,4 +34,62 @@ t_case_rule_integrity() {
   else
     t_fail "$bad of $total bundled rules failed to parse"
   fi
+
+  # --- no autofix may DROP a metavariable its own rule captures ---------------
+  # Parsing is not enough: a rule can parse, load, fire, AND still destroy code.
+  # use-walrus-operator.yml paired `if $COND: $VAR = $EXPR` with
+  # `if ($VAR := $EXPR):`, discarding $COND so the assignment became the
+  # condition. Removed from the private corpus 2026-08-04 -- but this bundled
+  # copy was missed, and because the validated rule cache is machine-global,
+  # running THIS SUITE repointed the live gate at these rules and delivered the
+  # stale fix into a real commit on 2026-08-15, corrupting a source file.
+  #
+  # Metavars under `not:` are excluded: they constrain where a rule matches and
+  # never bind a subtree the fix could re-emit (counting them false-positives on
+  # prefer-const and no-useless-async, which are correct). A fix referencing NO
+  # metavar is a deletion, which legitimately discards its captures.
+  if ! gg_has_pyyaml; then
+    t_skip "dropped-metavar audit: PyYAML absent (NOT verified)"
+    return 0
+  fi
+  drop_out="$("$(gg_python)" - "$GG_BUNDLED" <<'PYEOF' 2>&1
+import re, sys, pathlib, yaml
+root = pathlib.Path(sys.argv[1])
+MV = re.compile(r"\$\$\$[A-Z_][A-Z0-9_]*|\$[A-Z_][A-Z0-9_]*")
+def mv(node, skip_fix=True):
+    out = set()
+    if isinstance(node, str):
+        out.update(m.lstrip("$") for m in MV.findall(node))
+    elif isinstance(node, dict):
+        for k, v in node.items():
+            if (skip_fix and k == "fix") or k == "not":
+                continue
+            out |= mv(v, skip_fix)
+    elif isinstance(node, list):
+        for i in node:
+            out |= mv(i, skip_fix)
+    return out
+for p in sorted(root.rglob("*.yml")):
+    try:
+        doc = yaml.safe_load(p.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        continue
+    if not isinstance(doc, dict):
+        continue
+    fix = doc.get("fix")
+    if not isinstance(fix, str):
+        continue
+    cap = mv(doc.get("rule", {})) | mv(doc.get("constraints", {}))
+    emi = mv(fix, skip_fix=False)
+    dropped = sorted(cap - emi)
+    if dropped and emi:
+        print(f"{p.relative_to(root).as_posix()}: drops {','.join(dropped)}")
+PYEOF
+)"
+  if [ -n "$drop_out" ]; then
+    t_fail "bundled rule(s) have a fix: that drops a captured metavariable:"
+    printf '%s\n' "$drop_out" | sed 's/^/           /' >&2
+  else
+    t_ok "no bundled autofix drops a metavariable it captures"
+  fi
 }

@@ -1,11 +1,15 @@
 id: try-into-unwrap
-message: try_into/try_from can fail - use ? instead of unwrap()
+message: try_into() can fail - use ? instead of unwrap()
 severity: error
 language: rust
 rule:
-  any:
+  all:
   - pattern: $EXPR.try_into().unwrap()
-  - pattern: $TYPE::try_from($EXPR).unwrap()
+  # `- pattern: $TYPE::try_from($EXPR).unwrap()` REMOVED 2026-08-15. It shared the
+  # `fix:` below, which DROPS $TYPE: `u32::try_from(x).unwrap()` became
+  # `x.try_into()?`, discarding the explicit target type. That either fails to
+  # compile or silently converts to a different integer type with different
+  # overflow behaviour. The turbofish form is now try-from-unwrap.yml, detection-only.
   # Unit tests live in `#[cfg(test)] mod tests` INSIDE the source file, so the
   # `!**/tests/**` path glob cannot see them. Without this clause the rule reports
   # test code as production risk: on vigil_device_resources that was 87 findings
