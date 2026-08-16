@@ -184,6 +184,42 @@ qa_restage_safe() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Resolve a Python tool, preferring the REPO'S OWN pinned virtualenv over
+# whatever happens to be on PATH. Prints the resolved path, or nothing if the
+# tool is unavailable anywhere (so callers can test with [ -n "$x" ]).
+#
+# Why: a repo that pins its linter is green by its own toolchain but can be
+# BLOCKED by a newer ambient one. Measured 2026-08-16 on David-Martel/clarius,
+# which pins ruff 0.15.20 in .venv: `ruff check build.py` passes with the repo's
+# ruff and reports 12 errors with ~/.local/bin/ruff 0.16.3 — the same file, the
+# same repo config, a different binary. Newer ruff releases add rules and change
+# defaults, so this blocks commits for lint the project's own CI does not have,
+# in every Python repo on the machine whose pin trails the ambient install.
+#
+# The gate already honors repo *config* (it passes no --select when pyproject
+# declares [tool.ruff]); honoring the repo's *binary* is the same principle.
+# The repo's pin is authoritative for the repo.
+qa_py_tool() {
+  _qpt_name="$1"
+  # Repo-local virtualenv first (POSIX layout, then the Windows Scripts/ layout).
+  for _qpt_cand in \
+    "$REPO_ROOT/.venv/bin/$_qpt_name" \
+    "$REPO_ROOT/.venv/Scripts/$_qpt_name.exe"
+  do
+    if [ -x "$_qpt_cand" ]; then printf '%s\n' "$_qpt_cand"; return 0; fi
+  done
+  # An ACTIVE virtualenv is next best. Guarded on non-empty: unset VIRTUAL_ENV
+  # would otherwise build the absolute path "/bin/<tool>" and can match a real
+  # system binary, silently reintroducing the ambient-tool bug this fixes.
+  if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/$_qpt_name" ]; then
+    printf '%s\n' "$VIRTUAL_ENV/bin/$_qpt_name"
+    return 0
+  fi
+  # Fall back to PATH. `|| true` so `set -u`/`set -e` callers see empty, not a
+  # non-zero exit, when the tool is absent everywhere.
+  command -v "$_qpt_name" 2>/dev/null || true
+}
+
 QA_FIND="find"
 if [ -x /usr/bin/find ]; then QA_FIND=/usr/bin/find
 elif have gfind; then QA_FIND="$(command -v gfind)"
@@ -552,15 +588,22 @@ qa_check_python() {
   [ -n "$files" ] || return 0
   set -- $files
 
+  # Prefer each tool from the repo's own virtualenv over an ambient PATH copy —
+  # see qa_py_tool. A repo pinned to an older linter must not be blocked by a
+  # newer one it never asked for.
+  QA_RUFF="$(qa_py_tool ruff)"
+  QA_MYPY="$(qa_py_tool mypy)"
+  QA_BASEDPYRIGHT="$(qa_py_tool basedpyright)"
+
   # ruff check
   rc_mode="$(qa_cfg python.ruff_check block)"
-  if [ "$rc_mode" != "off" ] && have ruff; then
+  if [ "$rc_mode" != "off" ] && [ -n "$QA_RUFF" ]; then
     if [ -f "$REPO_ROOT/pyproject.toml" ] && grep -q '\[tool.ruff' "$REPO_ROOT/pyproject.toml" 2>/dev/null; then
       ruff_args=""   # use repo config
     else
       ruff_args="--select E,F --isolated"  # minimal, near-zero-false-positive defaults
     fi
-    if ! ( cd "$REPO_ROOT" && ruff check $ruff_args "$@" >/tmp/qa_ruff.$$ 2>&1 ); then
+    if ! ( cd "$REPO_ROOT" && "$QA_RUFF" check $ruff_args "$@" >/tmp/qa_ruff.$$ 2>&1 ); then
       [ "$QA_DEBUG" = "1" ] && cat /tmp/qa_ruff.$$ >&2
       if [ "$rc_mode" = "block" ]; then
         qa_block "ruff lint errors (ruff check --fix to auto-fix many)."
@@ -574,11 +617,11 @@ qa_check_python() {
 
   # ruff format (WARN if it would change staged files; no auto-restage of partial)
   rf_mode="$(qa_cfg python.ruff_format warn)"
-  if [ "$rf_mode" != "off" ] && have ruff; then
+  if [ "$rf_mode" != "off" ] && [ -n "$QA_RUFF" ]; then
     rf_isolated=""
     [ -n "${ruff_args:-}" ] && rf_isolated="--isolated"
     # shellcheck disable=SC2086  # rf_isolated is a single optional flag, intentionally unquoted
-    if ! ( cd "$REPO_ROOT" && ruff format --check $rf_isolated "$@" >/dev/null 2>&1 ); then
+    if ! ( cd "$REPO_ROOT" && "$QA_RUFF" format --check $rf_isolated "$@" >/dev/null 2>&1 ); then
       if [ "$rf_mode" = "block" ]; then
         qa_block "ruff format differences (run: ruff format)."
       else
@@ -589,8 +632,8 @@ qa_check_python() {
 
   # mypy (warn by default — strict mypy needs full project context+stubs)
   mp_mode="$(qa_cfg python.mypy warn)"
-  if [ "$mp_mode" != "off" ] && have mypy; then
-    if ! ( cd "$REPO_ROOT" && mypy --ignore-missing-imports --no-error-summary "$@" >/dev/null 2>&1 ); then
+  if [ "$mp_mode" != "off" ] && [ -n "$QA_MYPY" ]; then
+    if ! ( cd "$REPO_ROOT" && "$QA_MYPY" --ignore-missing-imports --no-error-summary "$@" >/dev/null 2>&1 ); then
       if [ "$mp_mode" = "block" ]; then
         qa_block "mypy type errors."
       else
@@ -601,8 +644,8 @@ qa_check_python() {
 
   # basedpyright (often absent -> skip silently)
   bp_mode="$(qa_cfg python.basedpyright warn)"
-  if [ "$bp_mode" != "off" ] && have basedpyright; then
-    if ! ( cd "$REPO_ROOT" && basedpyright "$@" >/dev/null 2>&1 ); then
+  if [ "$bp_mode" != "off" ] && [ -n "$QA_BASEDPYRIGHT" ]; then
+    if ! ( cd "$REPO_ROOT" && "$QA_BASEDPYRIGHT" "$@" >/dev/null 2>&1 ); then
       [ "$bp_mode" = "block" ] && qa_block "basedpyright type errors." || qa_warn "basedpyright findings (non-blocking)."
     fi
   fi
