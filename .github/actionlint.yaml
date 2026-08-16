@@ -1,0 +1,12 @@
+# actionlint configuration.
+#
+# git-guard's QA workflow deliberately targets a repo-local self-hosted runner rather
+# than GitHub-hosted minutes. actionlint cannot know about custom runner labels, so
+# without this it reports `label "git-guard-local" is unknown` on every job and the
+# real findings get lost in the noise.
+#
+# Keep this list in sync with the labels the runner registers with — see
+# ~/ci-runner-x64/repo-runners/git-guard.yml (RUNNER_LABELS).
+self-hosted-runner:
+  labels:
+    - git-guard-local

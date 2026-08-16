@@ -21,6 +21,13 @@ name: git-guard QA
 on:
   workflow_dispatch:
 
+# A self-hosted runner serves ONE job at a time, so a superseded run does not just
+# waste minutes — it holds the only git-guard-local runner and blocks the run you
+# actually care about. Keep at most one in flight per ref.
+concurrency:
+  group: qa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ---------------------------------------------------------------------------
   # Containerized self-test: build the image, run git-guard verify INSIDE it,
@@ -28,6 +35,10 @@ jobs:
   # ---------------------------------------------------------------------------
   self-test-docker:
     runs-on: [self-hosted, Linux, X64, git-guard-local]
+    # A hung step on a self-hosted runner holds the runner until GitHub's 24h ceiling —
+    # we measured a real 24h00m00s job elsewhere in this fleet. This suite finishes in
+    # ~2 min; 20 is generous and still fails fast.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
@@ -74,16 +85,49 @@ jobs:
   # ---------------------------------------------------------------------------
   self-test-native:
     runs-on: [self-hosted, Linux, X64, git-guard-local]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+
+      # The container runner image bakes uv, just, git, curl, python3 and shellcheck,
+      # but NOT node. Without this the ast-grep step dies with `npm: command not found`
+      # (exit 127) — which is exactly how this job failed when the runner moved off the
+      # old bare-metal ubuntu24 host. setup-node populates the runner tool cache, so
+      # only the first run pays the download.
+      - name: Set up Node (provides npm for ast-grep)
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
 
       - name: Install ast-grep
         run: |
           npm install --prefix "$RUNNER_TEMP/ast-grep" @ast-grep/cli@0.39.5
           echo "$RUNNER_TEMP/ast-grep/node_modules/.bin" >> "$GITHUB_PATH"
 
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck python3-venv
+      # Only reach for the network if the tool is genuinely absent. shellcheck is already
+      # baked into the runner image at /usr/bin/shellcheck, so the unconditional
+      # `apt-get update && apt-get install` was pure latency plus a network dependency
+      # that can fail the whole gate for a reason unrelated to the code under test.
+      - name: Ensure shellcheck + python3-venv
+        run: |
+          missing=""
+          command -v shellcheck >/dev/null 2>&1 || missing="$missing shellcheck"
+          # Probe `ensurepip`, NOT `venv`. On Debian/Ubuntu the `venv` module imports
+          # fine while python3-venv is absent, and the failure only surfaces later as
+          # "ensurepip is not available" when something actually creates a venv — a
+          # false-negative that silently skips this install. (Observed exactly that.)
+          # Only needed for the non-uv fallback path below; uv needs no ensurepip.
+          command -v uv >/dev/null 2>&1 \
+            || python3 -c 'import ensurepip' >/dev/null 2>&1 \
+            || missing="$missing python3-venv"
+          if [ -n "$missing" ]; then
+            echo "installing:$missing"
+            # shellcheck disable=SC2086  # word-splitting is intended: $missing is a
+            # space-separated package list, and quoting it would pass one bogus argument.
+            sudo apt-get update && sudo apt-get install -y $missing
+          else
+            echo "shellcheck and python3-venv already present in the runner image — skipping apt"
+          fi
 
       - name: Versions
         run: |
@@ -105,9 +149,18 @@ jobs:
 
       - name: Install pyyaml + ruff (so YAML-block + ruff categories actually run)
         run: |
-          python3 -m venv "$RUNNER_TEMP/gitguard-py"
-          "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet --upgrade pip
-          "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet pyyaml ruff
+          # Prefer uv, which the runner image already bakes: it needs no ensurepip, no
+          # apt, and resolves these two wheels in well under a second. Fall back to
+          # stdlib venv + pip only where uv is absent, so this job still works on a
+          # plain runner.
+          if command -v uv >/dev/null 2>&1; then
+            uv venv "$RUNNER_TEMP/gitguard-py"
+            uv pip install --python "$RUNNER_TEMP/gitguard-py/bin/python" --quiet pyyaml ruff
+          else
+            python3 -m venv "$RUNNER_TEMP/gitguard-py"
+            "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet --upgrade pip
+            "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet pyyaml ruff
+          fi
           echo "$RUNNER_TEMP/gitguard-py/bin" >> "$GITHUB_PATH"
 
       - name: git-guard test — comprehensive validation suite
