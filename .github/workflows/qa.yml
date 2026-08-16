@@ -112,7 +112,14 @@ jobs:
         run: |
           missing=""
           command -v shellcheck >/dev/null 2>&1 || missing="$missing shellcheck"
-          python3 -c 'import venv' >/dev/null 2>&1 || missing="$missing python3-venv"
+          # Probe `ensurepip`, NOT `venv`. On Debian/Ubuntu the `venv` module imports
+          # fine while python3-venv is absent, and the failure only surfaces later as
+          # "ensurepip is not available" when something actually creates a venv — a
+          # false-negative that silently skips this install. (Observed exactly that.)
+          # Only needed for the non-uv fallback path below; uv needs no ensurepip.
+          command -v uv >/dev/null 2>&1 \
+            || python3 -c 'import ensurepip' >/dev/null 2>&1 \
+            || missing="$missing python3-venv"
           if [ -n "$missing" ]; then
             echo "installing:$missing"
             # shellcheck disable=SC2086  # word-splitting is intended: $missing is a
@@ -142,9 +149,18 @@ jobs:
 
       - name: Install pyyaml + ruff (so YAML-block + ruff categories actually run)
         run: |
-          python3 -m venv "$RUNNER_TEMP/gitguard-py"
-          "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet --upgrade pip
-          "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet pyyaml ruff
+          # Prefer uv, which the runner image already bakes: it needs no ensurepip, no
+          # apt, and resolves these two wheels in well under a second. Fall back to
+          # stdlib venv + pip only where uv is absent, so this job still works on a
+          # plain runner.
+          if command -v uv >/dev/null 2>&1; then
+            uv venv "$RUNNER_TEMP/gitguard-py"
+            uv pip install --python "$RUNNER_TEMP/gitguard-py/bin/python" --quiet pyyaml ruff
+          else
+            python3 -m venv "$RUNNER_TEMP/gitguard-py"
+            "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet --upgrade pip
+            "$RUNNER_TEMP/gitguard-py/bin/python" -m pip install --quiet pyyaml ruff
+          fi
           echo "$RUNNER_TEMP/gitguard-py/bin" >> "$GITHUB_PATH"
 
       - name: git-guard test — comprehensive validation suite
