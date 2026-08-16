@@ -3,7 +3,16 @@ language: Rust
 severity: warning
 message: "Avoid pub use foo::* - explicitly list re-exports (M-NO-GLOB-REEXPORTS)"
 rule:
-  pattern: "pub use $MOD::*;"
+  all:
+    - pattern: "pub use $MOD::*;"
+    # `pub use $MOD::*;` also matches RESTRICTED visibilities — ast-grep treats
+    # `pub(crate) use x::*;`, `pub(super) use x::*;` and `pub(in path) use x::*;`
+    # as matching this pattern. Those expand no public API, so flagging them is a
+    # false positive. Excluding them by the matched text is what works: a
+    # `not: { pattern: "pub($$$VIS) use $MOD::*;" }` clause was tried first and did
+    # NOT suppress them (measured 2026-08-16).
+    - not:
+        regex: '^pub\s*\('
 files:
   - "**/src/**/*.rs"
   - "!**/tests/**"
@@ -16,3 +25,13 @@ note: |
   Exception: HAL platform modules (embedded) may use glob re-exports.
   Fix: Replace with explicit named re-exports:
     pub use foo::{Bar, Baz, Quux};
+
+  RESTRICTED VISIBILITIES ARE DELIBERATELY EXEMPT — do not "fix" this back.
+  `pub(crate) use x::*;`, `pub(super) use x::*;` and `pub(in path) use x::*;`
+  are crate-internal and expand ZERO public API surface, so neither harm above
+  applies to them. Until 2026-08-16 this rule flagged all three, and because it
+  sits in git-guard's always-BLOCK trio, any repo on the machine containing an
+  idiomatic `pub(crate) use x::*;` under src/ could not commit changes to that
+  file without a bypass. Verified fixed against a six-variant matrix: only a
+  true `pub use x::*;` is flagged; `pub(crate)`/`pub(super)`/`pub(in ...)`,
+  a plain `use x::*;` import, and named re-exports `pub use x::{A, B};` all pass.
