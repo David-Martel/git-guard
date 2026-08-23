@@ -86,6 +86,7 @@ t_case_attribution
 t_case_secret_scan
 t_case_cache_staleness
 t_case_powershell
+t_case_python_scope
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------
@@ -103,7 +104,9 @@ gg_orphan_cases=""
 for cf in "$GG_TESTS_DIR"/*.t.sh; do
   [ -f "$cf" ] || continue
   # Case functions are declared at column 0 as `t_case_<name>() {`.
-  for fn in $(sed -n 's/^\(t_case_[A-Za-z0-9_]*\)().*/\1/p' "$cf"); do
+  case_functions="$GG_T_TMPROOT/case-functions"
+  sed -n 's/^\(t_case_[A-Za-z0-9_]*\)().*/\1/p' "$cf" > "$case_functions"
+  while IFS= read -r fn; do
     case "
 $GG_CASES" in
       *"
@@ -111,7 +114,7 @@ $fn
 "*) : ;;
       *) gg_orphan_cases="$gg_orphan_cases $fn($(basename "$cf"))" ;;
     esac
-  done
+  done < "$case_functions"
 done
 if [ -n "$gg_orphan_cases" ]; then
   printf '\n  [FAIL] test case(s) defined but NOT in GG_CASES — they would never run:\n' >&2
