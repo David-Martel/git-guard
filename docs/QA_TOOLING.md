@@ -77,8 +77,8 @@ errors. The default blocking surface is deliberately NARROW.
 | ast-grep other | source files | `sg` | **WARN** | core/security/csharp/powershell rules |
 | ruff check | `*.py` | `ruff` | **BLOCK** | repo config if present, else `--select E,F --isolated` |
 | ruff format | `*.py` | `ruff` | **WARN** | warns if it would reformat staged files |
-| mypy | `*.py` | `mypy` | **WARN** | strict mypy needs full project context |
-| basedpyright | `*.py` | `basedpyright` | **WARN** | usually absent → skipped |
+| mypy | configured staged `*.py` | `mypy` | **WARN** | honors `[tool.mypy].files`; strict mypy needs full project context |
+| basedpyright | configured staged `*.py` | `basedpyright` | **WARN** | honors `[tool.basedpyright].include`/`exclude`; absent tools skip |
 | shellcheck | `*.sh`/`*.bash` | `shellcheck` | **BLOCK** | fast, high-signal |
 | cargo fmt | `*.rs` | `cargo` | **WARN** | advisory; never auto-`--all`-restage |
 | cargo clippy | `*.rs` | `cargo` | **off** | slow + WIP repos don't build clean → off by default |
@@ -90,6 +90,12 @@ errors. The default blocking surface is deliberately NARROW.
 **Language gating:** checks are gated by STAGED FILE EXTENSION, not just repo
 type. A docs-only commit is a TRUE no-op (no language tool runs). Python tools
 never run on a rust-only diff and vice-versa.
+
+For mypy and basedpyright, extension gating is followed by repository-scope
+gating. Explicit staged paths normally override each checker's project
+`files`/`include` boundary, so git-guard filters them first and never widens a
+repository's admitted type-check surface. A malformed scope is reported and
+the misleading type invocation is refused; it is not silently treated as clean.
 
 A blocked commit prints the un-missable message (IRON RULE 1):
 `git-guard QA BLOCKED: <reason>. Your changes are STAGED but UNCOMMITTED — do NOT
@@ -106,7 +112,8 @@ no tool is required. The table shows where each reads its config.
 |---|---|---|
 | sg / ast-grep | `PATH` | generated `qa-rules/sgconfig.generated.yml` → validated rule cache |
 | ruff | `PATH` | repo `pyproject.toml [tool.ruff]`, else `--select E,F --isolated` |
-| mypy | `PATH` | `--ignore-missing-imports` (lenient) |
+| mypy | repo `.venv`, active venv, then `PATH` | repo `[tool.mypy]`; staged paths filtered by `files` |
+| basedpyright | repo `.venv`, active venv, then `PATH` | repo `[tool.basedpyright]`; staged paths filtered by `include`/`exclude` |
 | shellcheck | `PATH` | none |
 | cargo | `PATH` | repo `rustfmt.toml` / `Cargo.toml` |
 | dotnet | `PATH` | repo `.editorconfig` |

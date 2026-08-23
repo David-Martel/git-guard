@@ -491,6 +491,7 @@ qa_astgrep_run() {
   # a precondition checked before this point (chicken-and-egg).
   qa_refresh_rule_cache
   [ -f "$QA_SGCONFIG" ] || { qa_dbg "sgconfig unavailable (no rules dir or cache build failed)"; return 0; }
+  # shellcheck disable=SC2086  # intentional word-splitting of the staged file list
   set -- $files
   qa_dbg "ast-grep batched scan on: $*"
 
@@ -581,11 +582,83 @@ qa_check_rust() {
 }
 
 # ----------------------------------------------------------------------------
+# Print only staged files that belong to a checker scope declared in
+# pyproject.toml. Passing explicit files to mypy or basedpyright bypasses their
+# project-level `files`/`include` boundaries; that made the account-wide hook
+# report type debt from ROS/generated trees a repository had deliberately not
+# admitted to its gate yet. An absent checker section or absent scope key keeps
+# the historical all-staged-files behavior.
+qa_python_scoped_files() {
+  _qps_checker="$1"
+  shift
+  if [ -z "$QA_PY" ] || [ ! -f "$REPO_ROOT/pyproject.toml" ]; then
+    printf '%s\n' "$@"
+    return 0
+  fi
+
+  "$QA_PY" - "$_qps_checker" "$REPO_ROOT/pyproject.toml" "$@" <<'PY'
+from __future__ import annotations
+
+import fnmatch
+import pathlib
+import sys
+import tomllib
+
+checker, config_path, *files = sys.argv[1:]
+try:
+    with open(config_path, "rb") as stream:
+        config = tomllib.load(stream)
+except (OSError, tomllib.TOMLDecodeError) as exc:
+    print(f"git-guard WARN: cannot read Python checker scope from {config_path}: {exc}", file=sys.stderr)
+    raise SystemExit(2) from exc
+
+tool = config.get("tool", {}).get(checker)
+scope_key = "files" if checker == "mypy" else "include"
+if not isinstance(tool, dict) or scope_key not in tool:
+    print(*files, sep="\n")
+    raise SystemExit(0)
+
+
+def patterns(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return tuple(value)
+    raise TypeError(f"tool.{checker}.{scope_key} must be a string or list of strings")
+
+
+def matches(path: str, pattern: str) -> bool:
+    normalized = pattern.replace("\\", "/").removeprefix("./").rstrip("/")
+    candidate = path.replace("\\", "/").removeprefix("./")
+    return (
+        candidate == normalized
+        or candidate.startswith(f"{normalized}/")
+        or pathlib.PurePosixPath(candidate).match(normalized)
+        or fnmatch.fnmatchcase(candidate, normalized)
+    )
+
+
+try:
+    included = patterns(tool[scope_key])
+    excluded = patterns(tool.get("exclude", [])) if checker == "basedpyright" else ()
+except TypeError as exc:
+    print(f"git-guard WARN: invalid Python checker scope in {config_path}: {exc}", file=sys.stderr)
+    raise SystemExit(2) from exc
+
+for file in files:
+    if any(matches(file, pattern) for pattern in included) and not any(
+        matches(file, pattern) for pattern in excluded
+    ):
+        print(file)
+PY
+}
+
 # CHECK: Python (ruff check block, ruff format warn, mypy/basedpyright warn)
 # ----------------------------------------------------------------------------
 qa_check_python() {
   files="$(qa_staged_match '\.py$')"
   [ -n "$files" ] || return 0
+  # shellcheck disable=SC2086  # intentional word-splitting of the staged file list
   set -- $files
 
   # Prefer each tool from the repo's own virtualenv over an ambient PATH copy —
@@ -603,6 +676,7 @@ qa_check_python() {
     else
       ruff_args="--select E,F --isolated"  # minimal, near-zero-false-positive defaults
     fi
+    # shellcheck disable=SC2086  # ruff_args is zero or three intentional arguments
     if ! ( cd "$REPO_ROOT" && "$QA_RUFF" check $ruff_args "$@" >/tmp/qa_ruff.$$ 2>&1 ); then
       [ "$QA_DEBUG" = "1" ] && cat /tmp/qa_ruff.$$ >&2
       if [ "$rc_mode" = "block" ]; then
@@ -633,7 +707,13 @@ qa_check_python() {
   # mypy (warn by default — strict mypy needs full project context+stubs)
   mp_mode="$(qa_cfg python.mypy warn)"
   if [ "$mp_mode" != "off" ] && [ -n "$QA_MYPY" ]; then
-    if ! ( cd "$REPO_ROOT" && "$QA_MYPY" --ignore-missing-imports --no-error-summary "$@" >/dev/null 2>&1 ); then
+    mp_files="$(qa_python_scoped_files mypy "$@")"; mp_scope_rc=$?
+    # shellcheck disable=SC2086  # newline-delimited staged paths; existing gate contract excludes spaces
+    if [ "$mp_scope_rc" -ne 0 ]; then
+      qa_warn "mypy project scope is invalid; refusing a misleading staged-file type check."
+    elif [ -z "$mp_files" ]; then
+      qa_dbg "no staged Python files are inside the configured mypy scope"
+    elif ! ( cd "$REPO_ROOT" && "$QA_MYPY" --ignore-missing-imports --no-error-summary $mp_files >/dev/null 2>&1 ); then
       if [ "$mp_mode" = "block" ]; then
         qa_block "mypy type errors."
       else
@@ -645,8 +725,18 @@ qa_check_python() {
   # basedpyright (often absent -> skip silently)
   bp_mode="$(qa_cfg python.basedpyright warn)"
   if [ "$bp_mode" != "off" ] && [ -n "$QA_BASEDPYRIGHT" ]; then
-    if ! ( cd "$REPO_ROOT" && "$QA_BASEDPYRIGHT" "$@" >/dev/null 2>&1 ); then
-      [ "$bp_mode" = "block" ] && qa_block "basedpyright type errors." || qa_warn "basedpyright findings (non-blocking)."
+    bp_files="$(qa_python_scoped_files basedpyright "$@")"; bp_scope_rc=$?
+    # shellcheck disable=SC2086  # newline-delimited staged paths; existing gate contract excludes spaces
+    if [ "$bp_scope_rc" -ne 0 ]; then
+      qa_warn "basedpyright project scope is invalid; refusing a misleading staged-file type check."
+    elif [ -z "$bp_files" ]; then
+      qa_dbg "no staged Python files are inside the configured basedpyright scope"
+    elif ! ( cd "$REPO_ROOT" && "$QA_BASEDPYRIGHT" $bp_files >/dev/null 2>&1 ); then
+      if [ "$bp_mode" = "block" ]; then
+        qa_block "basedpyright type errors."
+      else
+        qa_warn "basedpyright findings (non-blocking)."
+      fi
     fi
   fi
 }
@@ -687,7 +777,11 @@ qa_check_csharp() {
   [ "$mode" = "off" ] && return 0
   have dotnet || { qa_dbg "dotnet absent"; return 0; }
   if ! ( cd "$REPO_ROOT" && dotnet format --verify-no-changes >/dev/null 2>&1 ); then
-    [ "$mode" = "block" ] && qa_block "dotnet format differences." || qa_warn "dotnet format would change files (non-blocking)."
+    if [ "$mode" = "block" ]; then
+      qa_block "dotnet format differences."
+    else
+      qa_warn "dotnet format would change files (non-blocking)."
+    fi
   fi
 }
 
@@ -761,6 +855,7 @@ qa_check_powershell() {
   # would have shipped as another gate that cannot report "I did not run".
   # Same lesson as composing commit messages with a file rather than a heredoc.
   _pl="/tmp/qa_pssa_payload.$$.ps1"
+  # shellcheck disable=SC2016  # PowerShell sigils are intentionally literal here
   {
     printf '%s\n' '$ErrorActionPreference = "Stop"'
     printf '$list = Get-Content -LiteralPath "%s" | Where-Object { $_ -ne "" }\n' "$_lst_native"
@@ -809,7 +904,11 @@ qa_check_validate() {
       for f in $jf; do
         [ -f "$REPO_ROOT/$f" ] || continue
         if ! "$QA_PY" -c "import json,sys; json.load(open(sys.argv[1]))" "$REPO_ROOT/$f" >/dev/null 2>&1; then
-          [ "$jmode" = "block" ] && qa_block "invalid JSON: $f." || qa_warn "invalid JSON: $f (non-blocking)."
+          if [ "$jmode" = "block" ]; then
+            qa_block "invalid JSON: $f."
+          else
+            qa_warn "invalid JSON: $f (non-blocking)."
+          fi
         fi
       done
     fi
@@ -821,7 +920,11 @@ qa_check_validate() {
       for f in $yf; do
         [ -f "$REPO_ROOT/$f" ] || continue
         if ! "$QA_PY" -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" "$REPO_ROOT/$f" >/dev/null 2>&1; then
-          [ "$ymode" = "block" ] && qa_block "invalid YAML: $f." || qa_warn "invalid YAML: $f (non-blocking)."
+          if [ "$ymode" = "block" ]; then
+            qa_block "invalid YAML: $f."
+          else
+            qa_warn "invalid YAML: $f (non-blocking)."
+          fi
         fi
       done
     fi
