@@ -78,13 +78,55 @@ fi
 #    it last so git-guard composes WITH it rather than replacing it.
 #    Precedence: $GIT_GUARD_DOWNSTREAM_HOOK > repo .git-guard/pre-commit.local >
 #    lefthook (if installed). None present -> nothing to chain (clean exit).
+#
+#    CONFIGURED-BUT-UNRUNNABLE is an ERROR, not silence. A repo that ships a
+#    lefthook config while the binary is missing gets every one of its gates
+#    skipped with no output — `command -v lefthook` returning false is
+#    indistinguishable from the gates passing. That is how a repo can run for
+#    months believing local enforcement exists (measured 2026-09-11: 26 gates
+#    inert on 2 of 3 fleet hosts, 14 of them with no CI backstop at all).
+#    A repo with NO lefthook config is unaffected -> still a clean exit.
 git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
+
+# Echo the lefthook config file name if one exists at the repo ROOT. Anchored to
+# the root on purpose -- a vendored subdirectory's lefthook.yml must not trip
+# this. The stem list is lefthook's OWN, quoted from its error text:
+#   No config files with names ["lefthook" ".lefthook" ".config/lefthook"] ...
+# crossed with the extensions it accepts. Over-matching here is harmless (the
+# repo would just be told to install lefthook); UNDER-matching silently restores
+# the very fall-through this function exists to prevent.
+git_guard_lefthook_config() {
+  [ -n "$1" ] || return 1
+  for _gg_stem in lefthook .lefthook .config/lefthook; do
+    for _gg_ext in yml yaml json toml; do
+      if [ -f "$1/${_gg_stem}.${_gg_ext}" ]; then
+        printf '%s' "${_gg_stem}.${_gg_ext}"; return 0
+      fi
+    done
+  done
+  return 1
+}
+
 if [ -n "${GIT_GUARD_DOWNSTREAM_HOOK:-}" ] && [ -x "${GIT_GUARD_DOWNSTREAM_HOOK}" ]; then
   "${GIT_GUARD_DOWNSTREAM_HOOK}" "$@" || exit $?
 elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/pre-commit.local" ]; then
   "$git_guard_repo_root/.git-guard/pre-commit.local" "$@" || exit $?
 elif command -v lefthook >/dev/null 2>&1; then
   lefthook run pre-commit "$@" || exit $?
+elif [ "${GIT_GUARD_ALLOW_MISSING_LEFTHOOK:-}" != "1" ] &&
+     git_guard_lefthook_cfg="$(git_guard_lefthook_config "$git_guard_repo_root")"; then
+  printf '%s\n' \
+    "git-guard BLOCK: this repo configures lefthook but lefthook is NOT installed." \
+    "  repo:   $git_guard_repo_root" \
+    "  config: $git_guard_lefthook_cfg" \
+    "Every pre-commit gate that config defines is being SKIPPED SILENTLY -- a missing" \
+    "binary and a clean commit produce identical output, so this never announces itself." \
+    "Fix (pick one):" \
+    "  * install lefthook so the repo's gates actually run   <- preferred" \
+    "  * GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 git commit ...   (this commit only)" \
+    "  * export GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1           (this machine, deliberate)" \
+    "Do NOT use --no-verify: it skips git-guard's own blockers too." >&2
+  exit 1
 fi
 
 exit 0

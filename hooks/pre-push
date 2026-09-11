@@ -12,13 +12,45 @@ if [ "$GIT_GUARD" = "0" ] || [ "$LEFTHOOK" = "0" ]; then
   exit 0
 fi
 
+# CONFIGURED-BUT-UNRUNNABLE is an ERROR here too. pre-push is where the heavy
+# gates live (in the fleet's case cargo-deny, the pytest suite and the docs
+# traceability check), and they were being skipped in silence for the same
+# reason as pre-commit. A repo with NO lefthook config is unaffected.
 git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
+
+# Echo the lefthook config file name if one exists at the repo ROOT (stem list
+# is lefthook's own; see hooks/pre-commit for the full rationale).
+git_guard_lefthook_config() {
+  [ -n "$1" ] || return 1
+  for _gg_stem in lefthook .lefthook .config/lefthook; do
+    for _gg_ext in yml yaml json toml; do
+      if [ -f "$1/${_gg_stem}.${_gg_ext}" ]; then
+        printf '%s' "${_gg_stem}.${_gg_ext}"; return 0
+      fi
+    done
+  done
+  return 1
+}
+
 if [ -n "${GIT_GUARD_DOWNSTREAM_PRE_PUSH:-}" ] && [ -x "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" ]; then
   "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" "$@" || exit $?
 elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/pre-push.local" ]; then
   "$git_guard_repo_root/.git-guard/pre-push.local" "$@" || exit $?
 elif command -v lefthook >/dev/null 2>&1; then
   lefthook run pre-push "$@" || exit $?
+elif [ "${GIT_GUARD_ALLOW_MISSING_LEFTHOOK:-}" != "1" ] &&
+     git_guard_lefthook_cfg="$(git_guard_lefthook_config "$git_guard_repo_root")"; then
+  printf '%s\n' \
+    "git-guard BLOCK: this repo configures lefthook but lefthook is NOT installed." \
+    "  repo:   $git_guard_repo_root" \
+    "  config: $git_guard_lefthook_cfg" \
+    "Every pre-push gate that config defines is being SKIPPED SILENTLY." \
+    "Fix (pick one):" \
+    "  * install lefthook so the repo's gates actually run   <- preferred" \
+    "  * GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 git push ...     (this push only)" \
+    "  * export GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1           (this machine, deliberate)" \
+    "Do NOT use --no-verify." >&2
+  exit 1
 fi
 
 exit 0
