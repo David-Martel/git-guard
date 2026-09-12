@@ -87,6 +87,7 @@ t_case_secret_scan
 t_case_cache_staleness
 t_case_powershell
 t_case_python_scope
+t_case_downstream_chaining
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------
