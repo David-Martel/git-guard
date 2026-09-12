@@ -14,11 +14,41 @@
 # deterministic on machines that do have it installed.
 # shellcheck shell=sh
 
-# PATH with no ~/.local/bin etc, so `command -v lefthook` fails deterministically.
-GG_T_PATH_NO_LEFTHOOK="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
 t_case_downstream_chaining() {
   t_begin "13 downstream chaining (configured-but-unrunnable fails loudly)"
+
+  # Allowlist only the commands needed by Git and our hooks. Keeping /usr/bin
+  # or /usr/local/bin on PATH would expose a system-installed lefthook too.
+  GG_T_PATH_NO_LEFTHOOK="$GG_T_TMPROOT/no-lefthook-bin"
+  mkdir -p "$GG_T_PATH_NO_LEFTHOOK"
+  for tool in git sh dirname basename cat sed grep awk sort uniq tr cut head tail \
+      wc find xargs mkdir rm mv cp chmod mktemp date uname sleep touch; do
+    tool_path="$(command -v "$tool")" || {
+      t_fail "required fixture command missing: $tool"
+      return 1
+    }
+    # Wrappers preserve DLL lookup beside the real executable on Git Bash.
+    tool_path="$(printf '%s' "$tool_path" | sed "s/'/'\\\\''/g")"
+    {
+      printf '#!/bin/sh\n'
+      printf "exec '%s' \"\$@\"\n" "$tool_path"
+    } > "$GG_T_PATH_NO_LEFTHOOK/$tool"
+    chmod +x "$GG_T_PATH_NO_LEFTHOOK/$tool"
+  done
+  if gg_is_windows; then
+    # Git for Windows launches sh.exe directly for hook shebangs; a shell
+    # wrapper named sh is insufficient. Supply only that runtime and its DLLs.
+    shell_dir="$(dirname "$(command -v sh)")"
+    cp "$shell_dir/sh.exe" "$GG_T_PATH_NO_LEFTHOOK/sh.exe"
+    for dll in "$shell_dir"/msys-*.dll; do
+      [ ! -f "$dll" ] || cp "$dll" "$GG_T_PATH_NO_LEFTHOOK/"
+    done
+  fi
+  if env PATH="$GG_T_PATH_NO_LEFTHOOK" sh -c 'command -v lefthook' >/dev/null 2>&1; then
+    t_fail "isolated fixture PATH unexpectedly exposes lefthook"
+    return 1
+  fi
+  t_ok "isolated fixture PATH excludes lefthook"
 
   # 1. NEGATIVE CONTROL — no lefthook config: commit must still land.
   r="$(gg_mktemp_repo)"
@@ -47,6 +77,12 @@ t_case_downstream_chaining() {
   t_expect_rc 0 "$n" "no commit landed when the gates could not run"
   grep -q 'git-guard BLOCK' "$log"; t_assert $? "the refusal is LOUD (names git-guard BLOCK)"
   grep -q 'GIT_GUARD_ALLOW_MISSING_LEFTHOOK' "$log"; t_assert $? "the message names its own escape hatch"
+  ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" sh "$GG_ROOT/hooks/pre-push" >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "pre-push also blocks configured-but-missing lefthook"
+  grep -q 'git-guard BLOCK' "$log"; t_assert $? "pre-push refusal identifies the missing runner"
+  ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 \
+      sh "$GG_ROOT/hooks/pre-push" >/dev/null 2>&1 ); rc=$?
+  t_expect_rc 0 "$rc" "pre-push escape hatch permits the deliberate opt-out"
 
   # 3. Same repo + the escape hatch: must pass (deliberate opt-out is honoured).
   ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" GIT_GUARD_RULES_DIR="$GG_BUNDLED" \
