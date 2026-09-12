@@ -88,6 +88,7 @@ t_case_cache_staleness
 t_case_powershell
 t_case_python_scope
 t_case_downstream_chaining
+t_case_postcommit_config
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------
