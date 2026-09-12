@@ -34,7 +34,7 @@ t_case_python_scope() {
       printf '#!/bin/sh\n'
       # shellcheck disable=SC2016  # write literal runtime variables into the fixture script
       printf 'printf "%%s:%%s\\n" "%s" "$*" >> "$GG_TYPE_SCOPE_LOG"\n' "$checker"
-      printf 'exit 0\n'
+      printf 'exit "${GG_TYPE_SCOPE_RC:-0}"\n'
     } > "$r/.venv/bin/$checker"
     chmod +x "$r/.venv/bin/$checker"
   done
@@ -57,6 +57,73 @@ t_case_python_scope() {
   else
     t_ok "out-of-scope ROS file is not type-checked by the account-wide gate"
   fi
+
+  # Valid comma-separated mypy strings must still reach a blocking checker.
+  printf '[tool.mypy]\nfiles = "scripts, src"\n' > "$r/pyproject.toml"
+  printf 'python.mypy=block\npython.basedpyright=off\n' >> "$r/.qa-gate.conf"
+  : > "$scope_log"
+  GG_TYPE_SCOPE_RC=1 gg_run_gate_log "$r" "$gate_log"; rc=$?
+  t_expect_rc 1 "$rc" "comma-separated mypy scope preserves blocking type failures"
+  grep -q 'mypy:.*scripts/typed.py.*src/ros_node.py' "$scope_log"
+  t_assert $? "comma-separated mypy scope includes both declared trees"
+
+  # Absent include means the project root, then exclusions still apply.
+  printf '[tool.basedpyright]\nexclude = ["src"]\n' > "$r/pyproject.toml"
+  printf 'python.mypy=off\npython.basedpyright=block\n' >> "$r/.qa-gate.conf"
+  : > "$scope_log"
+  GG_TYPE_SCOPE_RC=1 gg_run_gate_log "$r" "$gate_log"; rc=$?
+  t_expect_rc 1 "$rc" "exclude-only basedpyright still enforces admitted files"
+  grep -qx 'basedpyright:scripts/typed.py' "$scope_log"
+  t_assert $? "exclude-only basedpyright removes the excluded tree"
+
+  # Reproduce a pre-3.11 interpreter without depending on the host version.
+  # Keep a parser alias for the tomli stand-in before hiding tomllib imports.
+  mkdir -p "$r/parser-fixture"
+  cat > "$r/parser-fixture/sitecustomize.py" <<'PY'
+import builtins
+import pathlib
+import sys
+
+fixture_dir = str(pathlib.Path(__file__).parent)
+original_path = sys.path[:]
+sys.path = [entry for entry in sys.path if pathlib.Path(entry).resolve() != pathlib.Path(fixture_dir).resolve()]
+try:
+    import tomllib as parser
+except ImportError:
+    import tomli as parser
+sys.path = original_path
+sys.modules.pop("tomli", None)
+sys.modules["_gg_test_parser"] = parser
+original_import = builtins.__import__
+
+
+def fixture_import(name, *args, **kwargs):
+    if name == "tomllib" or (name == "tomli" and "GG_TEST_NO_PARSER" in __import__("os").environ):
+        raise ImportError("parser hidden by compatibility fixture")
+    return original_import(name, *args, **kwargs)
+
+
+builtins.__import__ = fixture_import
+PY
+  printf 'from _gg_test_parser import load, TOMLDecodeError\n' > "$r/parser-fixture/tomli.py"
+  : > "$scope_log"
+  PYTHONPATH="$r/parser-fixture" GG_TYPE_SCOPE_RC=1 gg_run_gate_log "$r" "$gate_log"; rc=$?
+  t_expect_rc 1 "$rc" "tomli fallback preserves blocking checker failures"
+  grep -qx 'basedpyright:scripts/typed.py' "$scope_log"
+  t_assert $? "tomli fallback runs the checker with filtered scope"
+
+  # Missing parsers and invalid TOML must never turn configured block into warn.
+  for checker in mypy basedpyright; do
+    printf 'python.mypy=off\npython.basedpyright=off\npython.%s=block\n' "$checker" >> "$r/.qa-gate.conf"
+    : > "$scope_log"
+    PYTHONPATH="$r/parser-fixture" GG_TEST_NO_PARSER=1 gg_run_gate_log "$r" "$gate_log"; rc=$?
+    t_expect_rc 1 "$rc" "$checker blocks if neither TOML parser is available"
+    grep -q 'needs Python 3.11+ or tomli' "$gate_log"
+    t_assert $? "$checker reports the missing parser remedy"
+  done
+  printf '[invalid TOML\n' > "$r/pyproject.toml"
+  gg_run_gate_log "$r" "$gate_log"; rc=$?
+  t_expect_rc 1 "$rc" "malformed TOML cannot silently disable a blocking checker"
 
   unset GG_TYPE_SCOPE_LOG
   rm -f "$scope_log" "$gate_log"

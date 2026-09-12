@@ -94,8 +94,11 @@ never run on a rust-only diff and vice-versa.
 For mypy and basedpyright, extension gating is followed by repository-scope
 gating. Explicit staged paths normally override each checker's project
 `files`/`include` boundary, so git-guard filters them first and never widens a
-repository's admitted type-check surface. A malformed scope is reported and
-the misleading type invocation is refused; it is not silently treated as clean.
+repository's admitted type-check surface. Mypy string scopes are comma-separated;
+basedpyright exclusions apply even when `include` is omitted. Scope parsing uses
+`tomllib` on Python 3.11+ or `tomli` on older Python. Missing parsers and malformed
+scopes are reported, and a checker configured as `block` blocks the commit when
+its scope cannot be read. The default `warn` mode remains non-blocking.
 
 A blocked commit prints the un-missable message (IRON RULE 1):
 `git-guard QA BLOCKED: <reason>. Your changes are STAGED but UNCOMMITTED — do NOT

@@ -602,7 +602,15 @@ from __future__ import annotations
 import fnmatch
 import pathlib
 import sys
-import tomllib
+
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        print("git-guard WARN: Python checker scope needs Python 3.11+ or tomli; install tomli for this interpreter.", file=sys.stderr)
+        raise SystemExit(2)
 
 checker, config_path, *files = sys.argv[1:]
 try:
@@ -614,13 +622,15 @@ except (OSError, tomllib.TOMLDecodeError) as exc:
 
 tool = config.get("tool", {}).get(checker)
 scope_key = "files" if checker == "mypy" else "include"
-if not isinstance(tool, dict) or scope_key not in tool:
+if not isinstance(tool, dict):
     print(*files, sep="\n")
     raise SystemExit(0)
 
 
-def patterns(value: object) -> tuple[str, ...]:
+def patterns(value: object, comma_separated: bool = False) -> tuple[str, ...]:
     if isinstance(value, str):
+        if comma_separated:
+            return tuple(part.strip() for part in value.split(",") if part.strip())
         return (value,)
     if isinstance(value, list) and all(isinstance(item, str) for item in value):
         return tuple(value)
@@ -628,10 +638,15 @@ def patterns(value: object) -> tuple[str, ...]:
 
 
 def matches(path: str, pattern: str) -> bool:
-    normalized = pattern.replace("\\", "/").removeprefix("./").rstrip("/")
-    candidate = path.replace("\\", "/").removeprefix("./")
+    normalized = pattern.replace("\\", "/").rstrip("/")
+    candidate = path.replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    if candidate.startswith("./"):
+        candidate = candidate[2:]
     return (
-        candidate == normalized
+        normalized in ("", ".")
+        or candidate == normalized
         or candidate.startswith(f"{normalized}/")
         or pathlib.PurePosixPath(candidate).match(normalized)
         or fnmatch.fnmatchcase(candidate, normalized)
@@ -639,14 +654,14 @@ def matches(path: str, pattern: str) -> bool:
 
 
 try:
-    included = patterns(tool[scope_key])
+    included = patterns(tool[scope_key], checker == "mypy") if scope_key in tool else None
     excluded = patterns(tool.get("exclude", [])) if checker == "basedpyright" else ()
 except TypeError as exc:
     print(f"git-guard WARN: invalid Python checker scope in {config_path}: {exc}", file=sys.stderr)
     raise SystemExit(2) from exc
 
 for file in files:
-    if any(matches(file, pattern) for pattern in included) and not any(
+    if (included is None or any(matches(file, pattern) for pattern in included)) and not any(
         matches(file, pattern) for pattern in excluded
     ):
         print(file)
@@ -710,7 +725,11 @@ qa_check_python() {
     mp_files="$(qa_python_scoped_files mypy "$@")"; mp_scope_rc=$?
     # shellcheck disable=SC2086  # newline-delimited staged paths; existing gate contract excludes spaces
     if [ "$mp_scope_rc" -ne 0 ]; then
-      qa_warn "mypy project scope is invalid; refusing a misleading staged-file type check."
+      if [ "$mp_mode" = "block" ]; then
+        qa_block "mypy project scope could not be read; configured blocking check cannot run."
+      else
+        qa_warn "mypy project scope could not be read; refusing a misleading staged-file type check."
+      fi
     elif [ -z "$mp_files" ]; then
       qa_dbg "no staged Python files are inside the configured mypy scope"
     elif ! ( cd "$REPO_ROOT" && "$QA_MYPY" --ignore-missing-imports --no-error-summary $mp_files >/dev/null 2>&1 ); then
@@ -728,7 +747,11 @@ qa_check_python() {
     bp_files="$(qa_python_scoped_files basedpyright "$@")"; bp_scope_rc=$?
     # shellcheck disable=SC2086  # newline-delimited staged paths; existing gate contract excludes spaces
     if [ "$bp_scope_rc" -ne 0 ]; then
-      qa_warn "basedpyright project scope is invalid; refusing a misleading staged-file type check."
+      if [ "$bp_mode" = "block" ]; then
+        qa_block "basedpyright project scope could not be read; configured blocking check cannot run."
+      else
+        qa_warn "basedpyright project scope could not be read; refusing a misleading staged-file type check."
+      fi
     elif [ -z "$bp_files" ]; then
       qa_dbg "no staged Python files are inside the configured basedpyright scope"
     elif ! ( cd "$REPO_ROOT" && "$QA_BASEDPYRIGHT" $bp_files >/dev/null 2>&1 ); then
