@@ -47,7 +47,7 @@ can soften or disable any check with a per-repo `.qa-gate.conf`.
 | `shellcheck` (staged `*.sh`) | **block** | fast, high-signal |
 | `ruff check` (staged `*.py`) | **block** | repo config if present, else minimal `E,F` |
 | JSON parse (staged `*.json`) | **block** | cheap, real |
-| ast-grep (everything else), `ruff format`, `cargo fmt`, `clippy`, `mypy`, panic-set, large-file | **warn** / opt-in | never blocks WIP by default |
+| ast-grep (everything else), `ruff format`, `cargo fmt`, `clippy`, `mypy`, panic-set, large-file | **warn** / opt-in | never blocks WIP by default; Python type checks honor configured project scope |
 
 Full schema, precedence, and the rule catalog: [`docs/QA_TOOLING.md`](docs/QA_TOOLING.md).
 
