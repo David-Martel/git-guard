@@ -10,11 +10,15 @@ git_guard_sha="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
 printf '%s\n' "git-guard: commit ${git_guard_sha} landed — verify before any reset: git log -1 --pretty='%h %G? %s'" >&2
 
 # Optional downstream chaining (only if the operator wired one).
+# Precedence: environment override, repository-local hook, Git configuration.
 git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
 if [ -n "${GIT_GUARD_DOWNSTREAM_POST_COMMIT:-}" ] && [ -x "${GIT_GUARD_DOWNSTREAM_POST_COMMIT}" ]; then
   "${GIT_GUARD_DOWNSTREAM_POST_COMMIT}" "$@" || true
 elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/post-commit.local" ]; then
   "$git_guard_repo_root/.git-guard/post-commit.local" "$@" || true
+elif git_guard_downstream="$(git config --path --get gitGuard.downstreamPostCommit 2>/dev/null)" &&
+     [ -n "$git_guard_downstream" ] && [ -f "$git_guard_downstream" ] && [ -x "$git_guard_downstream" ]; then
+  "$git_guard_downstream" "$@" || true
 fi
 
 exit 0

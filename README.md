@@ -159,6 +159,12 @@ matching trailers are not duplicated, and a conflicting `Agent:` trailer blocks
 the commit. `GIT_GUARD=0` is the hook's explicit emergency-human bypass; routine
 agent work must not use it.
 
+Post-commit chaining selects the first runnable hook from
+`GIT_GUARD_DOWNSTREAM_POST_COMMIT`, repository `.git-guard/post-commit.local`,
+then the Git path setting `gitGuard.downstreamPostCommit`. The setting can be
+repository-local or global; use an absolute executable path. Arguments are
+forwarded unchanged, and downstream failures remain non-fatal.
+
 Auto-detection: Docker is used when `docker info` succeeds; otherwise on Windows
 WSL is tried (`wsl.exe bash …`); otherwise the local POSIX shell runs it. The
 chosen backend is printed to stderr. Build the image directly with
