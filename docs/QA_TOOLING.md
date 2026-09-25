@@ -9,6 +9,13 @@
 > (commit-safety doctrine / IRON RULES) and
 > [`~/.agents/VIGIL_PARTITION_PLAN.md`](VIGIL_PARTITION_PLAN.md) (the staged
 > follow-on plan). Last updated: 2026-06-06.
+>
+> **Since PR-4:** `~/.git-hooks` resolves through `~/.local/share/git-guard/current`
+> to an IMMUTABLE, `git archive`-materialized version dir, not git-guard's live
+> working checkout. A `git checkout`/WIP edit in the git-guard checkout no
+> longer changes anyone's installed hooks — see the README "Quick start" and
+> `install.sh`'s header comment for the mechanism (`git-guard install` /
+> `git-guard update --to <tag>`).
 
 ---
 
@@ -219,13 +226,32 @@ site, then flip the key so it cannot regress.
 **Precedence (highest wins):** repo `.qa-gate.conf` (or `.git-guard/qa-gate.conf`)
 → global `~/.git-hooks/common/qa-gate.conf` → built-in defaults.
 
-**Format:** flat `key = value`, one per line, `#` comments, no sections, no
+**Format:** flat `key=value`, one per line, `#` comments, no sections, no
 quotes. Parsed by a **pure-builtin** reader in `qa_gate.sh` (zero subprocess
 spawns — this is why docs-only commits are ~200ms, not 4.8s). Dotted keys map
 internally (`python.ruff_check` → `qacfg_python_ruff_check`).
 
 **Per-check values:** `block` (refuse commit) | `warn` (print, proceed) | `off`
-(skip). A repo can only set keys that exist in the global default.
+(skip). A repo can only set keys that exist in the global default (an unknown
+key is accepted but has no effect — see Known gaps).
+
+**Malformed lines are a hard, blocking error (since PR-4).** A non-blank,
+non-comment line that has no `=`, has an empty key before the `=`, or whose
+value contains a character outside `[A-Za-z0-9_,.:/-]` refuses the commit and
+names the exact `file:line`, e.g.:
+
+```
+git-guard QA BLOCKED: malformed config line .qa-gate.conf:5 (no '=' — expected key=value).
+  >> python.ruff_check   block   # lint errors block the commit
+```
+
+This used to be silent (the line was just `continue`d and the override never
+took effect, with zero output anywhere). That is precisely how
+vigil-friction's `.qa-gate.conf` shipped 4 space-separated `key value`
+overrides that did nothing for weeks — see §9. Every malformed line in the
+file is reported, not just the first, and the refusal holds even if a *later*,
+well-formed line in the same file sets `qa.enabled=off` (the config that
+failed to parse cannot be trusted to gate its own bypass).
 
 **Keys** (defaults shown):
 ```
@@ -345,7 +371,8 @@ QA_DEBUG=1 ~/.git-hooks/common/qa_gate.sh   # with files staged
 | Docs commit slow | NukeNul spawn + lefthook stub | expected ~2s; QA itself is ~200ms |
 | "shellcheck errors" on a fine script | real SC finding | fix, or `shell.shellcheck=warn` |
 | QA not running at all | `LEFTHOOK=0`, `--no-verify`, or `qa.enabled=off` | remove the bypass |
-| Override `.qa-gate.conf` ignored | wrong filename/location or bad value char | must be repo-root `.qa-gate.conf` (or `.git-guard/qa-gate.conf`); values limited to `[a-zA-Z0-9_,.-]` |
+| Commit blocked, "malformed config line FILE:N" | a `.qa-gate.conf` line has no `=`, an empty key, or a value with a disallowed character | fix that exact line (message quotes it); values limited to `[A-Za-z0-9_,.:/-]` |
+| Override `.qa-gate.conf` silently has no effect | wrong filename/location (must be repo-root `.qa-gate.conf` or `.git-guard/qa-gate.conf`), or the key itself is not a recognized key (unknown keys are accepted but do nothing) | check the filename/location; diff the key against §5's key list |
 | A rule never fires | excluded from cache (failed validate) or not in a `ruleDirs` lang | validate standalone (§4); check `qa-rules/` |
 | Wrong/no language detected | gating is by staged file EXTENSION | ensure the file is staged; check `QA_DEBUG=1` types line |
 

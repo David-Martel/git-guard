@@ -8,9 +8,13 @@
 #   rules      print the rule manifest (categories, counts, the BLOCK trio)
 #   verify     self-test: BLOCK trio fires, clean commit passes (scratch repo)
 #   test       run the comprehensive validation suite (tests/), hermetic temp repos
-#   install    install/refresh the hooks (delegates to install.sh)
+#   install    install a versioned release (delegates to install.sh; default
+#              --to v$(cat VERSION); accepts --to/--store/--rules-dir/--dev-symlink/--dry-run)
+#   update     re-point the installed `current` release at another tag
+#              (git-guard update --to <tag>) — an atomic swap; every consuming
+#              repo's hooks change together, never half-installed
 #   uninstall  remove the hooks (delegates to install.sh --uninstall)
-#   version    print the version
+#   version    print the version of THIS checkout (not necessarily what's installed)
 #   help       this message
 #
 # No machine-specific paths: everything resolves relative to this script.
@@ -28,6 +32,37 @@ GG_BUNDLED_RULES="$GG_ROOT/rules-examples"
 have() { command -v "$1" >/dev/null 2>&1; }
 gg_version() { [ -f "$GG_ROOT/VERSION" ] && cat "$GG_ROOT/VERSION" || echo "0.0.0"; }
 
+# Resolve what is ACTUALLY installed via core.hooksPath, independent of which
+# copy of `bin/git-guard` is running this (a dev checkout, or the installed
+# ~/.local/share/git-guard/current/bin/git-guard). `pwd -P` fully resolves
+# through both the ~/.git-hooks symlink AND the `current` symlink it points at
+# (in versioned-install mode) down to the physical <store>/<tag>/hooks dir;
+# its parent is the version dir, which carries its own VERSION + commit marker.
+gg_installed_hooks_physical() {
+  ghp="$(git config --global core.hooksPath 2>/dev/null || echo '')"
+  [ -n "$ghp" ] || return 1
+  # shellcheck disable=SC2088  # intentional: matching a LITERAL leading "~/"
+  # in a stored git-config value (never expanded by git itself), not asking
+  # the shell to expand a tilde.
+  case "$ghp" in "~/"*) ghp="$HOME/${ghp#\~/}" ;; esac
+  ( cd "$ghp" 2>/dev/null && pwd -P )
+}
+gg_installed_version() {
+  hooks_phys="$(gg_installed_hooks_physical)" || { echo "<unset>"; return 1; }
+  ver_dir="$(dirname "$hooks_phys")"
+  if [ -f "$ver_dir/VERSION" ]; then
+    v="$(cat "$ver_dir/VERSION")"
+    if [ -f "$ver_dir/.git-guard-commit" ]; then
+      printf '%s (versioned install, %s, commit %s)' "$v" "$ver_dir" "$(cat "$ver_dir/.git-guard-commit")"
+    else
+      printf '%s (--dev-symlink checkout, %s)' "$v" "$ver_dir"
+    fi
+  else
+    printf '<unknown: %s has no VERSION file>' "$ver_dir"
+    return 1
+  fi
+}
+
 # Resolve the active rules dir the same way qa_gate.sh does (env > conf > bundled).
 gg_rules_dir() {
   if [ -n "${GIT_GUARD_RULES_DIR:-}" ] && [ -d "${GIT_GUARD_RULES_DIR}" ]; then
@@ -39,23 +74,24 @@ gg_rules_dir() {
 }
 
 cmd_status() {
-  echo "git-guard $(gg_version)"
-  echo "  root:          $GG_ROOT"
-  echo "  global hooks:  $(git config --global core.hooksPath 2>/dev/null || echo '<unset>')"
+  echo "git-guard $(gg_version) (this checkout: $GG_ROOT)"
+  echo "  global hooks:      $(git config --global core.hooksPath 2>/dev/null || echo '<unset>')"
+  echo "  installed version: $(gg_installed_version)"
   rd="$(gg_rules_dir)"
-  echo "  rules dir:     $rd"
-  echo "  rule source:   $( [ "$rd" = "$GG_BUNDLED_RULES" ] && echo 'bundled rules-examples (public default)' || echo 'overlay (env/conf)' )"
-  # Is ~/.git-hooks pointing here?
+  echo "  rules dir:         $rd"
+  echo "  rule source:       $( [ "$rd" = "$GG_BUNDLED_RULES" ] && echo 'bundled rules-examples (public default)' || echo 'overlay (env/conf)' )"
+  # Is ~/.git-hooks pointing at THIS checkout specifically (only true under
+  # --dev-symlink, or when this checkout IS the materialized version dir)?
   ghp="$(git config --global core.hooksPath 2>/dev/null || echo '')"
   if [ -n "$ghp" ]; then
     real_ghp="$(cd "$ghp" 2>/dev/null && pwd -P || echo "$ghp")"
     if [ "$real_ghp" = "$(cd "$GG_HOOKS" 2>/dev/null && pwd -P)" ]; then
-      echo "  installed:     YES (core.hooksPath -> this git-guard)"
+      echo "  this checkout:     IS the active install (core.hooksPath resolves here)"
     else
-      echo "  installed:     core.hooksPath set elsewhere ($real_ghp)"
+      echo "  this checkout:     NOT the active install (active: $real_ghp)"
     fi
   else
-    echo "  installed:     NO (run: git-guard install)"
+    echo "  this checkout:     NOT installed anywhere (run: git-guard install)"
   fi
 }
 
@@ -64,6 +100,7 @@ sg_is_astgrep() { have sg && sg --version 2>/dev/null | grep -qi 'ast-grep'; }
 astgrep_is_astgrep() { have ast-grep && ast-grep --version 2>/dev/null | grep -qi 'ast-grep'; }
 cmd_doctor() {
   echo "git-guard doctor — prerequisite check"
+  echo "  installed version: $(gg_installed_version)"
   for t in git sg ast-grep shellcheck ruff python pwsh cygpath dotnet cargo; do
     if [ "$t" = sg ]; then
       if sg_is_astgrep; then printf '  [ok]   %-12s %s (ast-grep)\n' "$t" "$(command -v sg)"
@@ -118,6 +155,18 @@ cmd_verify() {
 
 cmd_install()   { sh "$GG_ROOT/install.sh" "$@"; }
 cmd_uninstall() { sh "$GG_ROOT/install.sh" --uninstall "$@"; }
+# `update` is the same atomic materialize+flip operation as `install`, just
+# named for the "re-point an existing install at a different tag" case. It
+# requires --to explicitly (no implicit "this checkout's own VERSION" default,
+# unlike bare `install`) so an update is never accidentally a no-op re-run of
+# whatever tag happens to be checked out here.
+cmd_update() {
+  case " $* " in
+    *" --to "*) : ;;
+    *) echo "git-guard update: --to <tag> is required (e.g. git-guard update --to v0.2.0)" >&2; return 2 ;;
+  esac
+  sh "$GG_ROOT/install.sh" "$@"
+}
 
 # Run the comprehensive validation suite under tests/ (hermetic temp repos).
 # Each test self-skips with a reason when a required tool/platform is absent, so
@@ -144,6 +193,7 @@ case "${1:-help}" in
   verify)     cmd_verify ;;
   test)       shift; cmd_test "$@" ;;
   install)    shift; cmd_install "$@" ;;
+  update)     shift; cmd_update "$@" ;;
   uninstall)  shift; cmd_uninstall "$@" ;;
   version|--version|-v) gg_version ;;
   help|--help|-h|*) cmd_help ;;

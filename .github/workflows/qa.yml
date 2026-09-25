@@ -1,14 +1,18 @@
 name: git-guard QA
 
-# Manually self-test git-guard on the repo-local runner: prove the BLOCK trio
-# fires, a clean commit passes, and the shell engine is shellcheck-clean. This
-# is the public repo validating ITSELF without GitHub-hosted minutes.
+# Self-test git-guard on the repo-local runner: prove the BLOCK trio fires, a
+# clean commit passes, and the shell engine is shellcheck-clean. This is the
+# public repo validating ITSELF without GitHub-hosted minutes.
 #
-# 2026-06-16 local-runner policy:
-#   Automatic push/PR CI must not consume GitHub-hosted minutes or create
-#   billing-blocked checks. Keep this workflow manual-only and restricted to
-#   the repo-local Ubuntu 24.04 runner registered with labels:
+# 2026-06-16 local-runner policy, EXTENDED 2026-09-24 (engineering-health PR-4):
+#   GitHub-hosted runners must never be used ($0 billing posture) — restricted
+#   to the repo-local Ubuntu 24.04 runner registered with labels:
 #     [self-hosted, Linux, X64, git-guard-local]
+#   That posture does not require staying manual-only, and a hook engine with
+#   no CI on its own PRs was itself an audit finding (raw-gates.md: "git-guard
+#   (main) | required checks: none"). `pull_request` + `push` (main only, so a
+#   PR's push does not ALSO trigger a separate push run on the same commits)
+#   now run this automatically; `workflow_dispatch` stays for ad-hoc runs.
 #
 # Two jobs run the SAME checks two ways:
 #   * self-test-docker — builds the docker/Dockerfile image (the SAME image
@@ -20,10 +24,16 @@ name: git-guard QA
 
 on:
   workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
 
 # A self-hosted runner serves ONE job at a time, so a superseded run does not just
 # waste minutes — it holds the only git-guard-local runner and blocks the run you
-# actually care about. Keep at most one in flight per ref.
+# actually care about. Keep at most one in flight per ref. NOTE: this cancels an
+# in-flight run (including a deliberate negative-control run) the moment a newer
+# commit lands on the same ref/PR — if you need a failing run's conclusion
+# recorded, let it finish before pushing again.
 concurrency:
   group: qa-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

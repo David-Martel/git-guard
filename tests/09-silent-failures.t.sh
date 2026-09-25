@@ -19,14 +19,22 @@
 # shellcheck shell=sh
 
 # Isolate the ast-grep layer (the Python tool gates are exercised by 02-warn).
+#
+# $1 = repo path, $2.. = extra qa-gate.conf lines. Must `shift` before looping
+# over "$@" -- without it $1 (the repo path) is itself iterated as an "extra"
+# line and written into the conf file with no `=`. The old lenient parser
+# silently dropped that malformed line (case *=*) so this never surfaced; the
+# new fail-closed parser (git-guard PR-4) turns it into a hard BLOCK, which is
+# how this was caught.
 gg_conf_py_off() {
+  repo_dir="$1"; shift
   {
     printf 'python.ruff_check=off\n'
     printf 'python.ruff_format=off\n'
     printf 'python.mypy=off\n'
     printf 'python.basedpyright=off\n'
     for _extra in "$@"; do printf '%s\n' "$_extra"; done
-  } > "$1/.qa-gate.conf"
+  } > "$repo_dir/.qa-gate.conf"
 }
 
 # Swallows entirely: no log, no raise, no record.

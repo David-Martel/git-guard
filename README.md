@@ -55,14 +55,47 @@ Full schema, precedence, and the rule catalog: [`docs/QA_TOOLING.md`](docs/QA_TO
 
 ```sh
 git clone https://github.com/<owner>/git-guard ~/git-guard
-sh ~/git-guard/install.sh                 # symlinks ~/.git-hooks -> git-guard, sets core.hooksPath
-sh ~/git-guard/bin/git-guard status       # confirm
+sh ~/git-guard/install.sh                 # materializes v<VERSION> into
+                                           #   ~/.local/share/git-guard/, symlinks
+                                           #   ~/.git-hooks -> .../current/hooks,
+                                           #   sets core.hooksPath
+sh ~/git-guard/bin/git-guard status       # confirm (shows the installed version)
 sh ~/git-guard/bin/git-guard verify       # self-test: trio blocks, clean commit passes
 ```
 
+**Hooks are installed from an immutable, versioned copy, not the live
+checkout.** `install.sh` (with no `--to`) materializes `v<VERSION>` (the tag
+matching this checkout's own `VERSION` file — it must exist; cut it with
+`git tag v<VERSION>` first if it doesn't) via `git archive` into
+`~/.local/share/git-guard/<tag>/`, then atomically points
+`~/.local/share/git-guard/current` at it and `~/.git-hooks` through `current`.
+Because the archive is a snapshot of the TAGGED commit, **a later `git
+checkout`/`git pull`/WIP edit in this checkout has no effect on any installed
+hook** — that used to be the failure mode (`~/.git-hooks` was a symlink
+straight into the live working tree). To move every consuming repo onto a new
+release at once, cut a new tag and run:
+
+```sh
+sh ~/git-guard/bin/git-guard update --to v<NEW-VERSION>
+```
+
+which materializes the new tag and flips `current` in one atomic rename — no
+commit, anywhere, ever observes a half-installed hook set.
+
 `install.sh` is **idempotent and reversible** (`install.sh --uninstall` restores
-the prior state from an automatic backup). It is intentionally *not* auto-run on
-clone — the global-hooks change is deliberate.
+the prior state from an automatic backup; materialized versions under the store
+are left in place). It is intentionally *not* auto-run on clone — the
+global-hooks change is deliberate.
+
+For git-guard's OWN development loop (iterating on `hooks/`/`qa_gate.sh` and
+wanting immediate effect without a tag+install round-trip), opt back into the
+pre-versioned behavior explicitly: `sh ~/git-guard/install.sh --dev-symlink`
+symlinks `~/.git-hooks` straight at this checkout, same as before. Never use
+this on a host whose other repos you don't want re-hooked on every branch
+switch here — that is exactly the footgun the default now closes.
+
+An emergency human bypass is unchanged: `GIT_GUARD=0 git commit …` skips the
+hooks for one commit, regardless of install mode.
 
 ### Use a private rule overlay
 
@@ -74,19 +107,25 @@ config):
 sh ~/git-guard/install.sh --rules-dir /path/to/private/rules
 ```
 
-This writes `rules_dir=…` into a **gitignored** `qa-gate.conf.local` overlay.
-Resolution precedence: `$GIT_GUARD_RULES_DIR` env → `rules_dir` conf key →
-bundled `rules-examples/`.
+In the default (versioned) mode this writes `rules_dir=…` into a **persistent**
+overlay at `~/.local/share/git-guard/qa-gate.conf.local` (outside any version
+dir, so it survives every future `update --to`) and copies it into the
+just-installed version immediately. Under `--dev-symlink` it writes straight
+into the live checkout's **gitignored** `hooks/common/qa-gate.conf.local`, as
+before. Resolution precedence: `$GIT_GUARD_RULES_DIR` env → `rules_dir` conf
+key → bundled `rules-examples/`.
 
 ## CLI
 
 ```
-git-guard status     install state, version, resolved rules dir
-git-guard doctor     prerequisite check (git, ast-grep, shellcheck, ruff, cygpath…)
+git-guard status     install state (this checkout AND what's actually installed), resolved rules dir
+git-guard doctor     prerequisite check (git, ast-grep, shellcheck, ruff, cygpath…) + installed version
 git-guard rules      rule manifest (categories, counts, the BLOCK trio)
 git-guard verify     self-test (BLOCK trio fires, clean commit passes)
-git-guard install    install/refresh hooks   (delegates to install.sh)
-git-guard uninstall  remove hooks            (delegates to install.sh)
+git-guard install    materialize + install a versioned release (delegates to install.sh;
+                      default --to v$(cat VERSION); accepts --to/--store/--rules-dir/--dev-symlink)
+git-guard update      --to <tag>  re-point the installed `current` release at another tag (atomic)
+git-guard uninstall   remove hooks (delegates to install.sh --uninstall)
 ```
 
 ## Per-repo overrides

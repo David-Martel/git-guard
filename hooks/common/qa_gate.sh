@@ -53,6 +53,10 @@ for cand in "$REPO_ROOT/.qa-gate.conf" "$REPO_ROOT/.git-guard/qa-gate.conf"; do
 done
 
 QA_FAILED=0        # set to 1 by any block-level failure
+QA_CFG_MALFORMED=0 # set to 1 by qa_cfg_malformed; forces qa_main to refuse
+                   # unconditionally, since qa.enabled/staged-file short-circuits
+                   # below would otherwise read state from the config that just
+                   # failed to parse.
 QA_DEBUG="${QA_DEBUG:-0}"
 
 # ----------------------------------------------------------------------------
@@ -65,6 +69,26 @@ qa_block() {
   # $1 = human message. Emits the un-missable failed-commit feedback.
   QA_FAILED=1
   printf '%s\n' "git-guard QA BLOCKED: $1 Your changes are STAGED but UNCOMMITTED — do NOT 'git reset --hard' (it permanently destroys git-add'ed work). Fix the issue, re-stage, re-commit. Verify: git log -1 --pretty='%h %G? %s'" >&2
+}
+
+qa_cfg_malformed() {
+  # $1=file $2=lineno $3=raw-line(post leading-strip) $4=reason.
+  #
+  # Config parsing used to be fail-OPEN: a line that did not match `key=value`
+  # was silently `continue`d, so a per-repo override could be completely inert
+  # with zero output anywhere. That is exactly what happened to vigil-friction's
+  # `.qa-gate.conf` — 4 lines written as `key   value` (no `=`) never took
+  # effect, and nothing said so. Fail-CLOSED instead: name the exact file:line
+  # and refuse the commit, same as any other QA_BLOCKED finding.
+  QA_FAILED=1
+  QA_CFG_MALFORMED=1
+  printf '%s\n' \
+    "git-guard QA BLOCKED: malformed config line ${1}:${2} (${4})." \
+    "  >> ${3}" \
+    "Expected: 'key=value', one per line ('#' starts a comment; '#' as the" \
+    "first non-space character or a blank line is skipped). Fix or remove the" \
+    "line. Your changes are STAGED but UNCOMMITTED — do NOT 'git reset --hard'" \
+    "(it permanently destroys git-add'ed work). Verify: git log -1 --pretty='%h %G? %s'" >&2
 }
 
 # ----------------------------------------------------------------------------
@@ -82,18 +106,25 @@ qa_block() {
 qa_load_cfg_file() {
   f="$1"
   [ -f "$f" ] || return 0
+  qa_cfg_lineno=0
   while IFS= read -r line || [ -n "$line" ]; do
+    qa_cfg_lineno=$((qa_cfg_lineno + 1))
     # leading-whitespace strip (builtin, bounded loop)
     line="${line#"${line%%[![:space:]]*}"}"
     case "$line" in ''|'#'*) continue ;; esac
-    case "$line" in *=*) : ;; *) continue ;; esac
+    case "$line" in
+      *=*) : ;;
+      *) qa_cfg_malformed "$f" "$qa_cfg_lineno" "$line" "no '=' — expected key=value"; continue ;;
+    esac
     k="${line%%=*}"; v="${line#*=}"
     v="${v%%#*}"                                   # drop inline comment
     # trailing-whitespace strip on key and value (builtin)
     k="${k%"${k##*[![:space:]]}"}"
     v="${v#"${v%%[![:space:]]*}"}"
     v="${v%"${v##*[![:space:]]}"}"
-    case "$k" in '') continue ;; esac
+    case "$k" in
+      '') qa_cfg_malformed "$f" "$qa_cfg_lineno" "$line" "empty key before '='"; continue ;;
+    esac
     # dots -> underscores (builtin)
     nk=""
     while case "$k" in *.*) true ;; *) false ;; esac; do nk="${nk}${k%%.*}_"; k="${k#*.}"; done
@@ -102,8 +133,15 @@ qa_load_cfg_file() {
     # so `rules_dir=/abs/path` (POSIX) and `rules_dir=C:/path` (Windows forward-
     # slash) take effect. Backslash, space, quotes, `$`, backtick and `;` stay
     # excluded — the value is placed via eval in a double-quoted context, and
-    # those would allow injection. Windows paths must use forward slashes.
-    case "$v" in *[!a-zA-Z0-9_,.:/-]*) continue ;; esac
+    # those would allow injection. Windows paths must use forward slashes. This
+    # is also load-bearing for #3 above: a stray trailing token after a valid
+    # key=value (e.g. `key=value garbage`) is caught here because the space
+    # survives the inline-comment strip but fails the vocab.
+    case "$v" in
+      *[!a-zA-Z0-9_,.:/-]*)
+        qa_cfg_malformed "$f" "$qa_cfg_lineno" "$line" "value has characters outside [A-Za-z0-9_,.:/-]"
+        continue ;;
+    esac
     eval "qacfg_${k}=\"\$v\""
   done < "$f"
 }
@@ -978,6 +1016,14 @@ qa_check_largefile() {
 # Main
 # ----------------------------------------------------------------------------
 qa_main() {
+  # A malformed config line already printed file:line above. Refuse
+  # unconditionally here rather than falling into the qa.enabled / no-staged-
+  # files short-circuits below — both read values that come FROM the config
+  # that just failed to parse, so trusting them would let a broken conf file
+  # (e.g. qa.enabled parsed as unset -> defaults to "on", fine; but a repo that
+  # sets qa.enabled=off on a later, valid line would silently exit 0 despite
+  # an earlier malformed line) skip the very block it caused.
+  [ "$QA_CFG_MALFORMED" = "0" ] || exit 1
   [ "$(qa_cfg qa.enabled on)" = "on" ] || { qa_dbg "qa.enabled=off -> skip"; exit 0; }
   # Fast no-op when nothing is staged.
   [ -n "$(qa_staged_all)" ] || { qa_dbg "no staged files"; exit 0; }
