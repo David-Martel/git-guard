@@ -16,6 +16,15 @@
 > longer changes anyone's installed hooks — see the README "Quick start" and
 > `install.sh`'s header comment for the mechanism (`git-guard install` /
 > `git-guard update --to <tag>`).
+>
+> **Since the PR-4 follow-up:** `hooks/pre-commit` and `qa_gate.sh` resolve
+> their own directory with `pwd -P` (physical) ONCE at entry and reuse that
+> resolved path for every `common/*.sh` they dispatch to — so a single hook
+> invocation is pinned to whichever version was `current` when it STARTED,
+> even if a concurrent `git-guard update --to <tag>` re-points `current`
+> mid-invocation. An unknown/misspelled `.qa-gate.conf` key is now also a
+> hard, blocking error (see §5), and `install.sh`/`update` give a clear error
+> when run from an installed archive instead of `.git-guard`'s live checkout.
 
 ---
 
@@ -232,8 +241,9 @@ spawns — this is why docs-only commits are ~200ms, not 4.8s). Dotted keys map
 internally (`python.ruff_check` → `qacfg_python_ruff_check`).
 
 **Per-check values:** `block` (refuse commit) | `warn` (print, proceed) | `off`
-(skip). A repo can only set keys that exist in the global default (an unknown
-key is accepted but has no effect — see Known gaps).
+(skip). A repo can only set keys that exist in the global default — an
+**unknown key is now a hard, blocking error** (since the PR-4 follow-up; see
+below), not silently accepted.
 
 **Malformed lines are a hard, blocking error (since PR-4).** A non-blank,
 non-comment line that has no `=`, has an empty key before the `=`, or whose
@@ -253,6 +263,29 @@ file is reported, not just the first, and the refusal holds even if a *later*,
 well-formed line in the same file sets `qa.enabled=off` (the config that
 failed to parse cannot be trusted to gate its own bypass).
 
+**An unknown key is ALSO a hard, blocking error (PR-4 follow-up), even when
+the line is otherwise syntactically valid `key=value`.** This is the *other*
+half of the vigil-friction defect: its `python.pyright=warn` line was
+syntactically fine but named a key git-guard doesn't have (the real key is
+`python.basedpyright`), so it still did nothing even once the `=` is fixed.
+The engine now refuses and lists every valid key:
+
+```
+git-guard QA BLOCKED: unknown config key at .qa-gate.conf:8: 'python.pyright'.
+  >> python.pyright=warn
+Valid keys:
+  astgrep astgrep_autofix astgrep_panics csharp.format largefile largefile_kb
+  nul_cleanup powershell.astgrep powershell.psscriptanalyzer
+  python.basedpyright python.mypy python.ruff_check python.ruff_format
+  qa.enabled rules_dir rust.clippy rust.fmt shell.shellcheck validate.json
+  validate.yaml
+```
+
+`powershell.astgrep` is a deliberate exception: it is never read via `qa_cfg`
+(ast-grep has no PowerShell grammar — see the note under §2) but stays a
+*recognized* key so an existing repo conf that sets it does not now start
+erroring.
+
 **Keys** (defaults shown):
 ```
 qa.enabled=on             # master kill-switch for the whole QA layer
@@ -266,10 +299,15 @@ rust.fmt=warn   rust.clippy=off
 python.ruff_check=block   python.ruff_format=warn   python.mypy=warn   python.basedpyright=warn
 shell.shellcheck=block
 csharp.format=warn
-powershell.astgrep=warn
+powershell.astgrep=warn   powershell.psscriptanalyzer=warn
 validate.json=block   validate.yaml=warn
 largefile=warn   largefile_kb=5120
+rules_dir=                # unset by default; see §4 (SEVERABLE rule source)
 ```
+
+This list is the literal `QA_KNOWN_KEYS` schema `qa_gate.sh` validates every
+config line against (unknown-key check, above) — the two are meant to be kept
+in lockstep; if you add a check with a new key, add it to both.
 
 **Examples** (place at repo root as `.qa-gate.conf`):
 ```ini
@@ -372,7 +410,8 @@ QA_DEBUG=1 ~/.git-hooks/common/qa_gate.sh   # with files staged
 | "shellcheck errors" on a fine script | real SC finding | fix, or `shell.shellcheck=warn` |
 | QA not running at all | `LEFTHOOK=0`, `--no-verify`, or `qa.enabled=off` | remove the bypass |
 | Commit blocked, "malformed config line FILE:N" | a `.qa-gate.conf` line has no `=`, an empty key, or a value with a disallowed character | fix that exact line (message quotes it); values limited to `[A-Za-z0-9_,.:/-]` |
-| Override `.qa-gate.conf` silently has no effect | wrong filename/location (must be repo-root `.qa-gate.conf` or `.git-guard/qa-gate.conf`), or the key itself is not a recognized key (unknown keys are accepted but do nothing) | check the filename/location; diff the key against §5's key list |
+| Commit blocked, "unknown config key FILE:N" | the key is syntactically fine but isn't one git-guard recognizes (typo, or a name from a different tool) | the message lists every valid key; check filename/location too (`.qa-gate.conf` or `.git-guard/qa-gate.conf` at repo root — a file in the wrong place is never loaded at all, so it produces neither error) |
+| `git-guard update --to <tag>` fails with a confusing git error, or "not a git checkout" | ran from an INSTALLED, ARCHIVED release (e.g. `~/.local/share/git-guard/current/bin/git-guard update …`) — it has no `.git` to resolve tags from | run install/update from an actual git-guard clone: `cd ~/dev/repos/git-guard && sh bin/git-guard update --to <tag>` |
 | A rule never fires | excluded from cache (failed validate) or not in a `ruleDirs` lang | validate standalone (§4); check `qa-rules/` |
 | Wrong/no language detected | gating is by staged file EXTENSION | ensure the file is staged; check `QA_DEBUG=1` types line |
 

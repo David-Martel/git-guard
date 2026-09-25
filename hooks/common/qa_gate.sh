@@ -26,7 +26,16 @@ set -u
 # ----------------------------------------------------------------------------
 # Locations
 # ----------------------------------------------------------------------------
-QA_SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+# `-P` (physical) is load-bearing under the versioned install (git-guard PR-4):
+# this script is normally reached through ~/.git-hooks -> .../current -> a
+# version dir, and `current` can be re-pointed by a concurrent `update --to`
+# at any moment. Resolving physically ONCE, here, means every path derived
+# from QA_SELF_DIR below (QA_GLOBAL_CONF, QA_RULES_BUNDLED, the rule cache)
+# stays pinned to whichever version this invocation actually started from,
+# even if `current` moves a microsecond later. The caller (hooks/pre-commit)
+# does the same for its own dispatch; this is defense in depth for direct
+# invocation (tests, docs, a repo's own codex-security hook).
+QA_SELF_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 QA_GLOBAL_CONF="$QA_SELF_DIR/qa-gate.conf"
 # Ast-grep rules directory — DECOUPLED for severability (git-guard ships
 # standalone). Resolution order (first hit wins), finalized after config load:
@@ -92,6 +101,47 @@ qa_cfg_malformed() {
 }
 
 # ----------------------------------------------------------------------------
+# The FULL, canonical config-key schema. Keep in sync with docs/QA_TOOLING.md
+# §5 AND every `qa_cfg <key>` call site in this file (grep: qa_cfg [A-Za-z0-9_.]*).
+# `powershell.astgrep` is the one entry never read via qa_cfg — it is
+# deliberately INERT (ast-grep has no PowerShell grammar; see qa-gate.conf's
+# note) but stays a RECOGNIZED key so an existing repo conf that sets it does
+# not start erroring under the check below. Space-separated, dotted form (the
+# form a human writes in a .qa-gate.conf), checked before the dots->underscores
+# transform.
+# ----------------------------------------------------------------------------
+QA_KNOWN_KEYS="qa.enabled nul_cleanup astgrep astgrep_panics astgrep_autofix rust.fmt rust.clippy python.ruff_check python.ruff_format python.mypy python.basedpyright shell.shellcheck csharp.format powershell.astgrep powershell.psscriptanalyzer validate.json validate.yaml largefile largefile_kb rules_dir"
+qa_cfg_key_known() {
+  case " $QA_KNOWN_KEYS " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+qa_cfg_unknown_key() {
+  # $1=file $2=lineno $3=raw-line $4=the unrecognized dotted key.
+  #
+  # A key that does not exist used to be silently accepted (eval'd into a
+  # qacfg_* variable nobody ever reads) — indistinguishable from a recognized
+  # key that happens to be off. That is the OTHER half of the vigil-friction
+  # defect (V30): its `python.pyright` line had no key git-guard recognizes at
+  # all (the real key is `python.basedpyright`), so even a syntactically
+  # correct `python.pyright=warn` would still have done nothing. Fail-CLOSED,
+  # same as a syntactically malformed line, and name every valid key so the
+  # fix is one glance away.
+  QA_FAILED=1
+  QA_CFG_MALFORMED=1
+  # shellcheck disable=SC2086  # intentional word-split: QA_KNOWN_KEYS is a
+  # deliberately space-separated list, one key per resulting line for sort.
+  qa_sorted_keys="$(printf '%s\n' $QA_KNOWN_KEYS | sort | tr '\n' ' ')"
+  printf '%s\n' \
+    "git-guard QA BLOCKED: unknown config key at ${1}:${2}: '${4}'." \
+    "  >> ${3}" \
+    "This key does not exist (a typo is otherwise indistinguishable from a" \
+    "deliberately-off setting, so this engine refuses rather than guess)." \
+    "Valid keys:" \
+    "  ${qa_sorted_keys}" \
+    "Your changes are STAGED but UNCOMMITTED — do NOT 'git reset --hard'." \
+    "Verify: git log -1 --pretty='%h %G? %s'" >&2
+}
+
+# ----------------------------------------------------------------------------
 # Config — parsed ONCE into shell variables (dots->underscores). Avoids spawning
 # sed on every lookup (the docs-only hot-path killer on Windows Git-Bash, where
 # each subprocess is ~100-250ms). Global file first, repo file second so repo
@@ -125,6 +175,10 @@ qa_load_cfg_file() {
     case "$k" in
       '') qa_cfg_malformed "$f" "$qa_cfg_lineno" "$line" "empty key before '='"; continue ;;
     esac
+    if ! qa_cfg_key_known "$k"; then
+      qa_cfg_unknown_key "$f" "$qa_cfg_lineno" "$line" "$k"
+      continue
+    fi
     # dots -> underscores (builtin)
     nk=""
     while case "$k" in *.*) true ;; *) false ;; esac; do nk="${nk}${k%%.*}_"; k="${k#*.}"; done

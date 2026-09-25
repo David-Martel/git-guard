@@ -17,7 +17,27 @@ if [ "$GIT_GUARD" = "0" ] || [ "$LEFTHOOK" = "0" ]; then
   exit 0
 fi
 
-git_guard_hooks_dir="$(cd "$(dirname "$0")" && pwd)"
+# `-P` (physical) resolves THROUGH the ~/.git-hooks -> current -> <tag>/hooks
+# symlink chain ONCE, here, at hook entry, and every common/*.sh dispatch below
+# uses this SAME resolved path. Under the versioned install (PR-4), `current`
+# can be re-pointed by a concurrent `git-guard update --to <tag>` at any
+# moment; without `-P` this variable would hold a path that still traverses
+# the `current` symlink, so a LATER file access in this same hook invocation
+# (secret_scan.sh, then nul-cleanup.sh, then qa_gate.sh) could resolve through
+# a DIFFERENT version than an EARLIER one did, mixing versions within one
+# commit. Pinning it physically here means this invocation runs entirely
+# against whichever version was `current` at the moment it started, start to
+# finish — see tests/17-version-pinning.t.sh.
+git_guard_hooks_dir="$(cd "$(dirname "$0")" && pwd -P)"
+
+# TEST-ONLY seam (default off, zero cost when unset): pause right after the
+# physical-path resolve above so a test can flip `current` to a DIFFERENT
+# version while this invocation is paused, then prove every subsequent
+# common/*.sh call in THIS invocation still used the version resolved above.
+# Never set this in real use.
+if [ "${GIT_GUARD_TEST_PAUSE_AFTER_RESOLVE:-0}" != "0" ]; then
+  sleep "$GIT_GUARD_TEST_PAUSE_AFTER_RESOLVE"
+fi
 
 # 1. Secret scan — BLOCKS (exit 1). Scans ADDED lines only.
 if [ -x "$git_guard_hooks_dir/common/secret_scan.sh" ]; then

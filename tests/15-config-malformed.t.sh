@@ -32,7 +32,7 @@ t_case_config_malformed() {
   {
     printf '# leading comments, like a real repo conf\n'
     printf '\n'
-    printf 'python.ruff_check   block   # no = sign here\n'
+    printf 'python.ruff_check   block   # missing key-value separator\n'
   } > "$r/.qa-gate.conf"
   ( cd "$r" && git add -A )
   logf="$(gg_tmp_log)"
@@ -104,6 +104,44 @@ t_case_config_malformed() {
     || t_fail "message does not name the bad-value-vocab reason"
   rm -f "$logf"; gg_rmrepo "$r"
 
+  # --- unknown/misspelled key (syntactically VALID key=value, but the key --
+  # doesn't exist) -- the OTHER half of the vigil-friction defect: even a
+  # correctly-punctuated `python.pyright=warn` did nothing, because git-guard
+  # has no such key (the real one is `python.basedpyright`).
+  r="$(gg_mktemp_repo)"
+  gg_fixture_docs_only "$r"
+  printf 'python.pyright=warn\n' > "$r/.qa-gate.conf"
+  ( cd "$r" && git add -A )
+  logf="$(gg_tmp_log)"
+  gg_run_gate_log "$r" "$logf"; rc=$?
+  t_expect_rc 1 "$rc" "a syntactically valid but UNKNOWN key BLOCKS the commit"
+  grep -q "unknown config key" "$logf" 2>/dev/null \
+    && t_ok "message says 'unknown config key'" \
+    || t_fail "message does not say 'unknown config key'"
+  grep -q "'python.pyright'" "$logf" 2>/dev/null \
+    && t_ok "message names the exact unrecognized key" \
+    || t_fail "message does not name the unrecognized key"
+  grep -q "python.basedpyright" "$logf" 2>/dev/null \
+    && t_ok "message lists the valid keys (includes the one the author probably meant)" \
+    || t_fail "message does not list valid keys"
+  rm -f "$logf"; gg_rmrepo "$r"
+
+  # --- POSITIVE CONTROL: `powershell.astgrep` is a documented EXCEPTION -- it
+  # is never read via qa_cfg (ast-grep has no PowerShell grammar) but must
+  # stay a RECOGNIZED key so an existing repo conf setting it does not now
+  # start erroring.
+  r="$(gg_mktemp_repo)"
+  gg_fixture_docs_only "$r"
+  printf 'powershell.astgrep=warn\n' > "$r/.qa-gate.conf"
+  ( cd "$r" && git add -A )
+  logf="$(gg_tmp_log)"
+  gg_run_gate_log "$r" "$logf"; rc=$?
+  t_expect_rc 0 "$rc" "powershell.astgrep (deliberately inert, still recognized) does NOT block"
+  grep -q "unknown config key" "$logf" 2>/dev/null \
+    && t_fail "powershell.astgrep was wrongly flagged as an unknown key" \
+    || t_ok "powershell.astgrep produced no unknown-key finding"
+  rm -f "$logf"; gg_rmrepo "$r"
+
   # --- POSITIVE CONTROL: a well-formed conf is completely unaffected ---------
   r="$(gg_mktemp_repo)"
   gg_fixture_docs_only "$r"
@@ -112,6 +150,7 @@ t_case_config_malformed() {
     printf 'python.ruff_check=block\n'
     printf 'python.ruff_format=warn   # inline comment is fine\n'
     printf 'astgrep=off\n'
+    printf 'rules_dir=/tmp/does-not-need-to-exist-for-this-check\n'
   } > "$r/.qa-gate.conf"
   ( cd "$r" && git add -A )
   logf="$(gg_tmp_log)"
@@ -120,6 +159,10 @@ t_case_config_malformed() {
   if grep -q "malformed config line" "$logf" 2>/dev/null
   then t_fail "well-formed conf was wrongly flagged as malformed"
   else t_ok "well-formed conf produced no malformed-config finding"
+  fi
+  if grep -q "unknown config key" "$logf" 2>/dev/null
+  then t_fail "well-formed conf (incl. rules_dir) was wrongly flagged as an unknown key"
+  else t_ok "well-formed conf produced no unknown-key finding"
   fi
   rm -f "$logf"; gg_rmrepo "$r"
 
