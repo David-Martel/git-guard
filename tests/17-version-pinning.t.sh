@@ -62,6 +62,7 @@ t_case_version_pinning() {
     cd "$test_repo" \
       && HOME="$fake_home" GIT_CONFIG_GLOBAL="$fake_home/.gitconfig" \
          GIT_GUARD_TEST_PAUSE_AFTER_RESOLVE=3 QA_DEBUG=1 \
+         GIT_GUARD_RULES_DIR='' \
          git -c core.hooksPath="$hookslink" commit -q -m "pinned commit" \
          >/dev/null 2>"$pin_log"
   ) &
@@ -98,6 +99,7 @@ t_case_version_pinning() {
   pin_log2="$(gg_tmp_log)"
   ( cd "$test_repo" \
       && HOME="$fake_home" GIT_CONFIG_GLOBAL="$fake_home/.gitconfig" QA_DEBUG=1 \
+         GIT_GUARD_RULES_DIR='' \
          git -c core.hooksPath="$hookslink" commit -q -m "post-flip commit" \
          >/dev/null 2>"$pin_log2" )
   t_expect_rc 0 "$?" "a fresh commit after the flip succeeds"
