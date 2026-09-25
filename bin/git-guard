@@ -106,17 +106,25 @@ cmd_doctor() {
   echo "  installed version: $(gg_installed_version)"
   doctor_rc=0
 
-  # The single most severe failure this tool can be in: core.hooksPath
-  # resolves to NOTHING. Git then runs NO hooks at all, silently -- no error,
-  # no warning, indistinguishable from every check passing. This is not
-  # hypothetical: it happened on 2026-09-25 when a materialized version dir
-  # was deleted out from under an ACTIVE `current` symlink by a manual (non-
-  # CLI) host operation, and every repo on the host committed hookless for
-  # about 10 minutes before anyone noticed. Check it first, unconditionally.
+  # The single most severe failure this tool can be in: core.hooksPath is SET
+  # (git-guard was installed, is expected to be working) but resolves to
+  # NOTHING, or resolves but is missing an executable pre-commit. Git then
+  # runs NO hooks at all, silently -- no error, no warning, indistinguishable
+  # from every check passing. This is not hypothetical: it happened on
+  # 2026-09-25 when a materialized version dir was deleted out from under an
+  # ACTIVE `current` symlink by a manual (non-CLI) host operation, and every
+  # repo on the host committed hookless for about 10 minutes before anyone
+  # noticed. Check it first, unconditionally.
+  #
+  # core.hooksPath simply UNSET is a DIFFERENT, non-fatal state: a host (or a
+  # CI checkout -- this exact command runs as a smoke-test in
+  # .github/workflows/qa.yml against an uninstalled tree) that never had
+  # git-guard installed at all. That is normal, not an incident, and must not
+  # fail doctor -- conflating the two here previously broke CI outright,
+  # since CI never installs git-guard before running this.
   ghp="$(git config --global core.hooksPath 2>/dev/null || echo '')"
   if [ -z "$ghp" ]; then
-    printf '  [FAIL] hooks-path     core.hooksPath is UNSET -- git-guard is not installed at all\n'
-    doctor_rc=1
+    printf '  [--]   hooks-path     core.hooksPath is unset (git-guard not installed here -- fine for a dev checkout or CI; run `git-guard install` on a host that should be gated)\n'
   else
     # shellcheck disable=SC2088  # intentional literal "~/" match, see bin/git-guard's other use.
     case "$ghp" in "~/"*) ghp="$HOME/${ghp#\~/}" ;; esac

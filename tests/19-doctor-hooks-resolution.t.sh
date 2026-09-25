@@ -1,6 +1,9 @@
 #!/bin/sh
 # Category 19 — `git-guard doctor` must FAIL LOUDLY (non-zero exit) when
-# core.hooksPath is unset, dangling, or missing an executable pre-commit.
+# core.hooksPath was INSTALLED and is now dangling or missing an executable
+# pre-commit -- but must NOT fail merely because core.hooksPath is unset
+# (never installed at all), since `doctor` also runs as a CI smoke-test
+# against an uninstalled checkout (.github/workflows/qa.yml).
 #
 # The incident this closes: on 2026-09-25 `~/.local/share/git-guard/current`
 # pointed at a version directory that had been deleted, so the global
@@ -8,7 +11,10 @@
 # in ANY repo on the host for about 10 minutes -- with no error, anywhere.
 # `cmd_doctor` previously had no exit-code contract at all (always effectively
 # 0), so even running it by hand during that window would not have surfaced
-# the problem. This suite proves the new hooks-path check actually fails.
+# the problem. This suite proves the new hooks-path check actually fails for
+# a genuinely broken install (Case C) while staying green for the ordinary
+# not-yet-installed case (Case A) -- the first version of this check
+# conflated the two and broke this PR's own CI on its first run.
 #
 # Same throwaway-worktree + isolated-HOME pattern as tests/16 and tests/18.
 # shellcheck shell=sh
@@ -29,14 +35,22 @@ t_case_doctor_hooks_resolution() {
   store="$fake_home/.local/share/git-guard"
   hookslink="$fake_home/.git-hooks"
 
-  # --- Case A: nothing installed yet -> core.hooksPath unset ---
+  # --- Case A: nothing installed yet -> core.hooksPath unset is NOT a
+  # failure. This is the normal state for a fresh dev checkout, and it is
+  # EXACTLY the state `git-guard doctor` runs in as a CI smoke-test
+  # (.github/workflows/qa.yml, both jobs) -- CI never installs git-guard
+  # before running this command. An earlier version of this check treated
+  # unset the same as dangling and broke both CI jobs outright the first
+  # time this PR's own workflow ran. Unset and dangling are different: unset
+  # means "never installed" (fine); dangling means "was installed, now
+  # broken" (the actual incident, Case C below).
   doctor_out="$(HOME="$fake_home" sh "$src/bin/git-guard" doctor 2>&1)"
   doctor_rc=$?
-  [ "$doctor_rc" != 0 ] \
-    && t_ok "doctor exits non-zero when core.hooksPath is unset (rc=$doctor_rc)" \
-    || t_fail "doctor should have failed with core.hooksPath unset but exited 0"
+  [ "$doctor_rc" = 0 ] \
+    && t_ok "doctor exits 0 when core.hooksPath is simply unset (never installed -- matches CI's own usage)" \
+    || t_fail "doctor should NOT fail merely because core.hooksPath is unset, but exited $doctor_rc: $doctor_out"
   printf '%s\n' "$doctor_out" | grep -q "hooks-path" \
-    && t_ok "doctor's unset-hooksPath failure names the hooks-path check" \
+    && t_ok "doctor still reports the hooks-path state when unset, just not as a failure" \
     || t_fail "doctor output does not mention hooks-path: $doctor_out"
 
   # --- Case B: a real, good install -> doctor passes ---
