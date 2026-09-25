@@ -136,7 +136,7 @@ t_case_config_malformed() {
   ( cd "$r" && git add -A )
   logf="$(gg_tmp_log)"
   gg_run_gate_log "$r" "$logf"; rc=$?
-  t_expect_rc 1 "$rc" "DELIBERATELY BROKEN negative control for PR-4-followup CI (David-Martel/git-guard#22) -- reverted immediately after confirming CI goes red"
+  t_expect_rc 0 "$rc" "powershell.astgrep (deliberately inert, still recognized) does NOT block"
   grep -q "unknown config key" "$logf" 2>/dev/null \
     && t_fail "powershell.astgrep was wrongly flagged as an unknown key" \
     || t_ok "powershell.astgrep produced no unknown-key finding"
