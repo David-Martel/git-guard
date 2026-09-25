@@ -116,7 +116,7 @@ t_case_config_malformed() {
   ( cd "$r" && git add -A )
   logf="$(gg_tmp_log)"
   gg_run_gate_log "$r" "$logf"; rc=$?
-  t_expect_rc 0 "$rc" "a well-formed conf still passes (no false positive from the stricter parser)"
+  t_expect_rc 1 "$rc" "DELIBERATELY BROKEN negative control for PR-4 CI (David-Martel/git-guard#21) -- reverted immediately after confirming CI goes red"
   if grep -q "malformed config line" "$logf" 2>/dev/null
   then t_fail "well-formed conf was wrongly flagged as malformed"
   else t_ok "well-formed conf produced no malformed-config finding"
