@@ -91,6 +91,7 @@ t_case_downstream_chaining
 t_case_postcommit_config
 t_case_config_malformed
 t_case_versioned_install
+t_case_version_pinning
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------

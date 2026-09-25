@@ -206,6 +206,25 @@ if [ "$DEV_SYMLINK" = "1" ]; then
   DOCS_SRC="$GG_DOCS"
   RULES_LOCAL_TARGET="$GG_HOOKS/common/qa-gate.conf.local"
 else
+  # Versioned install/update needs a real git checkout at $GG_ROOT to resolve
+  # tags and `git archive` from. $GG_ROOT is whatever directory this install.sh
+  # lives in — and that is ALSO true when this script is invoked from an
+  # already-INSTALLED, materialized release (e.g.
+  # ~/.local/share/git-guard/v0.2.0/install.sh, or via
+  # `~/.local/share/git-guard/current/bin/git-guard update --to <tag>`, which
+  # delegates here). An archive has no `.git` at all, so `git -C "$GG_ROOT"
+  # rev-parse` would otherwise fail with a generic, confusing git error. Catch
+  # it here with a specific, actionable message instead — this is the #1
+  # support question a versioned install produces (item 3 of the PR-4 audit).
+  if ! git -C "$GG_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "git-guard install: '$GG_ROOT' is not a git checkout (no .git found)." >&2
+    echo "  You are running install.sh/update from an INSTALLED, ARCHIVED release" >&2
+    echo "  (materialized by a prior 'git-guard install' — it has no git history to" >&2
+    echo "  resolve tags from). Run install/update from an actual git-guard CLONE:" >&2
+    echo "    cd ~/dev/repos/git-guard && git fetch --tags && sh install.sh --to <tag>" >&2
+    echo "    cd ~/dev/repos/git-guard && sh bin/git-guard update --to <tag>" >&2
+    exit 2
+  fi
   [ -n "$TO_TAG" ] || TO_TAG="v$(cat "$GG_ROOT/VERSION" 2>/dev/null || echo '0.0.0')"
   echo "  mode: versioned install (--to $TO_TAG)"
   run "mkdir -p \"$STORE_ROOT\""

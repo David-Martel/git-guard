@@ -22,8 +22,11 @@
 set -u
 
 # --- Locate the git-guard root (this file is at <root>/bin/git-guard) ---
-GG_BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
-GG_ROOT="$(cd "$GG_BIN_DIR/.." && pwd)"
+# `-P`: same reasoning as hooks/pre-commit -- pin the physical version this
+# invocation resolved to, independent of a concurrent `update` re-pointing
+# `current` mid-run.
+GG_BIN_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+GG_ROOT="$(cd "$GG_BIN_DIR/.." && pwd -P)"
 GG_HOOKS="$GG_ROOT/hooks"
 GG_ENGINE="$GG_HOOKS/common"
 GG_CONF="$GG_ENGINE/qa-gate.conf"

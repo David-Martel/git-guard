@@ -28,8 +28,9 @@
 set -u
 
 # --- Locate the git-guard root (this file is at <root>/bin/git-guard-run) ---
-GGR_BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
-GGR_ROOT="$(cd "$GGR_BIN_DIR/.." && pwd)"
+# `-P`: same reasoning as hooks/pre-commit -- pin the physical version.
+GGR_BIN_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+GGR_ROOT="$(cd "$GGR_BIN_DIR/.." && pwd -P)"
 GGR_GATE="$GGR_ROOT/hooks/common/qa_gate.sh"
 GGR_CLI="$GGR_BIN_DIR/git-guard"
 GGR_IMAGE="${GIT_GUARD_IMAGE:-git-guard:local}"
