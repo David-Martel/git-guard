@@ -104,6 +104,35 @@ astgrep_is_astgrep() { have ast-grep && ast-grep --version 2>/dev/null | grep -q
 cmd_doctor() {
   echo "git-guard doctor — prerequisite check"
   echo "  installed version: $(gg_installed_version)"
+  doctor_rc=0
+
+  # The single most severe failure this tool can be in: core.hooksPath
+  # resolves to NOTHING. Git then runs NO hooks at all, silently -- no error,
+  # no warning, indistinguishable from every check passing. This is not
+  # hypothetical: it happened on 2026-09-25 when a materialized version dir
+  # was deleted out from under an ACTIVE `current` symlink by a manual (non-
+  # CLI) host operation, and every repo on the host committed hookless for
+  # about 10 minutes before anyone noticed. Check it first, unconditionally.
+  ghp="$(git config --global core.hooksPath 2>/dev/null || echo '')"
+  if [ -z "$ghp" ]; then
+    printf '  [FAIL] hooks-path     core.hooksPath is UNSET -- git-guard is not installed at all\n'
+    doctor_rc=1
+  else
+    # shellcheck disable=SC2088  # intentional literal "~/" match, see bin/git-guard's other use.
+    case "$ghp" in "~/"*) ghp="$HOME/${ghp#\~/}" ;; esac
+    if hooks_phys="$(cd "$ghp" 2>/dev/null && pwd -P)"; then
+      if [ -x "$hooks_phys/pre-commit" ]; then
+        printf '  [ok]   hooks-path     %s -> %s (pre-commit present + executable)\n' "$ghp" "$hooks_phys"
+      else
+        printf '  [FAIL] hooks-path     %s -> %s, but pre-commit is MISSING or not executable\n' "$ghp" "$hooks_phys"
+        doctor_rc=1
+      fi
+    else
+      printf '  [FAIL] hooks-path     %s does NOT RESOLVE (dangling symlink/missing dir) -- git is running NO hooks anywhere on this host right now\n' "$ghp"
+      doctor_rc=1
+    fi
+  fi
+
   for t in git sg ast-grep shellcheck ruff python pwsh cygpath dotnet cargo; do
     if [ "$t" = sg ]; then
       if sg_is_astgrep; then printf '  [ok]   %-12s %s (ast-grep)\n' "$t" "$(command -v sg)"
@@ -114,6 +143,7 @@ cmd_doctor() {
   done
   echo ""
   if sg_is_astgrep || astgrep_is_astgrep; then echo "  ast-grep present -> structural BLOCK trio active"; else echo "  ast-grep ABSENT -> ast-grep layer self-skips (trio inactive)"; fi
+  return "$doctor_rc"
 }
 
 cmd_rules() {

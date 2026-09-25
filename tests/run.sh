@@ -92,6 +92,8 @@ t_case_postcommit_config
 t_case_config_malformed
 t_case_versioned_install
 t_case_version_pinning
+t_case_install_verify_before_flip
+t_case_doctor_hooks_resolution
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------

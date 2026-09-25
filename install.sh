@@ -131,6 +131,43 @@ echo "git-guard install (root: $GG_ROOT)"
 # Materialize + atomically point ~/.git-hooks at a VERSIONED, IMMUTABLE copy
 # (default). --dev-symlink opts back into the pre-PR-4 live-checkout symlink.
 # ------------------------------------------------------------------------
+# qa_verify_materialized_tree — the ONE gate between "files got extracted" and
+# "this tree is trustworthy enough to ever become `current`". Runs against a
+# tree BEFORE it is moved into place (materialize_version's tmp_dir) and again
+# against an already-materialized $ver_dir on the idempotent fast path, so a
+# tree that was corrupted or truncated AFTER materialization (disk error,
+# manual tampering) is also caught rather than trusted forever once the commit
+# marker matches. $1 = tree root to check. Prints specifics to stderr and
+# returns 2 on the first failure; the caller must leave `current` untouched.
+qa_verify_materialized_tree() {
+  t="$1"
+  if [ ! -e "$t/hooks/pre-commit" ]; then
+    echo "git-guard install: VERIFY FAILED — $t/hooks/pre-commit is missing." >&2
+    return 2
+  fi
+  if [ ! -x "$t/hooks/pre-commit" ]; then
+    echo "git-guard install: VERIFY FAILED — $t/hooks/pre-commit exists but is not executable." >&2
+    return 2
+  fi
+  if ! sh -n "$t/hooks/pre-commit" 2>/tmp/gg-verify-err.$$; then
+    echo "git-guard install: VERIFY FAILED — $t/hooks/pre-commit does not parse as sh:" >&2
+    cat /tmp/gg-verify-err.$$ >&2; rm -f /tmp/gg-verify-err.$$
+    return 2
+  fi
+  rm -f /tmp/gg-verify-err.$$
+  if [ ! -e "$t/hooks/common/qa_gate.sh" ]; then
+    echo "git-guard install: VERIFY FAILED — $t/hooks/common/qa_gate.sh is missing." >&2
+    return 2
+  fi
+  if ! sh -n "$t/hooks/common/qa_gate.sh" 2>/tmp/gg-verify-err.$$; then
+    echo "git-guard install: VERIFY FAILED — $t/hooks/common/qa_gate.sh does not parse as sh:" >&2
+    cat /tmp/gg-verify-err.$$ >&2; rm -f /tmp/gg-verify-err.$$
+    return 2
+  fi
+  rm -f /tmp/gg-verify-err.$$
+  return 0
+}
+
 materialize_version() {  # $1 = tag; echoes the version dir on success
   tag="$1"
   ver_dir="$STORE_ROOT/$tag"
@@ -139,7 +176,11 @@ materialize_version() {  # $1 = tag; echoes the version dir on success
 
   if [ -d "$ver_dir" ]; then
     if [ -f "$ver_dir/.git-guard-commit" ] && [ "$(cat "$ver_dir/.git-guard-commit" 2>/dev/null)" = "$commit" ]; then
-      echo "  ok (already materialized): $ver_dir @ ${commit}" >&2
+      if ! qa_verify_materialized_tree "$ver_dir"; then
+        echo "git-guard install: $ver_dir matches tag '$tag' by commit marker but FAILED verification (see above) — the tree may be corrupted on disk. NOT touching \`current\`. Remove $ver_dir manually and re-run to re-materialize." >&2
+        return 2
+      fi
+      echo "  ok (already materialized, verified): $ver_dir @ ${commit}" >&2
       printf '%s' "$ver_dir"; return 0
     fi
     echo "git-guard install: $ver_dir already exists but its commit marker does not match tag '$tag' (expected $commit). Refusing to overwrite a materialized version — remove $ver_dir manually if you intend to re-materialize it." >&2
@@ -164,6 +205,18 @@ materialize_version() {  # $1 = tag; echoes the version dir on success
   if [ -f "$STORE_ROOT/qa-gate.conf.local" ]; then
     cp "$STORE_ROOT/qa-gate.conf.local" "$tmp_dir/hooks/common/qa-gate.conf.local"
     echo "  carried forward overlay: $STORE_ROOT/qa-gate.conf.local" >&2
+  fi
+
+  # VERIFY BEFORE PROMOTING. This is the fix for the 2026-09-25 dangling-
+  # `current` incident: a version dir must never become reachable (let alone
+  # become the atomic-flip target) unless it has already been proven to
+  # contain a working, executable, syntactically-valid hook chain. On
+  # failure, the broken tree stays in $tmp_dir (a `.materializing.*` name, so
+  # it is obviously not a real version and safe to leave for inspection or
+  # sweep away) and `current`/$ver_dir are never touched.
+  if ! qa_verify_materialized_tree "$tmp_dir"; then
+    echo "git-guard install: refusing to promote $tmp_dir to $ver_dir — verification failed (see above). \`current\` is UNTOUCHED. Broken tree left at $tmp_dir for inspection; remove it manually once done." >&2
+    return 2
   fi
 
   mv "$tmp_dir" "$ver_dir" || { echo "git-guard install: could not move materialized tree into place" >&2; rm -rf "$tmp_dir"; return 2; }
