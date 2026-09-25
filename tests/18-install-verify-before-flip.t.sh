@@ -53,7 +53,16 @@ t_case_install_verify_before_flip() {
   # mis-authored release looks like from install.sh's point of view.
   chmod -x "$src/hooks/pre-commit"
   git -C "$src" add hooks/pre-commit
-  git -C "$src" -c user.email=test@example.com -c user.name=test commit -q -m "test: strip exec bit (simulated corruption)"
+  # --no-verify: this is a test-harness-internal commit into a THROWAWAY
+  # git-guard source worktree, not a real change to be judged by git-guard's
+  # own gate. Without it, on a host where git-guard is already globally
+  # installed (core.hooksPath set ambient-wide), this commit runs through
+  # the REAL installed hooks instead of being isolated -- and on 2026-09-25
+  # that silently swallowed the deliberate corruption below (the commit was
+  # QA-BLOCKED, so HEAD never advanced, and the test ended up re-testing the
+  # exec-bit case instead of the sh syntax case it claims to).
+  git -C "$src" -c user.email=test@example.com -c user.name=test commit -q --no-verify -m "test: strip exec bit (simulated corruption)" \
+    || { t_fail "harness setup: could not land the exec-bit-strip commit in the throwaway worktree"; return 1; }
   tag_noexec="gg-verify-noexec-$$"
   git -C "$src" -c tag.gpgsign=false -c tag.forceSignAnnotated=false tag "$tag_noexec" HEAD
 
@@ -82,7 +91,8 @@ t_case_install_verify_before_flip() {
   # --- Case C: a tag whose committed hooks/common/qa_gate.sh has bad sh syntax ---
   printf 'if [ true\n' >> "$src/hooks/common/qa_gate.sh"  # unterminated [ -- guaranteed sh -n failure
   git -C "$src" add hooks/common/qa_gate.sh hooks/pre-commit
-  git -C "$src" -c user.email=test@example.com -c user.name=test commit -q -m "test: inject sh syntax error (simulated corruption)"
+  git -C "$src" -c user.email=test@example.com -c user.name=test commit -q --no-verify -m "test: inject sh syntax error (simulated corruption)" \
+    || { t_fail "harness setup: could not land the sh-syntax-error commit in the throwaway worktree"; return 1; }
   tag_badsyntax="gg-verify-badsyntax-$$"
   git -C "$src" -c tag.gpgsign=false -c tag.forceSignAnnotated=false tag "$tag_badsyntax" HEAD
 
