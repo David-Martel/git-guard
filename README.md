@@ -80,7 +80,13 @@ sh ~/git-guard/bin/git-guard update --to v<NEW-VERSION>
 ```
 
 which materializes the new tag and flips `current` in one atomic rename — no
-commit, anywhere, ever observes a half-installed hook set.
+commit, anywhere, ever observes a half-installed hook set (`hooks/pre-commit`
+resolves its own directory physically, once, at entry, so an in-flight commit
+stays pinned to whichever version it started with even if `update` runs while
+it's paused mid-invocation). `update --to <tag>` must be run from an actual
+git-guard git checkout (e.g. `~/dev/repos/git-guard`), not from an already-
+installed archive — running it from `~/.local/share/git-guard/current/bin/
+git-guard` fails with a clear error explaining why and how to fix it.
 
 `install.sh` is **idempotent and reversible** (`install.sh --uninstall` restores
 the prior state from an automatic backup; materialized versions under the store
@@ -139,6 +145,13 @@ python.ruff_check=off
 shell.shellcheck=off
 # secret scan + nul cleanup still run (they live in the hook, not the gate)
 ```
+
+A malformed line (no `=`, an empty key) or an unrecognized key (a typo, or a
+name from a different tool) **blocks the commit**, naming the exact
+`file:line` and, for an unrecognized key, every valid key — see
+[`docs/QA_TOOLING.md`](docs/QA_TOOLING.md) §5. Both used to be silently
+ignored, which is how a repo can carry an override that has done nothing for
+weeks with no output anywhere.
 
 ## Layout
 
