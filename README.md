@@ -206,8 +206,10 @@ sh bin/git-guard-run gate /path/to/repo  # run the gate against a repo's staged 
 | `GIT_GUARD_AGENT` | explicit commit agent (`codex` enables Codex attribution) |
 
 The `prepare-commit-msg` hook also detects Codex through `CODEX_THREAD_ID` and
-adds `Agent: codex` plus Codex's stable `noreply` co-author trailer. Existing
-matching trailers are not duplicated, and a conflicting `Agent:` trailer blocks
+adds `Agent: codex` plus Codex's stable `noreply` co-author trailer to Git's final
+parsed trailer block. An earlier matching body paragraph is preserved and does
+not suppress attribution. Existing matching trailers are not multiplied, other
+co-authors are preserved, and a conflicting `Agent:` line anywhere blocks
 the commit. `GIT_GUARD=0` is the hook's explicit emergency-human bypass; routine
 agent work must not use it.
 
