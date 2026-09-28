@@ -61,6 +61,36 @@ t_case_lfs_prepush() {
     t_fail "GIT_GUARD=0 push left the LFS object behind"
   fi
 
+  # The BLOCK branch: an LFS repo pushed from a host WITHOUT git-lfs must refuse
+  # loudly instead of pushing dangling pointers. Invoke the hook directly with a
+  # PATH holding only the tools it needs, none of them git-lfs.
+  nolfs="$(mktemp -d "${GG_T_TMPROOT:-/tmp}/gg.nolfs.XXXXXX")"
+  for tool in git sh cat mktemp rm printf; do
+    tp="$(command -v "$tool" 2>/dev/null)" && [ -x "$tp" ] && ln -s "$tp" "$nolfs/$tool"
+  done
+  if [ -x "$nolfs/git-lfs" ] || PATH="$nolfs" command -v git-lfs >/dev/null 2>&1; then
+    t_fail "test PATH unexpectedly still resolves git-lfs"
+  else
+    blog="$(gg_tmp_log)"
+    ( cd "$r" && PATH="$nolfs" sh "$GG_ROOT/hooks/pre-push" origin "$remote" \
+        </dev/null >/dev/null 2>"$blog" ); rc=$?
+    if [ "$rc" -ne 0 ]; then t_ok "pre-push refuses an LFS repo when git-lfs is missing (rc=$rc)"
+    else t_fail "pre-push did NOT refuse an LFS repo without git-lfs"; fi
+    if grep -q "git-lfs is NOT installed" "$blog" 2>/dev/null; then
+      t_ok "missing git-lfs BLOCK message surfaced"
+    else
+      t_fail "missing git-lfs BLOCK message absent"
+    fi
+    # Control: the same restricted PATH on a repo with NO LFS usage must not block.
+    plain="$(gg_mktemp_repo)"
+    ( cd "$plain" && PATH="$nolfs" sh "$GG_ROOT/hooks/pre-push" origin "$remote" \
+        </dev/null >/dev/null 2>&1 ); rc=$?
+    t_expect_rc 0 "$rc" "restricted PATH without LFS usage is not blocked (control)"
+    gg_rmrepo "$plain"
+    rm -f "$blog"
+  fi
+  rm -rf "$nolfs"
+
   rm -f "$logf"
   gg_rmrepo "$r"
   gg_rmrepo "$remote"
