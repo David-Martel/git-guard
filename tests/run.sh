@@ -94,6 +94,7 @@ t_case_versioned_install
 t_case_version_pinning
 t_case_install_verify_before_flip
 t_case_doctor_hooks_resolution
+t_case_lfs_prepush
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------

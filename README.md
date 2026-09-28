@@ -161,7 +161,7 @@ git-guard/
 │   ├── pre-commit         compose: secret-scan → nul → qa_gate → warnings → downstream
 │   ├── prepare-commit-msg deterministic Codex attribution trailers
 │   ├── post-commit        landed-SHA feedback (verify before any reset)
-│   ├── pre-push           optional downstream chaining
+│   ├── pre-push           git-lfs upload (when the repo uses LFS) + optional downstream chaining
 │   └── common/            the engine
 │       ├── qa_gate.sh         language-gated, configurable QA gate
 │       ├── secret_scan.sh     added-lines secret scanner
