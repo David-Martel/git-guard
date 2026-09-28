@@ -8,8 +8,39 @@
 #
 # Bypass: `GIT_GUARD=0 git push ...`. Do NOT use --no-verify.
 
+# git-lfs FIRST, and even under the bypass. Installing git-guard through
+# core.hooksPath makes git ignore the repo's own .git/hooks, including the
+# pre-push hook `git lfs install` writes there, so LFS objects were never
+# uploaded: GitHub rejected such pushes (GH008 "unknown Git LFS object") and a
+# plain remote silently accepted dangling pointers (2026-09-28, vigil-ai-tpm).
+# Uploading data is not a gate, so GIT_GUARD=0 does not skip it. git lfs
+# pre-push reads the ref list on stdin; buffer it so the downstream chain below
+# still receives it.
+git_guard_uses_lfs() {
+  git grep -q -I -e 'filter=lfs' -- .gitattributes '*/.gitattributes' 2>/dev/null
+}
+git_guard_stdin=""
+if git_guard_uses_lfs; then
+  if ! command -v git-lfs >/dev/null 2>&1; then
+    printf '%s\n' \
+      "git-guard BLOCK: this repo tracks files with git-lfs (filter=lfs in .gitattributes)" \
+      "but git-lfs is NOT installed, so its objects would never reach the remote." \
+      "Install git-lfs, then push again. Do NOT use --no-verify." >&2
+    exit 1
+  fi
+  git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX")" || exit 1
+  trap 'rm -f "$git_guard_stdin"' EXIT
+  cat > "$git_guard_stdin"
+  git lfs pre-push "$@" < "$git_guard_stdin" || exit $?
+fi
+
 if [ "$GIT_GUARD" = "0" ] || [ "$LEFTHOOK" = "0" ]; then
   exit 0
+fi
+
+# Replay the buffered ref list to whichever downstream gate runs below.
+if [ -n "$git_guard_stdin" ]; then
+  exec < "$git_guard_stdin"
 fi
 
 # CONFIGURED-BUT-UNRUNNABLE is an ERROR here too. pre-push is where the heavy

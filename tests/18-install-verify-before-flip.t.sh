@@ -125,5 +125,11 @@ t_case_install_verify_before_flip() {
   chmod +x "$store/$tag_good/hooks/pre-commit"  # restore for cleanup hygiene
 
   git -C "$GG_ROOT" worktree remove --force "$src" >/dev/null 2>&1
+  # Why: a linked worktree shares refs with the real checkout, so these throwaway
+  # tags would otherwise accumulate in the git-guard repo itself (found 2026-09-28:
+  # ten leaked gg-verify-*/gg-doctor-* tags from earlier runs).
+  for gg_leak_tag in "$tag_good" "$tag_noexec" "$tag_badsyntax"; do
+    git -C "$GG_ROOT" tag -d "$gg_leak_tag" >/dev/null 2>&1 || true
+  done
   git -C "$GG_ROOT" worktree prune -v >/dev/null 2>&1
 }
