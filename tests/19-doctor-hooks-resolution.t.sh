@@ -97,5 +97,11 @@ t_case_doctor_hooks_resolution() {
     || t_fail "doctor should have caught the non-executable pre-commit but exited 0"
 
   git -C "$GG_ROOT" worktree remove --force "$src" >/dev/null 2>&1
+  # Why: a linked worktree shares refs with the real checkout, so these throwaway
+  # tags would otherwise accumulate in the git-guard repo itself (found 2026-09-28:
+  # ten leaked gg-verify-*/gg-doctor-* tags from earlier runs).
+  for gg_leak_tag in "$tag_good" "$tag_good2"; do
+    git -C "$GG_ROOT" tag -d "$gg_leak_tag" >/dev/null 2>&1 || true
+  done
   git -C "$GG_ROOT" worktree prune -v >/dev/null 2>&1
 }
