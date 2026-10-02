@@ -51,6 +51,24 @@ can soften or disable any check with a per-repo `.qa-gate.conf`.
 
 Full schema, precedence, and the rule catalog: [`docs/QA_TOOLING.md`](docs/QA_TOOLING.md).
 
+### Fleet version minimums
+
+`git-guard versions` delegates to the canonical `vigil-utils` checker and policy;
+it carries no second list of minimums. Use it in a clean, isolated CI checkout:
+
+```sh
+git-guard versions --repo "$TARGET_CHECKOUT" --commit "$TARGET_SHA" \
+  --checker-root "$UTILS_CHECKOUT" --checker-commit "$UTILS_SHA" --report --json "$EVIDENCE_DIR/versions.json"
+# After reviewing compatibility lanes, select --enforce instead of --report.
+```
+
+Both SHAs must be reviewed full commit IDs. Both checkouts must match their
+committed bytes, without staged, untracked or ignored additions. `--enforce`
+propagates checker failures; a missing or mismatched checker fails in either
+mode. This is an explicit CI/review command, not an automatically installed hook
+or an assessment of installed fleet software. See the
+[contract and current checker limits](docs/QA_TOOLING.md#fleet-version-minimums).
+
 ## Quick start
 
 ```sh
