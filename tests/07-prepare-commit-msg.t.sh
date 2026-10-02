@@ -142,3 +142,125 @@ t_case_attribution() {
 
   gg_rmrepo "$r"
 }
+
+# Claude Code attribution. Claude Code exports CLAUDECODE=1 (and
+# CLAUDE_CODE_ENTRYPOINT) into every shell it spawns; the hook must add exactly
+# one `Agent: claude` trailer and nothing else (the co-author line carries a
+# model name, so Claude writes it itself and the hook never duplicates it).
+t_case_attribution_claude() {
+  t_begin "prepare-commit-msg Claude attribution"
+
+  r="$(gg_mktemp_repo)" || { t_fail "create Claude attribution repo"; return; }
+  mkdir -p "$r/test-hooks"
+  cp "$GG_ROOT/hooks/prepare-commit-msg" "$r/test-hooks/prepare-commit-msg"
+  chmod +x "$r/test-hooks/prepare-commit-msg"
+  git -C "$r" config core.hooksPath "$r/test-hooks"
+
+  # Positive control: a real `git commit` under CLAUDECODE=1.
+  printf 'claude\n' > "$r/claude.txt"
+  git -C "$r" add claude.txt
+  (cd "$r" && CLAUDECODE=1 git commit -q -m "claude commit")
+  claude_trailers="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse)"
+  agent_count="$(printf '%s\n' "$claude_trailers" | grep -c '^Agent: claude$')"
+  t_expect_rc 1 "$agent_count" "CLAUDECODE=1 commit has one Agent: claude trailer"
+  coauthor_count="$(printf '%s\n' "$claude_trailers" | grep -c '^Co-authored-by:')"
+  t_expect_rc 0 "$coauthor_count" "hook adds no Co-authored-by for Claude"
+
+  # CLAUDE_CODE_ENTRYPOINT alone is also a Claude Code marker.
+  printf 'subject\n' > "$r/entrypoint-message"
+  (cd "$r" && CLAUDE_CODE_ENTRYPOINT=cli "$r/test-hooks/prepare-commit-msg" "$r/entrypoint-message")
+  t_expect_rc 0 "$?" "CLAUDE_CODE_ENTRYPOINT hook run succeeds"
+  git interpret-trailers --parse "$r/entrypoint-message" | grep -qx 'Agent: claude'
+  t_assert "$?" "CLAUDE_CODE_ENTRYPOINT attributes to claude"
+
+  # An existing Agent: claude trailer (and Claude's own co-author) is kept once.
+  printf 'dedupe\n' > "$r/dedupe.txt"
+  git -C "$r" add dedupe.txt
+  (cd "$r" && CLAUDECODE=1 git commit -q \
+    -m "pre-attributed claude commit" \
+    -m "Agent: claude
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>")
+  dedupe_trailers="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse)"
+  agent_count="$(printf '%s\n' "$dedupe_trailers" | grep -c '^Agent: claude$')"
+  t_expect_rc 1 "$agent_count" "existing Agent: claude trailer is not duplicated"
+  coauthor_count="$(printf '%s\n' "$dedupe_trailers" | grep -c '^Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>$')"
+  t_expect_rc 1 "$coauthor_count" "Claude's own co-author trailer is preserved once"
+
+  # Idempotent: a second run leaves the message byte-identical.
+  printf 'subject\n\nbody\n' > "$r/repeat-message"
+  (cd "$r" && CLAUDECODE=1 "$r/test-hooks/prepare-commit-msg" "$r/repeat-message")
+  cp "$r/repeat-message" "$r/repeat-before"
+  (cd "$r" && CLAUDECODE=1 "$r/test-hooks/prepare-commit-msg" "$r/repeat-message")
+  cmp -s "$r/repeat-before" "$r/repeat-message"
+  t_assert "$?" "repeat Claude hook run is byte-idempotent"
+
+  # A Codex process spawned from inside Claude Code inherits CLAUDECODE=1 but
+  # carries its own CODEX_THREAD_ID: the per-process marker wins.
+  printf 'nested\n' > "$r/nested.txt"
+  git -C "$r" add nested.txt
+  (cd "$r" && CLAUDECODE=1 CODEX_THREAD_ID=test-thread git commit -q -m "codex inside claude")
+  nested_trailers="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse)"
+  printf '%s\n' "$nested_trailers" | grep -qx 'Agent: codex'
+  t_assert "$?" "CODEX_THREAD_ID outranks inherited CLAUDECODE"
+  if printf '%s\n' "$nested_trailers" | grep -q '^Agent: claude'; then
+    t_fail "nested Codex commit carries no Agent: claude"
+  else
+    t_ok "nested Codex commit carries no Agent: claude"
+  fi
+
+  # Explicit selector outranks every ambient marker.
+  printf 'subject\n' > "$r/explicit-message"
+  (cd "$r" && CLAUDECODE='' CODEX_THREAD_ID=test-thread GIT_GUARD_AGENT=claude "$r/test-hooks/prepare-commit-msg" "$r/explicit-message")
+  git interpret-trailers --parse "$r/explicit-message" | grep -qx 'Agent: claude'
+  t_assert "$?" "GIT_GUARD_AGENT=claude attributes to claude"
+
+  # Empty / non-1 markers are not Claude Code.
+  printf 'subject\n' > "$r/none-message"
+  cp "$r/none-message" "$r/none-before"
+  (cd "$r" && CLAUDECODE='' CLAUDE_CODE_ENTRYPOINT='' CODEX_THREAD_ID='' "$r/test-hooks/prepare-commit-msg" "$r/none-message")
+  t_expect_rc 0 "$?" "no agent env hook run succeeds"
+  cmp -s "$r/none-before" "$r/none-message"
+  t_assert "$?" "no agent env leaves message byte-identical"
+
+  # Symmetric conflict: Claude committing over an Agent: codex line blocks.
+  printf 'conflict\n' > "$r/conflict.txt"
+  git -C "$r" add conflict.txt
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && CLAUDECODE=1 git commit -q -m "conflicting claude commit" -m "Agent: codex" >/dev/null 2>&1)
+  rc=$?
+  after="$(git -C "$r" rev-parse HEAD)"
+  t_expect_rc 1 "$rc" "Claude commit with Agent: codex trailer blocks"
+  if [ "$before" = "$after" ]; then
+    t_ok "blocked conflicting Claude commit does not land"
+  else
+    t_fail "blocked conflicting Claude commit does not land"
+  fi
+
+  # GIT_GUARD=0 is a no-op for Claude too.
+  printf 'subject\n' > "$r/bypass-message"
+  cp "$r/bypass-message" "$r/bypass-before"
+  (cd "$r" && GIT_GUARD=0 CLAUDECODE=1 "$r/test-hooks/prepare-commit-msg" "$r/bypass-message")
+  t_expect_rc 0 "$?" "GIT_GUARD=0 Claude hook run succeeds"
+  cmp -s "$r/bypass-before" "$r/bypass-message"
+  t_assert "$?" "GIT_GUARD=0 leaves Claude message byte-identical"
+
+  # Message sources ($2) are not special-cased: merge, squash and amend
+  # (commit) are attributed exactly like a plain message.
+  for src in merge squash commit; do
+    printf 'Merge branch x\n' > "$r/src-$src-message"
+    (cd "$r" && CLAUDECODE=1 "$r/test-hooks/prepare-commit-msg" "$r/src-$src-message" "$src" HEAD)
+    t_expect_rc 0 "$?" "Claude hook run succeeds for source=$src"
+    git interpret-trailers --parse "$r/src-$src-message" | grep -qx 'Agent: claude'
+    t_assert "$?" "source=$src is attributed to claude"
+  done
+
+  # A squash message indents the squashed commits' trailers; an indented
+  # `Agent: codex` is body text, not a conflict.
+  printf 'Squashed commit of the following:\n\n    codex work\n\n    Agent: codex\n' > "$r/squash-body-message"
+  (cd "$r" && CLAUDECODE=1 "$r/test-hooks/prepare-commit-msg" "$r/squash-body-message" squash)
+  t_expect_rc 0 "$?" "indented squashed Agent: codex does not conflict"
+  git interpret-trailers --parse "$r/squash-body-message" | grep -qx 'Agent: claude'
+  t_assert "$?" "squash message is attributed to claude"
+
+  gg_rmrepo "$r"
+}
