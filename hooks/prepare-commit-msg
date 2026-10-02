@@ -1,8 +1,15 @@
 #!/bin/sh
-# Deterministically attribute commits created by OpenAI Codex.
+# Deterministically attribute commits created by AI coding agents.
+#
+#   Codex       -> `Agent: codex` + Codex's stable noreply Co-authored-by
+#   Claude Code -> `Agent: claude` (Claude writes its own Co-authored-by, which
+#                  names the model, so the hook never adds or duplicates one)
+#   human       -> no trailer
 #
 # Git always runs prepare-commit-msg, even with --no-verify. A human who must
 # make an emergency commit can bypass this hook explicitly with GIT_GUARD=0.
+# The message source ($2: message/template/merge/squash/commit) is deliberately
+# not special-cased: every commit an agent creates is attributed the same way.
 
 set -u
 
@@ -16,24 +23,38 @@ if [ -z "$message_file" ] || [ ! -f "$message_file" ]; then
   exit 1
 fi
 
-# An explicit agent selector takes precedence. Otherwise, CODEX_THREAD_ID is
-# the stable process-level signal exported by Codex CLI sessions.
+# An explicit agent selector takes precedence. Otherwise:
+#   * CODEX_THREAD_ID is the stable process-level signal exported by Codex CLI.
+#     Only that variable counts: Claude Code shells can carry unrelated CODEX_*
+#     configuration (CODEX_MODEL, CODEX_ENABLED, ...).
+#   * CLAUDECODE=1 / CLAUDE_CODE_ENTRYPOINT are exported by Claude Code into
+#     every shell it spawns.
+# Codex outranks Claude: a Codex process launched from inside Claude Code
+# inherits CLAUDECODE=1 but carries its own CODEX_THREAD_ID, and the
+# per-process marker beats the inherited ancestor marker.
 case "${GIT_GUARD_AGENT:-}" in
-  codex) is_codex=1 ;;
+  codex) agent=codex ;;
+  claude) agent=claude ;;
   "")
-    if [ -n "${CODEX_THREAD_ID:-}" ]; then is_codex=1; else is_codex=0; fi
+    if [ -n "${CODEX_THREAD_ID:-}" ]; then
+      agent=codex
+    elif [ "${CLAUDECODE:-}" = "1" ] || [ -n "${CLAUDE_CODE_ENTRYPOINT:-}" ]; then
+      agent=claude
+    else
+      agent=""
+    fi
     ;;
-  *) is_codex=0 ;;
+  *) agent="" ;;
 esac
 
-if [ "$is_codex" != "1" ]; then
+if [ -z "$agent" ]; then
   exit 0
 fi
 
 # Inspect every trailer-shaped Agent line, including case and whitespace forms
 # Git accepts. Multiple `git commit -m` paragraphs can put blank lines between
 # trailers, so checking only `interpret-trailers --parse` is insufficient.
-conflicting_agent="$(awk '
+conflicting_agent="$(awk -v agent="$agent" '
   BEGIN { conflict = "" }
   {
     line = $0
@@ -42,7 +63,7 @@ conflicting_agent="$(awk '
       sub(/^[^:]*:[[:space:]]*/, "", line)
       sub(/^[[:space:]]+/, "", line)
       sub(/[[:space:]]+$/, "", line)
-      if (tolower(line) != "codex" && conflict == "") {
+      if (tolower(line) != agent && conflict == "") {
         conflict = (line == "" ? "<empty>" : line)
       }
     }
@@ -51,20 +72,33 @@ conflicting_agent="$(awk '
 ' "$message_file")"
 
 if [ -n "$conflicting_agent" ]; then
-  printf 'git-guard prepare-commit-msg: conflicting Agent trailer: %s\n' "$conflicting_agent" >&2
+  printf 'git-guard prepare-commit-msg: conflicting Agent trailer: %s (detected agent: %s)\n' \
+    "$conflicting_agent" "$agent" >&2
   printf 'Set GIT_GUARD=0 only for an intentional human emergency commit.\n' >&2
   exit 1
 fi
 
 # A matching Agent line in an earlier paragraph is body text, not a parsed
 # trailer. Let Git find the final trailer block; retain that earlier text.
-# Add the co-author first, then replace/add Agent at the end. This canonicalizes
-# Agent's spelling and keeps repeated hook invocations byte-identical without
-# replacing another contributor's Co-authored-by trailer.
-git interpret-trailers --in-place \
-  --if-exists addIfDifferent \
-  --if-missing add \
-  --trailer 'Co-authored-by: Codex <codex@users.noreply.github.com>' \
-  --if-exists replace \
-  --trailer 'Agent: codex' \
-  "$message_file"
+# `--if-exists replace` canonicalizes Agent's spelling and keeps repeated hook
+# invocations byte-identical.
+case "$agent" in
+  codex)
+    # Add the co-author first, then replace/add Agent at the end, without
+    # replacing another contributor's Co-authored-by trailer.
+    git interpret-trailers --in-place \
+      --if-exists addIfDifferent \
+      --if-missing add \
+      --trailer 'Co-authored-by: Codex <codex@users.noreply.github.com>' \
+      --if-exists replace \
+      --trailer 'Agent: codex' \
+      "$message_file"
+    ;;
+  claude)
+    git interpret-trailers --in-place \
+      --if-exists replace \
+      --if-missing add \
+      --trailer 'Agent: claude' \
+      "$message_file"
+    ;;
+esac

@@ -34,6 +34,15 @@ export GIT_GUARD_RULES_DIR="$GG_BUNDLED"
 # make the gate's JSON/YAML validation misfire). Harmless when already unset.
 export PYTHONHOME=
 
+# Neutralise inherited agent markers. prepare-commit-msg attributes commits from
+# CLAUDECODE / CLAUDE_CODE_ENTRYPOINT (Claude Code) and CODEX_THREAD_ID (Codex),
+# and every shell those tools spawn exports them. Running the suite from inside
+# an agent session would otherwise attribute every "human" fixture commit and
+# pass on CI while failing locally (or vice versa). Cases that need an agent set
+# the marker per invocation. Empty, not unset: `env -u` is not POSIX, and the
+# hook treats an empty marker as absent.
+export CLAUDECODE='' CLAUDE_CODE_ENTRYPOINT='' CODEX_THREAD_ID='' GIT_GUARD_AGENT=''
+
 # Per-suite temp root, cleaned on exit (covers any repo a case forgot to remove).
 GG_T_TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/git-guard-tests.XXXXXX")"
 export GG_T_TMPROOT
@@ -83,6 +92,7 @@ t_case_rule_integrity
 t_case_panic_set
 t_case_silent_failures
 t_case_attribution
+t_case_attribution_claude
 t_case_secret_scan
 t_case_cache_staleness
 t_case_powershell

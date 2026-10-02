@@ -41,9 +41,11 @@
 - **pre-push**: runs the heavy gate (tests/clippy/typecheck/build). On failure the push
   is rejected; the branch is not updated. Look for `! [remote rejected]` or
   `failed to push`. (Note: this repo family's pre-push runs on EVERY push incl. branches.)
-- **prepare-commit-msg**: adds deterministic Codex attribution when
-  `CODEX_THREAD_ID` is present or `GIT_GUARD_AGENT=codex`. Git does not skip this
-  hook with `--no-verify`. A conflicting `Agent:` trailer blocks the commit; the
+- **prepare-commit-msg**: adds deterministic agent attribution — `Agent: codex`
+  (+ Codex co-author) when `CODEX_THREAD_ID` is present or `GIT_GUARD_AGENT=codex`,
+  `Agent: claude` when `CLAUDECODE=1` / `CLAUDE_CODE_ENTRYPOINT` is present or
+  `GIT_GUARD_AGENT=claude` (Codex wins when both are set). Human commits get no
+  trailer. Git does not skip this hook with `--no-verify`. A conflicting `Agent:` trailer blocks the commit; the
   deliberate human-emergency escape hatch is `GIT_GUARD=0`.
 - A chained PowerShell/bash command does **not** stop on a hook failure unless you check
   exit codes / output between steps. Always inspect the commit/push result.
