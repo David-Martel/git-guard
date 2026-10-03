@@ -97,7 +97,8 @@ branch. "Unset" means the default behaviour applies.
 | `GIT_GUARD_TEST_PAUSE_AFTER_RESOLVE` | `hooks/pre-commit` | **Test-only** seam (seconds to sleep after the version resolve). Never set it in real use. |
 
 `install.sh` flags (`./install.sh --help` prints the header). `git-guard install`
-forwards `--to`, `--store`, `--rules-dir`, `--dev-symlink` and `--dry-run`:
+passes all of its arguments straight to `install.sh` (`bin/git-guard`
+`cmd_install`):
 
 | Flag | Effect |
 |---|---|
