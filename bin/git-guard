@@ -15,6 +15,7 @@
 #              repo's hooks change together, never half-installed
 #   uninstall  remove the hooks (delegates to install.sh --uninstall)
 #   version    print the version of THIS checkout (not necessarily what's installed)
+#   versions   run the pinned canonical fleet minimum checker (explicit report/enforce)
 #   help       this message
 #
 # No machine-specific paths: everything resolves relative to this script.
@@ -237,5 +238,6 @@ case "${1:-help}" in
   update)     shift; cmd_update "$@" ;;
   uninstall)  shift; cmd_uninstall "$@" ;;
   version|--version|-v) gg_version ;;
+  versions)   shift; sh "$GG_ENGINE/fleet_versions.sh" "$@" ;;
   help|--help|-h|*) cmd_help ;;
 esac

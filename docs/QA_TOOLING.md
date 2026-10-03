@@ -417,6 +417,88 @@ QA_DEBUG=1 ~/.git-hooks/common/qa_gate.sh   # with files staged
 
 ---
 
+## Fleet version minimums
+
+The explicit `git-guard versions` command invokes
+`vigil-utils/tools/fleet_versions/check.py` with its own
+`policy/fleet-versions.toml`. git-guard does not copy minimums, compare package
+versions, invent compatibility lanes, or fetch a newer policy during a check.
+
+```sh
+git-guard versions --repo "$TARGET_CHECKOUT" --commit "$TARGET_SHA" \
+  --checker-root "$UTILS_CHECKOUT" --checker-commit "$UTILS_SHA" --enforce --json "$EVIDENCE_DIR/versions.json"
+```
+
+Use `--report` for initial inventory; review and declare justified lanes through
+the canonical registry process, then explicitly select `--enforce` in the
+repository's CI or existing hook owner. Neither installing git-guard nor adding
+this command enables enforcement elsewhere. Repositories with their own
+`core.hooksPath` retain it. A pre-push caller must provide the exact committed
+snapshot being pushed, not assume its working directory represents every ref.
+
+The contract is deliberately restrictive:
+
+- Supply full lowercase 40-character commit IDs for the target and checker.
+  The checker pin is independent of another repository's QA-tooling cutoff.
+  The caller must obtain both pins from reviewed configuration; a matching hash
+  proves identity, not approval of an arbitrary checker supplied by the caller.
+- Use isolated checkouts with no concurrent writers. The adapter verifies HEAD,
+  clean index/worktree status, all tracked Git blob bytes, and absence of
+  untracked or ignored inputs before and after the checker runs. This catches
+  staged downgrades, `assume-unchanged` edits, and ignored manifests that the
+  canonical filesystem scanner could otherwise read. Keep virtual environments,
+  generated caches and reports outside these checkouts. CRLF or smudge-filter
+  transformations that change committed bytes are refused.
+- A tracked symlink must use a relative target, and every hop of its chain must
+  itself be a tracked entry, ending at a tracked regular file. So a link into
+  Git metadata (`check.py -> ../../.git/evil.py`), through any untracked path,
+  to an absolute path, or to a directory is refused before anything runs. A
+  tracked file reached through a symlinked directory is refused as well.
+  Broken links, escapes, submodule entries, sparse/missing files and non-regular
+  file substitutions are refused rather than treated as an incomplete clean
+  inventory. This does not
+  make a concurrently mutable directory an atomic snapshot.
+- Python 3.11+ and Git must already be available. Set
+  `GIT_GUARD_VERSIONS_PYTHON` to an existing interpreter path if necessary. The
+  canonical checker runs with isolated Python, no site packages or bytecode,
+  and only its verified local module directory added for imports. A checker
+  revision requiring third-party imports needs a separately reviewed runtime
+  contract. No tool is installed. Network lookups are disabled explicitly.
+
+For Linux, macOS or Windows Git Bash CI, prepare fresh checkouts using
+`git -c core.autocrlf=false clone --no-checkout ...` and
+`git -c core.autocrlf=false checkout --detach <full-sha>`. Disable configured
+smudge filters in that disposable clone before checkout; LFS pointers must stay
+as committed pointer bytes for this source-inventory check. Materialize LFS
+artifacts separately. This is not a universal ordinary developer hook.
+
+The command prints target/checker commits, inventory digests, policy/checker
+SHA256 hashes, the adapter helper SHA256, interpreter identity and mode. It preserves checker stdout and
+stderr and returns the exact checker exit status; provenance/setup failures
+return 2. Git operations have a 60-second timeout and the checker a 120-second
+timeout. Invocation does not change source, the index, hooks or host software.
+`--json` writes a new receipt outside both snapshots, preserving the full canonical
+JSON object under `canonical_report` with provenance and `checker_exit_code`.
+It never overwrites a receipt. UNKNOWN/unresolved findings, warnings and lane
+errors remain unchanged; exit zero does not establish complete coverage. A
+checker setup failure may have no report (recorded as null), while exit 0/1
+without a valid report fails closed. Keep the receipt together with stderr.
+
+**Canonical semantics remain authoritative.** At reviewed `vigil-utils`
+`a2bea934a08ae594f596a2dbc82e80593096a176`, enforcement rejects minimum violations,
+invalid lanes and parse warnings. It still treats floating refs as unresolved
+without rejecting them, drops prerelease suffixes when comparing versions, and
+treats a low declared floor as advisory while relying on resolved pins. These
+are outstanding canonical-checker concerns, not fixes delivered by this adapter.
+`--enforce` success is therefore the selected checker's result, not proof of
+complete SemVer/PEP440 compliance or installed/loaded fleet version alignment.
+Expand adoption only after those semantics and the applicable lanes are reviewed.
+
+The adapter's fixture tests run through `tests/run.sh fleet_versions`; the
+normal suite includes them. They prove real CLI delegation, exact exit-code
+propagation, clean/provenance refusal and environment isolation. Canonical
+policy correctness remains covered by vigil-utils' own tests and ratchet.
+
 ## 10. Revert / rollback
 
 - **Whole QA layer (keep MVC):** restore `~/.git-hooks.pre-qa-backup`:
