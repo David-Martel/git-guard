@@ -56,15 +56,23 @@ Full schema, precedence, and the rule catalog: [`docs/QA_TOOLING.md`](docs/QA_TO
 Only owned, regular, single-link, zero-byte reserved-name files in the active
 worktree may be removed. Git metadata, linked worktree containers and nested
 repositories are pruned; nonempty, symlinked, foreign-owned or changed matches
-are preserved and block with a diagnostic.
+are preserved and block with a diagnostic. Reserved-name directories and
+symlinks, and unreadable eligible subtrees, are deliberately preserved and
+blocking. Inspect and rename a conflicting path or restore access outside the
+hook; it never applies unsafe chmod or deletes meaningful content to proceed.
 
 On Linux x64/ARM64 with Rust available, the bundled read-only
 [`reserved_path_inventory.rs`](hooks/common/reserved_path_inventory.rs) replaces
 per-directory shell subprocesses. A complete successful NUL-delimited inventory
 precedes the existing removal checks. Build/scan failures block; unavailable Rust
 uses the physical POSIX scan. This is a full metadata scan, with no cache or
-atomic-unlink guarantee. Windows PowerShell remains audit-only pending Windows
-qualification. External `NUKENUL_BIN` tools are never executed.
+atomic-unlink guarantee: availability and cost depend on the complete eligible
+tree, not just staged changes. The Linux compiler runs from `/` with absolute
+source/output paths and Rustup auto-install disabled. Repository-local
+`rust-toolchain` files cannot select it; trusted host/user Rustup defaults and
+explicit `RUSTUP_TOOLCHAIN` / `RUSTUP_HOME` remain authoritative. Windows
+PowerShell remains audit-only pending Windows qualification. External
+`NUKENUL_BIN` tools are never executed.
 
 ### Fleet version minimums
 

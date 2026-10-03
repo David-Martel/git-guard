@@ -87,7 +87,7 @@ errors. The default blocking surface is deliberately NARROW.
 | Check | Trigger (staged files) | Tool | Default | Notes |
 |---|---|---|---|---|
 | secret-scan | added lines (any file) | `secret_scan.sh` | **BLOCK** | MVC; added-lines-only |
-| nul-cleanup | always | bundled Rust inventory / physical shell scan | **BLOCK** | owned regular single-link zero-byte removal only; ambiguous/nonempty matches retained |
+| nul-cleanup | always | bundled Rust inventory / physical shell scan | **BLOCK** | owned regular single-link zero-byte removal only; directories, symlinks, nonempty/ambiguous matches and unreadable eligible subtrees preserved and blocking |
 | ast-grep trio | `*.rs` | `sg` (batched) | **BLOCK** | avoid-static-mut, no-glob-reexport, unsafe-with-panic |
 | ast-grep panic-set | `*.rs` | `sg` | **WARN** | unwrap/panic/unchecked… never blocks |
 | ast-grep other | source files | `sg` | **WARN** | core/security/csharp/powershell rules |
@@ -137,6 +137,17 @@ no tool is required. The table shows where each reads its config.
 | cargo | `PATH` | repo `rustfmt.toml` / `Cargo.toml` |
 | dotnet | `PATH` | repo `.editorconfig` |
 | Reserved-path inventory | bundled Rust source + `rustc` on Linux x64/ARM64; physical POSIX scan otherwise | external `NUKENUL_BIN` is never executed |
+
+Reserved-path hygiene traverses the full eligible metadata tree, not only a
+staged-file delta. Its availability and cost therefore depend on that tree.
+Reserved-name directories/symlinks and unreadable eligible subtrees are
+preserved and blocking: inspect/rename the conflicting path or restore access
+outside the hook, never bypass it with unsafe chmod or deletion. On Linux the
+bundled helper compiles from the neutral physical `/` cwd using absolute
+source/output paths and `RUSTUP_AUTO_INSTALL=0`. Repository-local toolchain
+files cannot select the compiler; trusted host/user Rustup defaults and explicit
+`RUSTUP_TOOLCHAIN` / `RUSTUP_HOME` remain authoritative. A selected compiler or
+inventory failure blocks; it does not fall back to the physical scan.
 
 Files OWNED by this subsystem (all under `~/.git-hooks/common/` unless noted):
 

@@ -155,6 +155,10 @@ if ! scratch=$(mktemp -d "${TMPDIR:-/tmp}/git-guard-nul.XXXXXX"); then
 fi
 trap 'rm -rf -- "$scratch"' EXIT
 trap 'exit 1' HUP INT TERM
+if ! capture_path sh -c 'cd "$1" && pwd -P' sh "$scratch"; then
+    printf '%s\n' 'ERROR_TEMP: cannot resolve private result directory' >&2; exit 1
+fi
+scratch=$captured
 failure_marker=$scratch/failed
 self=$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")
 # GNU/BSD/Git-Bash find default to physical traversal; never add -L. Reserved
@@ -173,7 +177,11 @@ if [ "$inventory_native" = true ]; then
     # Compile the bundled, reviewed read-only helper. Never execute an arbitrary
     # external cleanup binary. Complete inventory must succeed before any worker
     # sees candidates; each worker still enforces all ownership/identity gates.
-    if ! rustc --edition=2021 -D warnings -O "$inventory_source" -o "$scratch/inventory"; then
+    # Linux's physical root avoids repository-local rust-toolchain/override
+    # ancestry even when TMPDIR is nested in that repository. Keep explicit
+    # caller Rustup authority, but never auto-install an unavailable toolchain.
+    # Source and output paths are absolute; cd is the shell builtin.
+    if ! (cd / && RUSTUP_AUTO_INSTALL=0 rustc --edition=2021 -D warnings -O "$inventory_source" -o "$scratch/inventory"); then
         printf '%s\n' 'ERROR_INVENTORY_BUILD: native scan build failed' >&2
         exit 1
     fi
