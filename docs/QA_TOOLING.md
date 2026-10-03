@@ -82,7 +82,7 @@ branch. "Unset" means the default behaviour applies.
 
 | Variable | Read by | Effect |
 |---|---|---|
-| `GIT_GUARD=0` | `hooks/prepare-commit-msg` | Skips agent attribution for one commit (the human emergency escape). It is checked **only** by `prepare-commit-msg`; it does not disable any other hook. Git's hook-skip flag does not skip `prepare-commit-msg`. |
+| `GIT_GUARD=0` | `hooks/pre-commit`, `hooks/pre-push`, `hooks/prepare-commit-msg` | **A near-total bypass, not an attribution switch** (the auditable human emergency escape). `pre-commit` exits at its first check (`hooks/pre-commit:16`), so secret scanning, NUL cleanup, the QA gate and the downstream pre-commit chain are all skipped. `pre-push` still uploads git-lfs objects, then exits before any downstream push gate (`hooks/pre-push:37`). `prepare-commit-msg` adds no `Agent:` trailer. `post-commit` does not read it. `LEFTHOOK=0` has the same effect in `pre-commit` and `pre-push`. Git's hook-skip flag does not skip `prepare-commit-msg`; `GIT_GUARD=0` is the only way to suppress attribution. |
 | `GIT_GUARD_AGENT` | `hooks/prepare-commit-msg` | Forces attribution: `codex` or `claude`. Any other non-empty value disables attribution. Unset means auto-detect from `CODEX_THREAD_ID` / `CLAUDECODE` / `CLAUDE_CODE_ENTRYPOINT`. |
 | `GIT_GUARD_DOWNSTREAM_HOOK` | `hooks/pre-commit` | Executable chained after git-guard's pre-commit. It takes precedence over the repo's `.git-guard/pre-commit.local` and over lefthook. |
 | `GIT_GUARD_DOWNSTREAM_PRE_PUSH` | `hooks/pre-push` | The same, for pre-push (precedence over `.git-guard/pre-push.local` and lefthook). |
@@ -104,7 +104,7 @@ passes all of its arguments straight to `install.sh` (`bin/git-guard`
 |---|---|
 | `--to <tag>` | Materializes that tag into the store and atomically points `current` at it. The default is `v$(cat VERSION)`. |
 | `--store <dir>` | Version store root (overrides `GIT_GUARD_STORE`). |
-| `--rules-dir <abs-path>` | Writes `rules_dir=` into the persistent overlay `qa-gate.conf.local`, which is carried across updates. |
+| `--rules-dir <abs-path>` | Versioned install: writes `rules_dir=` into the persistent overlay `<store>/qa-gate.conf.local`, which is carried across updates, and copies it into the installed version. With `--dev-symlink` it writes only the live checkout's gitignored `hooks/common/qa-gate.conf.local` (`install.sh:314-320`): no persistent overlay is created, so a later switch to a versioned install does **not** keep it. |
 | `--hooks-link <path>` | Hooks symlink path (overrides `GIT_GUARD_HOOKS_LINK`). |
 | `--dev-symlink` | Legacy mode: links the hooks at this live checkout. Only for git-guard's own development. |
 | `--dry-run` | Prints every mutation as `DRY: …` and changes nothing. |
