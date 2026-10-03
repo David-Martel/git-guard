@@ -24,6 +24,31 @@ def git(root, *args):
     return result.stdout
 
 
+def resolve_tracked_link(root, name, regular, links):
+    """Follow a tracked symlink lexically, one tracked entry at a time.
+
+    Returns the tracked regular file the chain ends at. Refuses an absolute
+    link (the pinned tree would mean different bytes at a different path), a
+    hop outside the tree or into Git metadata, a hop that is not itself a
+    tracked entry, and a cycle or overlong chain.
+    """
+    current, seen = name, set()
+    while current in links:
+        if current in seen or len(seen) > 40:
+            raise ValueError(f"{root}: symlink cycle or overlong chain at {name}")
+        seen.add(current)
+        link = os.readlink(root / current)
+        if os.path.isabs(link):
+            raise ValueError(f"{root}: absolute symlink target is not allowed: {current} -> {link}")
+        hop = os.path.normpath(os.path.join(os.path.dirname(current), link)).replace(os.sep, "/")
+        if hop in ("..", ".", ".git") or hop.startswith(("../", ".git/")):
+            raise ValueError(f"{root}: symlink {current} -> {link} leaves the tracked tree")
+        current = hop
+    if current not in regular:
+        raise ValueError(f"{root}: symlink {name} does not end at a tracked regular file ({current})")
+    return current
+
+
 def verify_tree(path, expected):
     if not re.fullmatch(r"[0-9a-f]{40}", expected):
         raise ValueError("commit pins must be full lowercase 40-character Git SHAs")
@@ -40,15 +65,17 @@ def verify_tree(path, expected):
 
     # Status alone trusts assume-unchanged/skip-worktree and filter settings.
     # Check actual bytes against every indexed blob, including imported modules.
-    entries = git(root, "ls-files", "--stage", "-z").split(b"\0")
-    digest = hashlib.sha256()
-    tracked = set()
+    entries = [entry for entry in git(root, "ls-files", "--stage", "-z").split(b"\0") if entry]
+    parsed = []
     for entry in entries:
-        if not entry:
-            continue
         header, raw_name = entry.split(b"\t", 1)
         mode, blob, stage = header.split()
-        name = os.fsdecode(raw_name)
+        parsed.append((entry, mode, blob, stage, os.fsdecode(raw_name)))
+    regular = {name for _, mode, _, _, name in parsed if mode in (b"100644", b"100755")}
+    links = {name for _, mode, _, _, name in parsed if mode == b"120000"}
+    digest = hashlib.sha256()
+    tracked = set()
+    for entry, mode, blob, stage, name in parsed:
         target = root / name
         if stage != b"0" or mode not in (b"100644", b"100755", b"120000"):
             raise ValueError(f"{root}: unsupported/unmerged entry {name}; submodules require separate validation")
@@ -56,12 +83,21 @@ def verify_tree(path, expected):
         if not resolved.is_relative_to(root):
             raise ValueError(f"{root}: symlink escapes the pinned tree: {name}")
         if mode == b"120000":
+            # Every hop of the chain must itself be a tracked entry, ending at a
+            # tracked regular file. Otherwise Git metadata (.git/evil.py) or any
+            # other untracked path, which neither `status` nor the byte proof
+            # covers, could choose or supply the bytes that are executed.
+            final = resolve_tracked_link(root, name, regular, links)
+            if resolved != root / final:
+                raise ValueError(f"{root}: symlink {name} resolves through an untracked path")
             if not target.is_symlink():
                 raise ValueError(f"{root}: symlink replaced: {name}")
             content = os.fsencode(os.readlink(target))
         else:
             if target.is_symlink() or not stat.S_ISREG(target.stat().st_mode):
                 raise ValueError(f"{root}: expected regular tracked file: {name}")
+            if resolved != root / name:
+                raise ValueError(f"{root}: tracked file {name} is reached through a symlinked directory")
             content = target.read_bytes()
         actual_blob = hashlib.sha1(b"blob " + str(len(content)).encode() + b"\0" + content).hexdigest()
         if actual_blob != blob.decode():
