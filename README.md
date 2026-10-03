@@ -224,9 +224,11 @@ sh bin/git-guard-run gate /path/to/repo  # run the gate against a repo's staged 
 | `GIT_GUARD_AGENT` | explicit commit agent (`codex` or `claude`; any other value disables attribution) |
 
 The `prepare-commit-msg` hook also detects Codex through `CODEX_THREAD_ID` and
-adds `Agent: codex` plus Codex's stable `noreply` co-author trailer to Git's final
-parsed trailer block. It detects Claude Code through `CLAUDECODE=1` or
-`CLAUDE_CODE_ENTRYPOINT` and adds only `Agent: claude` (Claude writes its own
+adds `Agent: codex` plus `Co-authored-by: Codex <noreply@openai.com>` (the address
+the Codex CLI itself writes) to Git's final parsed trailer block. When it
+re-attributes a message, the earlier generated `codex@users.noreply.github.com`
+trailer is collapsed into that one line rather than duplicated.
+It detects Claude Code through `CLAUDECODE=1` or `CLAUDE_CODE_ENTRYPOINT` and adds only `Agent: claude` (Claude writes its own
 model-specific co-author line). `CODEX_THREAD_ID` outranks the Claude markers,
 because a Codex process started inside Claude Code inherits `CLAUDECODE`. Human
 commits get no trailer. An earlier matching body paragraph is preserved and does
