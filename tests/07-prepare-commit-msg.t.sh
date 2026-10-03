@@ -26,10 +26,10 @@ t_case_attribution() {
   codex_message="$(git -C "$r" log -1 --format=%B)"
   codex_trailers="$(printf '%s\n' "$codex_message" | git interpret-trailers --parse)"
   agent_count="$(printf '%s\n' "$codex_trailers" | grep -c '^Agent: codex$')"
-  coauthor_count="$(printf '%s\n' "$codex_trailers" | grep -c '^Co-authored-by: Codex <codex@agents.invalid>$')"
+  coauthor_count="$(printf '%s\n' "$codex_trailers" | grep -c '^Co-authored-by: Codex <noreply@openai.com>$')"
   legacy_count="$(printf '%s\n' "$codex_message" | grep -c 'codex@users.noreply.github.com')"
   t_expect_rc 1 "$agent_count" "Codex commit has one Agent trailer"
-  t_expect_rc 1 "$coauthor_count" "Codex commit has one non-routable co-author trailer"
+  t_expect_rc 1 "$coauthor_count" "Codex commit has one canonical noreply@openai.com co-author trailer"
   t_expect_rc 0 "$legacy_count" "Codex commit never carries the legacy users.noreply address"
 
   printf 'dedupe\n' > "$r/dedupe.txt"
@@ -37,11 +37,11 @@ t_case_attribution() {
   (cd "$r" && GIT_GUARD_AGENT=codex git commit -q \
     -m "pre-attributed commit" \
     -m "Agent: codex" \
-    -m "Co-authored-by: Codex <codex@agents.invalid>")
+    -m "Co-authored-by: Codex <noreply@openai.com>")
   dedupe_message="$(git -C "$r" log -1 --format=%B)"
   dedupe_trailers="$(printf '%s\n' "$dedupe_message" | git interpret-trailers --parse)"
   agent_count="$(printf '%s\n' "$dedupe_trailers" | grep -c '^Agent: codex$')"
-  coauthor_count="$(printf '%s\n' "$dedupe_trailers" | grep -c '^Co-authored-by: Codex <codex@agents.invalid>$')"
+  coauthor_count="$(printf '%s\n' "$dedupe_trailers" | grep -c '^Co-authored-by: Codex <noreply@openai.com>$')"
   t_expect_rc 1 "$agent_count" "existing Agent trailer is not duplicated"
   t_expect_rc 1 "$coauthor_count" "existing Codex co-author is not duplicated"
 
@@ -53,7 +53,7 @@ t_case_attribution() {
   t_expect_rc 0 "$?" "body Agent does not prevent final attribution"
   body_trailers="$(git interpret-trailers --parse "$r/body-message")"
   agent_count="$(printf '%s\n' "$body_trailers" | grep -c '^Agent: codex$')"
-  coauthor_count="$(printf '%s\n' "$body_trailers" | grep -c '^Co-authored-by: Codex <codex@agents.invalid>$')"
+  coauthor_count="$(printf '%s\n' "$body_trailers" | grep -c '^Co-authored-by: Codex <noreply@openai.com>$')"
   t_expect_rc 1 "$agent_count" "body case has one parsed Agent trailer"
   t_expect_rc 1 "$coauthor_count" "body case has one parsed canonical co-author"
   body_lines="$(wc -l < "$r/body-before" | tr -d ' ')"
@@ -67,18 +67,18 @@ t_case_attribution() {
   coauthor_trailers="$(git interpret-trailers --parse "$r/coauthors-message")"
   printf '%s\n' "$coauthor_trailers" | grep -qx 'Agent: codex'
   t_assert "$?" "case/spacing variant becomes canonical parsed Agent"
-  printf '%s\n' "$coauthor_trailers" | grep -qx 'Co-authored-by: Codex <codex@agents.invalid>'
-  t_assert "$?" "another Codex address does not suppress the canonical co-author"
+  t_expect_rc 1 "$(printf '%s\n' "$coauthor_trailers" | grep -c '^Co-authored-by: Codex <noreply@openai.com>$')" \
+    "an existing canonical Codex co-author is not duplicated"
   printf '%s\n' "$coauthor_trailers" | grep -qx 'Co-authored-by: Other <other@example.test>'
   t_assert "$?" "another contributor remains attributed"
   printf '%s\n' "$coauthor_trailers" | grep -qx 'Co-authored-by: Codex <noreply@openai.com>'
-  t_assert "$?" "existing co-author metadata is preserved"
+  t_assert "$?" "existing canonical co-author is preserved"
 
   printf 'subject\n\nAgent: codex\nAgent: codex\nCo-authored-by: Codex <codex@users.noreply.github.com>\n' > "$r/duplicates-message"
   (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/duplicates-message")
   duplicate_trailers="$(git interpret-trailers --parse "$r/duplicates-message")"
   agent_count="$(printf '%s\n' "$duplicate_trailers" | grep -c '^Agent: codex$')"
-  coauthor_count="$(printf '%s\n' "$duplicate_trailers" | grep -c '^Co-authored-by: Codex <codex@agents.invalid>$')"
+  coauthor_count="$(printf '%s\n' "$duplicate_trailers" | grep -c '^Co-authored-by: Codex <noreply@openai.com>$')"
   legacy_count="$(printf '%s\n' "$duplicate_trailers" | grep -c 'codex@users.noreply.github.com')"
   t_expect_rc 2 "$agent_count" "existing duplicate Agent metadata does not multiply"
   t_expect_rc 1 "$coauthor_count" "duplicate Agent input adds no duplicate co-author"
@@ -93,7 +93,7 @@ t_case_attribution() {
   legacy_trailers="$(git interpret-trailers --parse "$r/legacy-message")"
   printf '%s\n' "$legacy_trailers" | grep -qx 'Co-authored-by: Codex <codex@users.noreply.github.com>'
   t_expect_rc 1 "$?" "exact legacy trailer is removed from the trailer block"
-  printf '%s\n' "$legacy_trailers" | grep -qx 'Co-authored-by: Codex <codex@agents.invalid>'
+  printf '%s\n' "$legacy_trailers" | grep -qx 'Co-authored-by: Codex <noreply@openai.com>'
   t_assert "$?" "canonical co-author replaces the legacy trailer"
   printf '%s\n' "$legacy_trailers" | grep -qx 'Co-authored-by: Other <other@example.test>'
   t_assert "$?" "other contributor survives legacy removal"
@@ -134,6 +134,24 @@ t_case_attribution() {
   grep -qx '; Lines starting with ; will be ignored.' "$r/commentchar-message"
   t_assert "$?" "configured-character comment lines are preserved"
   git -C "$r" config --unset core.commentChar
+
+  # Every earlier generated form COLLAPSES into the one canonical line:
+  # legacy users.noreply + unmerged-draft agents.invalid + canonical -> 1 line.
+  printf 'subject\n\nCo-authored-by: Codex <codex@users.noreply.github.com>\nCo-authored-by: Codex <codex@agents.invalid>\nCo-authored-by: Codex <noreply@openai.com>\nAgent: codex\n' > "$r/collapse-message"
+  (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/collapse-message")
+  t_expect_rc 0 "$?" "collapse hook run succeeds"
+  collapse_trailers="$(git interpret-trailers --parse "$r/collapse-message")"
+  t_expect_rc 1 "$(printf '%s\n' "$collapse_trailers" | grep -c '^Co-authored-by: Codex ')" \
+    "legacy, draft and canonical Codex co-authors collapse to one line"
+  printf '%s\n' "$collapse_trailers" | grep -qx 'Co-authored-by: Codex <noreply@openai.com>'
+  t_assert "$?" "the surviving Codex co-author is the canonical noreply@openai.com"
+  printf 'subject\n\nCo-authored-by: Codex <codex@agents.invalid>\n' > "$r/draft-message"
+  (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/draft-message")
+  if grep -q 'agents.invalid' "$r/draft-message"; then
+    t_fail "draft agents.invalid trailer is replaced by the canonical address"
+  else
+    t_ok "draft agents.invalid trailer is replaced by the canonical address"
+  fi
 
   # A human (no agent) never has a message rewritten, legacy line included.
   printf 'human amend\n\nCo-authored-by: Codex <codex@users.noreply.github.com>\n' > "$r/human-legacy-message"

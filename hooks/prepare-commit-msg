@@ -1,7 +1,7 @@
 #!/bin/sh
 # Deterministically attribute commits created by AI coding agents.
 #
-#   Codex       -> `Agent: codex` + `Co-authored-by: Codex <codex@agents.invalid>`
+#   Codex       -> `Agent: codex` + `Co-authored-by: Codex <noreply@openai.com>`
 #   Claude Code -> `Agent: claude` (Claude writes its own Co-authored-by, which
 #                  names the model, so the hook never adds or duplicates one)
 #   human       -> no trailer
@@ -84,30 +84,30 @@ fi
 # invocations byte-identical.
 case "$agent" in
   codex)
-    # The co-author address is deliberately NON-ROUTABLE (RFC 2606 `.invalid`).
-    # Until 2026-10-02 this hook wrote `Codex <codex@users.noreply.github.com>`,
-    # which is GitHub's legacy `<username>@users.noreply.github.com` form, and a
-    # real, unrelated GitHub user named `codex` exists (REST users/codex, id
-    # 267193182). An `.invalid` address can never be verified by any GitHub
-    # account, so it can never credit a stranger.
+    # Codex co-author: `Codex <noreply@openai.com>`, the address the Codex CLI
+    # itself writes (openai/codex codex-rs/ext/git-attribution/src/world_state.rs)
+    # and OpenAI's documented default. Owner decision 2026-10-03, for
+    # consistency with Codex-authored commits; GitHub links it to OpenAI's own
+    # `codex` account, as it already did for the earlier address.
     #
-    # Remove ONLY that exact generated legacy line, and only when Git itself
-    # parses it as a trailer of the final trailer block (so a prose paragraph
-    # that merely quotes it, which Git does not treat as trailers, is kept).
-    # An amend or reword of a Codex commit then stops carrying it. Body text,
-    # other contributors' Co-authored-by lines and any other Codex address are
-    # left untouched. Published history is not rewritten: this only affects
-    # commits created from now on.
-    git_guard_legacy_coauthor='Co-authored-by: Codex <codex@users.noreply.github.com>'
+    # Earlier generated forms are COLLAPSED into it rather than duplicated:
+    #   Codex <codex@users.noreply.github.com>   this hook until 2026-10-03
+    #   Codex <codex@agents.invalid>             an unmerged draft of this change
+    # Each is removed ONLY as that exact line, and only when Git itself parses
+    # it as a trailer of the final trailer block (a prose paragraph that merely
+    # quotes it is body text and is kept). Body text and other contributors'
+    # Co-authored-by lines are untouched. Published history is not rewritten.
+    git_guard_coauthor_legacy='Co-authored-by: Codex <codex@users.noreply.github.com>'
+    git_guard_coauthor_draft='Co-authored-by: Codex <codex@agents.invalid>'
     if git interpret-trailers --parse "$message_file" 2>/dev/null |
-       grep -qxF "$git_guard_legacy_coauthor"; then
+       grep -qxF -e "$git_guard_coauthor_legacy" -e "$git_guard_coauthor_draft"; then
       # Comment lines use core.commentString / core.commentChar (default "#";
       # "auto" picks a character per message, so fall back to "#").
       git_guard_comment="$(git config --get core.commentString 2>/dev/null ||
         git config --get core.commentChar 2>/dev/null || echo '#')"
       case "$git_guard_comment" in ""|auto) git_guard_comment='#' ;; esac
       git_guard_msg_tmp="${message_file}.git-guard.$$"
-      if ! awk -v legacy="$git_guard_legacy_coauthor" -v cc="$git_guard_comment" '
+      if ! awk -v legacy="$git_guard_coauthor_legacy" -v draft="$git_guard_coauthor_draft" -v cc="$git_guard_comment" '
         function is_comment(s) { return substr(s, 1, length(cc)) == cc }
         { line[NR] = $0 }
         END {
@@ -118,7 +118,7 @@ case "$agent" in
           start = last
           while (start > 1 && line[start - 1] !~ /^[[:space:]]*$/) start--
           for (i = 1; i <= NR; i++) {
-            if (start > 1 && i >= start && i <= last && line[i] == legacy) continue
+            if (start > 1 && i >= start && i <= last && (line[i] == legacy || line[i] == draft)) continue
             print line[i]
           }
         }
@@ -135,7 +135,7 @@ case "$agent" in
     git interpret-trailers --in-place \
       --if-exists addIfDifferent \
       --if-missing add \
-      --trailer 'Co-authored-by: Codex <codex@agents.invalid>' \
+      --trailer 'Co-authored-by: Codex <noreply@openai.com>' \
       --if-exists replace \
       --trailer 'Agent: codex' \
       "$message_file"
