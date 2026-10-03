@@ -77,11 +77,11 @@ t_case_downstream_chaining() {
   t_expect_rc 0 "$n" "no commit landed when the gates could not run"
   grep -q 'git-guard BLOCK' "$log"; t_assert $? "the refusal is LOUD (names git-guard BLOCK)"
   grep -q 'GIT_GUARD_ALLOW_MISSING_LEFTHOOK' "$log"; t_assert $? "the message names its own escape hatch"
-  ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" sh "$GG_ROOT/hooks/pre-push" >"$log" 2>&1 ); rc=$?
+  ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" sh "$GG_ROOT/hooks/pre-push" >"$log" 2>&1 </dev/null ); rc=$?
   t_expect_rc 1 "$rc" "pre-push also blocks configured-but-missing lefthook"
   grep -q 'git-guard BLOCK' "$log"; t_assert $? "pre-push refusal identifies the missing runner"
   ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 \
-      sh "$GG_ROOT/hooks/pre-push" >/dev/null 2>&1 ); rc=$?
+      sh "$GG_ROOT/hooks/pre-push" >/dev/null 2>&1 </dev/null ); rc=$?
   t_expect_rc 0 "$rc" "pre-push escape hatch permits the deliberate opt-out"
 
   # 3. Same repo + the escape hatch: must pass (deliberate opt-out is honoured).

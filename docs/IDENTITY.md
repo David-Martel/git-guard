@@ -159,9 +159,13 @@ GitHub (`%G?` = `E` locally), which drops the per-agent signature. See
   `lefthook run commit-msg`. The lefthook step runs only when lefthook is
   installed **and** the repo has a root lefthook config. agent-hub's advisory
   `conventional` commit-msg check starts running under this rule.
-- **`pre-push`** checks the *real* signatures of every pushed range: `remote..local`,
-  or `local --not --remotes` for a new ref or an unfetched remote tip. It is
-  skipped above `GIT_GUARD_IDENTITY_MAX_COMMITS` (default 500) with a message.
+- **`pre-push`** checks the *real* signatures of every pushed range. That is
+  `remote..local`, or `local --not --remotes=<that remote>` for a new ref or an
+  unfetched remote tip. Only the destination's own tracking refs are excluded,
+  so pushing the same history to a second remote (a mirror) is still checked.
+  A push to a bare URL has no tracking refs, so the whole reachable history
+  counts. A range above `GIT_GUARD_IDENTITY_MAX_COMMITS` (default 500) is not
+  checked: it is reported as unknown, which blocks under `enforce`.
   It buffers the ref list and replays it, so LFS and downstream hooks still
   receive it.
 

@@ -166,6 +166,11 @@ t_case_identity_cli() {
   grep -q 'missing namespaces="git"' "$lab/check.out" && grep -q 'listed twice' "$lab/check.out" &&
     grep -q 'does not parse' "$lab/check.out"
   t_assert "$?" "check names each problem (namespace, duplicate, unparseable)"
+  # namespaces="git" in the trailing COMMENT restricts nothing (ssh-keygen
+  # ignores comments), so check must not accept it.
+  printf 'claude %s misleading-namespaces="git"\n' "$(cut -d' ' -f1,2 "$lab/keys/claude@testhost.pub")" > "$lab/comment-ns"
+  sh "$GG_ID_SH" allowed-signers check --file "$lab/comment-ns" >"$lab/check.out" 2>&1
+  t_expect_rc 1 "$?" "check rejects namespaces=\"git\" that appears only in the comment"
 
   gg_rmrepo "$r"; rm -rf "$lab"
 }
@@ -352,6 +357,18 @@ t_case_identity_hooks() {
   t_assert "$?" "pre-push WARN: the mismatch is reported"
   grep -q 'refs/heads/mixed' "$lab/downstream-stdin"
   t_assert "$?" "pre-push WARN: downstream hook still receives the ref list"
+
+  # The same history pushed to a SECOND remote (a mirror) must still be
+  # verified: origin/mixed already holds it, but the mirror does not.
+  mirror="$lab/mirror.git"; git init -q --bare "$mirror"
+  git -C "$r" remote add mirror "$mirror"
+  (cd "$r" && GIT_GUARD_IDENTITY=enforce git push -q mirror mixed) 2>"$lab/p.err"
+  t_expect_rc 1 "$?" "pre-push ENFORCE: history already on origin is still checked for a new remote"
+  if git --git-dir="$mirror" rev-parse -q --verify refs/heads/mixed >/dev/null; then
+    t_fail "pre-push ENFORCE: refused mirror push did not land"
+  else
+    t_ok "pre-push ENFORCE: refused mirror push did not land"
+  fi
 
   gg_rmrepo "$r"; rm -rf "$lab"
 }

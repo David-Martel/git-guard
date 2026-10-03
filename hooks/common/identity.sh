@@ -46,6 +46,7 @@
 #   check-msg <message-file>          intent check: configured signing key vs
 #                                     the trailer, BEFORE the commit is signed
 #   pre-push <remote> <url> < refs    verify every pushed range
+#   configured                        exit 0 iff an allowed_signers file is set
 #   Both return 0 ok / 1 mismatch / 2 unknown key; the hook decides whether to
 #   warn (default) or block (GIT_GUARD_IDENTITY=enforce).
 #
@@ -149,11 +150,31 @@ gg_signingkey_blob() {
 }
 
 # Principal(s) for a key blob in an allowed_signers file (first matching line).
+# Only the field right after the FIRST key-type field counts as the key, so a
+# blob quoted in another line's comment cannot claim a principal.
 gg_principal_for_blob() {
   awk -v kb="$2" '
     /^[[:space:]]*(#|$)/ { next }
-    { for (i = 2; i <= NF; i++) if ($i == kb) { print $1; exit } }
+    {
+      for (i = 2; i < NF; i++) if ($i ~ /^(ssh-|ecdsa-|sk-)/) {
+        if ($(i + 1) == kb) { print $1; exit }
+        next
+      }
+    }
   ' "$1"
+}
+
+# The OPTIONS field of an allowed_signers line: everything between the
+# principal(s) and the key type. Empty when there are no options.
+gg_signer_options() {
+  printf '%s\n' "$1" | awk '{
+    out = ""
+    for (i = 2; i <= NF; i++) {
+      if ($i ~ /^(ssh-|ecdsa-|sk-)/) break
+      out = (out == "" ? $i : out " " $i)
+    }
+    print out
+  }'
 }
 
 # --- keygen ------------------------------------------------------------------
@@ -332,9 +353,11 @@ gg_signers_check() {
     for p in $(printf '%s' "$principals" | tr ',' ' '); do
       gg_valid_principal "$p" || { printf 'line %d: invalid principal %s\n' "$lineno" "$p"; bad=1; }
     done
-    case "$stripped" in
-      *'namespaces="git"'*) : ;;
-      *) printf 'line %d: missing namespaces="git" (key would verify any namespace)\n' "$lineno"; bad=1 ;;
+    # namespaces="git" must be an OPTION (before the key type). The same text
+    # in the trailing comment restricts nothing: ssh-keygen ignores it.
+    case ",$(gg_signer_options "$stripped")," in
+      *',namespaces="git",'*) : ;;
+      *) printf 'line %d: missing namespaces="git" option (key would verify any namespace)\n' "$lineno"; bad=1 ;;
     esac
     blob="$(gg_blob_of_publine "$stripped")"
     if [ -z "$blob" ]; then printf 'line %d: no key found\n' "$lineno"; bad=1; continue; fi
@@ -489,6 +512,7 @@ cmd_check_msg() {
 gg_is_zero_sha() { case "$1" in *[!0]*) return 1 ;; esac; return 0; }
 
 cmd_pre_push() {
+  remote="${1:-}"
   signers="$(gg_configured_signers)"
   # Same rule as check-msg: an unconfigured host is a silent no-op.
   if [ -z "$signers" ] || [ ! -f "$signers" ]; then cat >/dev/null; return 0; fi
@@ -502,10 +526,19 @@ cmd_pre_push() {
     if [ -n "${rsha:-}" ] && ! gg_is_zero_sha "$rsha" &&
        git cat-file -e "$rsha^{commit}" 2>/dev/null; then
       set -- "$rsha..$lsha"
+    elif [ -n "$remote" ] && git remote 2>/dev/null | grep -qxF "$remote"; then
+      # New ref, or remote tip not fetched: exclude only what THIS remote is
+      # known to have. Excluding every remote would verify nothing when the
+      # same history is pushed to a second remote (a mirror, a fork).
+      set -- "$lsha" --not --remotes="$remote"
     else
-      set -- "$lsha" --not --remotes                         # new ref, or remote tip not fetched
+      set -- "$lsha"                                         # push to a URL: no tracking refs
     fi
-    count="$(git rev-list --count "$@" 2>/dev/null || echo 0)"
+    if ! count="$(git rev-list --count "$@" 2>/dev/null)"; then
+      printf 'git-guard identity: cannot list the commits pushed to %s (%s); not checked\n' "$_lref" "$*" >&2
+      [ "$rc" -eq 0 ] && rc=2
+      continue
+    fi
     [ "$count" -gt 0 ] || continue
     if [ "$count" -gt "$max" ]; then
       printf 'git-guard identity: %s commit(s) in %s exceed GIT_GUARD_IDENTITY_MAX_COMMITS=%s; not checked (run: git-guard identity verify %s)\n' \
@@ -534,6 +567,8 @@ case "${1:-help}" in
   verify) shift; cmd_verify "$@" ;;
   check-msg) shift; cmd_check_msg "$@" ;;
   pre-push) shift; cmd_pre_push "$@" ;;
+  configured)  # internal: exit 0 iff an allowed_signers file is configured
+    f="$(gg_configured_signers)"; [ -n "$f" ] && [ -f "$f" ] ;;
   help|--help|-h)
     awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$GG_ID_SELF" ;;
   *) gg_die "unknown subcommand '$1' (try: git-guard identity help)" ;;

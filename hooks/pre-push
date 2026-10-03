@@ -52,13 +52,18 @@ case "$git_guard_identity_mode" in
     git_guard_identity_mode=warn
     ;;
 esac
-if [ "$git_guard_identity_mode" != "off" ]; then
+git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
+# Read stdin ONLY when there is something to check: an allowed_signers file is
+# configured, and stdin is not a terminal (a hand-run or chained invocation
+# with no ref list must never block on `cat`). Otherwise behave exactly as
+# before this check existed.
+if [ "$git_guard_identity_mode" != "off" ] && [ ! -t 0 ] &&
+   sh "$git_guard_hook_dir/common/identity.sh" configured; then
   if [ -z "$git_guard_stdin" ]; then
     git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX")" || exit 1
     trap 'rm -f "$git_guard_stdin"' EXIT
     cat > "$git_guard_stdin"
   fi
-  git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
   sh "$git_guard_hook_dir/common/identity.sh" pre-push "$@" < "$git_guard_stdin"
   git_guard_identity_rc=$?
   if [ "$git_guard_identity_rc" -ne 0 ]; then
