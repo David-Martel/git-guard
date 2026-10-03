@@ -156,9 +156,13 @@ GitHub (`%G?` = `E` locally), which drops the per-agent signature. See
   So installing it changes nothing on a host without signing. It also chains a
   repo's own commit-msg hook, which `core.hooksPath` otherwise silently shadows:
   `$GIT_GUARD_DOWNSTREAM_COMMIT_MSG` > `.git-guard/commit-msg.local` >
-  `lefthook run commit-msg`. The lefthook step runs only when lefthook is
-  installed **and** the repo has a root lefthook config. agent-hub's advisory
-  `conventional` commit-msg check starts running under this rule.
+  `lefthook run commit-msg`. The lefthook step runs when the repo has a root
+  lefthook config. Configured-but-unrunnable is an error, as in `pre-commit`
+  and `pre-push`: a `$GIT_GUARD_DOWNSTREAM_COMMIT_MSG` that is set but missing
+  or not executable blocks the commit, and so does a root lefthook config
+  without the lefthook binary (`GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1` opts out;
+  `LEFTHOOK=0` still disables lefthook). agent-hub's advisory `conventional`
+  commit-msg check starts running under this rule.
 - **`pre-push`** checks the *real* signatures of every pushed range. That is
   `remote..local`, or `local --not --remotes=<that remote>` for a new ref or an
   unfetched remote tip. Only the destination's own tracking refs are excluded,
