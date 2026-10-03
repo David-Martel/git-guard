@@ -38,6 +38,10 @@ t_case_version_pinning() {
   git -C "$src" -c tag.gpgsign=false -c tag.forceSignAnnotated=false tag "$tag_a" HEAD
   git -C "$src" -c tag.gpgsign=false -c tag.forceSignAnnotated=false tag "$tag_b" HEAD
 
+  # Isolate Git configuration without hiding the caller's rustup toolchain.
+  # CI may export CARGO_HOME alone; the rustc shim otherwise resolves its
+  # configuration under the empty fixture HOME and fails before the pin checks.
+  pin_rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
   fake_home="$(mktemp -d "$GG_T_TMPROOT/pin-fakehome.XXXXXX")"
   store="$fake_home/.local/share/git-guard"
   hookslink="$fake_home/.git-hooks"
@@ -60,7 +64,7 @@ t_case_version_pinning() {
   # version it actually used.
   (
     cd "$test_repo" \
-      && HOME="$fake_home" GIT_CONFIG_GLOBAL="$fake_home/.gitconfig" \
+      && HOME="$fake_home" RUSTUP_HOME="$pin_rustup_home" GIT_CONFIG_GLOBAL="$fake_home/.gitconfig" \
          GIT_GUARD_TEST_PAUSE_AFTER_RESOLVE=3 QA_DEBUG=1 \
          GIT_GUARD_RULES_DIR='' \
          git -c core.hooksPath="$hookslink" commit -q -m "pinned commit" \
@@ -98,7 +102,7 @@ t_case_version_pinning() {
   ( cd "$test_repo" && printf 'second\n' >> README.md && git add -A )
   pin_log2="$(gg_tmp_log)"
   ( cd "$test_repo" \
-      && HOME="$fake_home" GIT_CONFIG_GLOBAL="$fake_home/.gitconfig" QA_DEBUG=1 \
+      && HOME="$fake_home" RUSTUP_HOME="$pin_rustup_home" GIT_CONFIG_GLOBAL="$fake_home/.gitconfig" QA_DEBUG=1 \
          GIT_GUARD_RULES_DIR='' \
          git -c core.hooksPath="$hookslink" commit -q -m "post-flip commit" \
          >/dev/null 2>"$pin_log2" )

@@ -72,6 +72,15 @@ RUN git config --global user.email "git-guard@localhost" \
  && git config --global commit.gpgsign false \
  && git config --global --add safe.directory '*'
 
+# Host .git stays excluded by .dockerignore. Tests 16-19 need Git worktrees and
+# archives, so give the bundled source its own fixture-only history: no host
+# commits, remotes, signing keys or credentials. Fixed dates identify this as a
+# reproducible source snapshot, never an upstream release/provenance assertion.
+RUN git -C /opt/git-guard init -q --initial-branch=container-fixture \
+ && git -C /opt/git-guard add --all \
+ && GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
+    git -C /opt/git-guard commit -q -m "test: bundled container source snapshot"
+
 WORKDIR /work
 
 # Default: run the git-guard CLI. `docker run … git-guard:local verify` works
