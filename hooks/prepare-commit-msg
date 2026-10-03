@@ -93,9 +93,10 @@ case "$agent" in
     # Earlier generated forms are COLLAPSED into it rather than duplicated:
     #   Codex <codex@users.noreply.github.com>   this hook until 2026-10-03
     #   Codex <codex@agents.invalid>             an unmerged draft of this change
-    # Each is removed ONLY as that exact line, and only when Git itself parses
-    # it as a trailer of the final trailer block (a prose paragraph that merely
-    # quotes it is body text and is kept). Body text and other contributors'
+    # Each is removed ONLY as that exact, complete logical trailer (never the
+    # first line of a folded trailer with an indented continuation), and only
+    # when Git itself parses it as a trailer of the final trailer block (a
+    # prose paragraph that merely quotes it is body text and is kept). Body text and other contributors'
     # Co-authored-by lines are untouched. Published history is not rewritten.
     git_guard_coauthor_legacy='Co-authored-by: Codex <codex@users.noreply.github.com>'
     git_guard_coauthor_draft='Co-authored-by: Codex <codex@agents.invalid>'
@@ -138,7 +139,12 @@ case "$agent" in
           start = last
           while (start > 1 && line[start - 1] !~ /^[[:space:]]*$/) start--
           for (i = 1; i <= NR; i++) {
-            if (start > 1 && i >= start && i <= last && (line[i] == legacy || line[i] == draft)) continue
+            # Skip only a COMPLETE logical trailer: an exact generated line
+            # whose next line is not an indented continuation. A folded
+            # trailer has a different parsed value and is kept whole, so no
+            # continuation is orphaned and the block stays parseable.
+            if (start > 1 && i >= start && i <= last && (line[i] == legacy || line[i] == draft) &&
+                !(i < last && line[i + 1] ~ /^[ \t]/)) continue
             print line[i]
           }
         }

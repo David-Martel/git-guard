@@ -153,6 +153,44 @@ t_case_attribution() {
     t_ok "draft agents.invalid trailer is replaced by the canonical address"
   fi
 
+  # A FOLDED trailer (a legacy-looking first line plus an indented
+  # continuation) is ONE logical trailer whose parsed value is not an exact
+  # generated form. Deleting only its first physical line orphans the
+  # continuation, Git then stops recognising the block, and every other
+  # contributor in it (here: Other) silently loses parsed co-author identity.
+  # Only the complete, unfolded exact legacy trailer may be collapsed.
+  printf 'subject\n\nCo-authored-by: Codex <codex@users.noreply.github.com>\n authored implementation only\nCo-authored-by: Codex <codex@users.noreply.github.com>\nCo-authored-by: Other <other@example.test>\nAgent: codex\n' > "$r/folded-message"
+  folded_before="$(git interpret-trailers --parse "$r/folded-message")"
+  printf '%s\n' "$folded_before" | grep -qx 'Co-authored-by: Other <other@example.test>'
+  t_assert "$?" "control: Git parses Other in the folded fixture before the hook"
+  printf '%s\n' "$folded_before" |
+    grep -qx 'Co-authored-by: Codex <codex@users.noreply.github.com> authored implementation only'
+  t_assert "$?" "control: Git parses the folded Codex trailer as one logical value"
+  (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/folded-message")
+  t_expect_rc 0 "$?" "folded-trailer hook run succeeds"
+  folded_after="$(git interpret-trailers --parse "$r/folded-message")"
+  printf '%s\n' "$folded_after" | grep -qx 'Co-authored-by: Other <other@example.test>'
+  t_assert "$?" "folded trailer: Other keeps parsed co-author identity"
+  printf '%s\n' "$folded_after" |
+    grep -qx 'Co-authored-by: Codex <codex@users.noreply.github.com> authored implementation only'
+  t_assert "$?" "folded trailer: the continuation-bearing trailer is kept as one logical trailer"
+  printf '%s\n' "$folded_after" | grep -qx 'Co-authored-by: Codex <codex@users.noreply.github.com>'
+  t_expect_rc 1 "$?" "positive control: the complete unfolded legacy trailer is still collapsed"
+  t_expect_rc 1 "$(printf '%s\n' "$folded_after" | grep -c '^Co-authored-by: Codex <noreply@openai.com>$')" \
+    "folded trailer: exactly one canonical Codex co-author is added"
+  printf '%s\n' "$folded_after" | grep -qx 'Agent: codex'
+  t_assert "$?" "folded trailer: Agent stays a parsed trailer"
+  printf 'Co-authored-by: Codex <codex@users.noreply.github.com>\n authored implementation only\n' > "$r/folded-expected"
+  sed -n 3,4p "$r/folded-message" > "$r/folded-kept"
+  cmp -s "$r/folded-expected" "$r/folded-kept"
+  t_assert "$?" "folded trailer: both physical lines are preserved byte-for-byte"
+  cp "$r/folded-message" "$r/folded-repeat"
+  (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/folded-message")
+  cmp -s "$r/folded-repeat" "$r/folded-message"
+  t_assert "$?" "folded trailer: a second invocation is byte-idempotent"
+  git interpret-trailers --parse "$r/folded-message" | grep -qx 'Co-authored-by: Other <other@example.test>'
+  t_assert "$?" "folded trailer: Other is still parsed after a second invocation"
+
   # core.commentChar=auto: a REAL `git commit --amend` through an editor whose
   # body has a `#` line makes git pick another comment character (e.g. ';').
   # The legacy trailer above those comments must still collapse.
