@@ -67,6 +67,11 @@ git checkout main; git fetch origin; git reset --hard origin/main
 
 If any GATE fails, STOP and remediate — never run the next destructive step.
 
+VIGIL fleet repos do not run GATE 4 by hand. After review they merge through
+vigil-utils `tools/merge-train/merge_train.sh`, which runs one scheduler per
+repo; append the PR number to that repo's queue file instead of starting a
+second scheduler.
+
 ## Branch protection (GitHub rulesets)
 
 - Repos may add a ruleset mid-work (PR-only + required signatures + no force-push,
