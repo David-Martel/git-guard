@@ -26,20 +26,22 @@ t_case_attribution() {
   codex_message="$(git -C "$r" log -1 --format=%B)"
   codex_trailers="$(printf '%s\n' "$codex_message" | git interpret-trailers --parse)"
   agent_count="$(printf '%s\n' "$codex_trailers" | grep -c '^Agent: codex$')"
-  coauthor_count="$(printf '%s\n' "$codex_trailers" | grep -c '^Co-authored-by: Codex <codex@users.noreply.github.com>$')"
+  coauthor_count="$(printf '%s\n' "$codex_trailers" | grep -c '^Co-authored-by: Codex <codex@agents.invalid>$')"
+  legacy_count="$(printf '%s\n' "$codex_message" | grep -c 'codex@users.noreply.github.com')"
   t_expect_rc 1 "$agent_count" "Codex commit has one Agent trailer"
-  t_expect_rc 1 "$coauthor_count" "Codex commit has one stable co-author trailer"
+  t_expect_rc 1 "$coauthor_count" "Codex commit has one non-routable co-author trailer"
+  t_expect_rc 0 "$legacy_count" "Codex commit never carries the legacy users.noreply address"
 
   printf 'dedupe\n' > "$r/dedupe.txt"
   git -C "$r" add dedupe.txt
   (cd "$r" && GIT_GUARD_AGENT=codex git commit -q \
     -m "pre-attributed commit" \
     -m "Agent: codex" \
-    -m "Co-authored-by: Codex <codex@users.noreply.github.com>")
+    -m "Co-authored-by: Codex <codex@agents.invalid>")
   dedupe_message="$(git -C "$r" log -1 --format=%B)"
   dedupe_trailers="$(printf '%s\n' "$dedupe_message" | git interpret-trailers --parse)"
   agent_count="$(printf '%s\n' "$dedupe_trailers" | grep -c '^Agent: codex$')"
-  coauthor_count="$(printf '%s\n' "$dedupe_trailers" | grep -c '^Co-authored-by: Codex <codex@users.noreply.github.com>$')"
+  coauthor_count="$(printf '%s\n' "$dedupe_trailers" | grep -c '^Co-authored-by: Codex <codex@agents.invalid>$')"
   t_expect_rc 1 "$agent_count" "existing Agent trailer is not duplicated"
   t_expect_rc 1 "$coauthor_count" "existing Codex co-author is not duplicated"
 
@@ -51,7 +53,7 @@ t_case_attribution() {
   t_expect_rc 0 "$?" "body Agent does not prevent final attribution"
   body_trailers="$(git interpret-trailers --parse "$r/body-message")"
   agent_count="$(printf '%s\n' "$body_trailers" | grep -c '^Agent: codex$')"
-  coauthor_count="$(printf '%s\n' "$body_trailers" | grep -c '^Co-authored-by: Codex <codex@users.noreply.github.com>$')"
+  coauthor_count="$(printf '%s\n' "$body_trailers" | grep -c '^Co-authored-by: Codex <codex@agents.invalid>$')"
   t_expect_rc 1 "$agent_count" "body case has one parsed Agent trailer"
   t_expect_rc 1 "$coauthor_count" "body case has one parsed canonical co-author"
   body_lines="$(wc -l < "$r/body-before" | tr -d ' ')"
@@ -65,8 +67,8 @@ t_case_attribution() {
   coauthor_trailers="$(git interpret-trailers --parse "$r/coauthors-message")"
   printf '%s\n' "$coauthor_trailers" | grep -qx 'Agent: codex'
   t_assert "$?" "case/spacing variant becomes canonical parsed Agent"
-  printf '%s\n' "$coauthor_trailers" | grep -qx 'Co-authored-by: Codex <codex@users.noreply.github.com>'
-  t_assert "$?" "legacy co-author does not suppress canonical co-author"
+  printf '%s\n' "$coauthor_trailers" | grep -qx 'Co-authored-by: Codex <codex@agents.invalid>'
+  t_assert "$?" "another Codex address does not suppress the canonical co-author"
   printf '%s\n' "$coauthor_trailers" | grep -qx 'Co-authored-by: Other <other@example.test>'
   t_assert "$?" "another contributor remains attributed"
   printf '%s\n' "$coauthor_trailers" | grep -qx 'Co-authored-by: Codex <noreply@openai.com>'
@@ -76,9 +78,42 @@ t_case_attribution() {
   (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/duplicates-message")
   duplicate_trailers="$(git interpret-trailers --parse "$r/duplicates-message")"
   agent_count="$(printf '%s\n' "$duplicate_trailers" | grep -c '^Agent: codex$')"
-  coauthor_count="$(printf '%s\n' "$duplicate_trailers" | grep -c '^Co-authored-by: Codex <codex@users.noreply.github.com>$')"
+  coauthor_count="$(printf '%s\n' "$duplicate_trailers" | grep -c '^Co-authored-by: Codex <codex@agents.invalid>$')"
+  legacy_count="$(printf '%s\n' "$duplicate_trailers" | grep -c 'codex@users.noreply.github.com')"
   t_expect_rc 2 "$agent_count" "existing duplicate Agent metadata does not multiply"
   t_expect_rc 1 "$coauthor_count" "duplicate Agent input adds no duplicate co-author"
+  t_expect_rc 0 "$legacy_count" "legacy generated co-author trailer is removed"
+
+  # Legacy line removal is EXACT and trailer-only. A reworded/amended Codex
+  # message drops the generated legacy trailer, while the same text in a body
+  # paragraph, another contributor and a near-miss spelling all survive.
+  printf 'subject\n\nQuoted in the body:\nCo-authored-by: Codex <codex@users.noreply.github.com>\n\nCo-authored-by: Other <other@example.test>\nCo-authored-by: Codex <codex@users.noreply.github.com>\nCo-authored-by: codex <codex@users.noreply.github.com>\nAgent: codex\n' > "$r/legacy-message"
+  (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/legacy-message")
+  t_expect_rc 0 "$?" "legacy trailer message hook run succeeds"
+  legacy_trailers="$(git interpret-trailers --parse "$r/legacy-message")"
+  printf '%s\n' "$legacy_trailers" | grep -qx 'Co-authored-by: Codex <codex@users.noreply.github.com>'
+  t_expect_rc 1 "$?" "exact legacy trailer is removed from the trailer block"
+  printf '%s\n' "$legacy_trailers" | grep -qx 'Co-authored-by: Codex <codex@agents.invalid>'
+  t_assert "$?" "canonical co-author replaces the legacy trailer"
+  printf '%s\n' "$legacy_trailers" | grep -qx 'Co-authored-by: Other <other@example.test>'
+  t_assert "$?" "other contributor survives legacy removal"
+  printf '%s\n' "$legacy_trailers" | grep -qx 'Co-authored-by: codex <codex@users.noreply.github.com>'
+  t_assert "$?" "near-miss spelling is not a known generated line and survives"
+  sed -n 3,4p "$r/legacy-message" > "$r/legacy-body"
+  printf 'Quoted in the body:\nCo-authored-by: Codex <codex@users.noreply.github.com>\n' > "$r/legacy-body-expected"
+  cmp -s "$r/legacy-body-expected" "$r/legacy-body"
+  t_assert "$?" "legacy text in a body paragraph is preserved byte-for-byte"
+  cp "$r/legacy-message" "$r/legacy-repeat"
+  (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/legacy-message")
+  cmp -s "$r/legacy-repeat" "$r/legacy-message"
+  t_assert "$?" "legacy removal is byte-idempotent on a second run"
+
+  # A human (no agent) never has a message rewritten, legacy line included.
+  printf 'human amend\n\nCo-authored-by: Codex <codex@users.noreply.github.com>\n' > "$r/human-legacy-message"
+  cp "$r/human-legacy-message" "$r/human-legacy-before"
+  (cd "$r" && CODEX_THREAD_ID='' GIT_GUARD_AGENT='' "$r/test-hooks/prepare-commit-msg" "$r/human-legacy-message")
+  cmp -s "$r/human-legacy-before" "$r/human-legacy-message"
+  t_assert "$?" "human message with the legacy line stays byte-identical"
 
   for message in body-message coauthors-message duplicates-message; do
     cp "$r/$message" "$r/repeat-before"
