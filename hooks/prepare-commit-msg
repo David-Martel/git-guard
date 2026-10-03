@@ -99,13 +99,33 @@ case "$agent" in
     # Co-authored-by lines are untouched. Published history is not rewritten.
     git_guard_coauthor_legacy='Co-authored-by: Codex <codex@users.noreply.github.com>'
     git_guard_coauthor_draft='Co-authored-by: Codex <codex@agents.invalid>'
-    if git interpret-trailers --parse "$message_file" 2>/dev/null |
+    # Comment lines use core.commentString / core.commentChar (default "#").
+    # With "auto", git picks the first of `#;@!$%^&|:` that starts no line of
+    # the message and APPENDS its comment block, so the last non-blank line's
+    # first character is the one it chose. Use that, and hand the same
+    # character to every interpret-trailers call below, so the trailer block
+    # above those comments is found.
+    git_guard_comment="$(git config --get core.commentString 2>/dev/null ||
+      git config --get core.commentChar 2>/dev/null || echo '#')"
+    git_guard_comment_override=""
+    if [ "$git_guard_comment" = "auto" ]; then
+      git_guard_last_char="$(awk 'NF { l = $0 } END { print substr(l, 1, 1) }' "$message_file")"
+      case "$git_guard_last_char" in
+        '#'|';'|'@'|'!'|'$'|'%'|'^'|'&'|'|'|':') git_guard_comment="$git_guard_last_char" ;;
+        *) git_guard_comment='#' ;;
+      esac
+      git_guard_comment_override="$git_guard_comment"
+    fi
+    [ -n "$git_guard_comment" ] || git_guard_comment='#'
+    git_guard_trailers() {
+      if [ -n "$git_guard_comment_override" ]; then
+        git -c core.commentChar="$git_guard_comment_override" interpret-trailers "$@"
+      else
+        git interpret-trailers "$@"
+      fi
+    }
+    if git_guard_trailers --parse "$message_file" 2>/dev/null |
        grep -qxF -e "$git_guard_coauthor_legacy" -e "$git_guard_coauthor_draft"; then
-      # Comment lines use core.commentString / core.commentChar (default "#";
-      # "auto" picks a character per message, so fall back to "#").
-      git_guard_comment="$(git config --get core.commentString 2>/dev/null ||
-        git config --get core.commentChar 2>/dev/null || echo '#')"
-      case "$git_guard_comment" in ""|auto) git_guard_comment='#' ;; esac
       git_guard_msg_tmp="${message_file}.git-guard.$$"
       if ! awk -v legacy="$git_guard_coauthor_legacy" -v draft="$git_guard_coauthor_draft" -v cc="$git_guard_comment" '
         function is_comment(s) { return substr(s, 1, length(cc)) == cc }
@@ -132,7 +152,7 @@ case "$agent" in
     fi
     # Add the co-author first, then replace/add Agent at the end, without
     # replacing another contributor's Co-authored-by trailer.
-    git interpret-trailers --in-place \
+    git_guard_trailers --in-place \
       --if-exists addIfDifferent \
       --if-missing add \
       --trailer 'Co-authored-by: Codex <noreply@openai.com>' \

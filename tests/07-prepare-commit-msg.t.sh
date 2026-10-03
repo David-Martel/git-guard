@@ -153,6 +153,24 @@ t_case_attribution() {
     t_ok "draft agents.invalid trailer is replaced by the canonical address"
   fi
 
+  # core.commentChar=auto: a REAL `git commit --amend` through an editor whose
+  # body has a `#` line makes git pick another comment character (e.g. ';').
+  # The legacy trailer above those comments must still collapse.
+  printf 'auto\n' > "$r/auto.txt"
+  git -C "$r" add auto.txt
+  (cd "$r" && GIT_GUARD=0 git commit -q -m "auto subject" -m "# a markdown heading in the body" \
+    -m "Co-authored-by: Codex <codex@users.noreply.github.com>
+Agent: codex")
+  (cd "$r" && GIT_GUARD_AGENT=codex GIT_EDITOR=true git -c core.commentChar=auto commit -q --amend)
+  t_expect_rc 0 "$?" "commentChar=auto editor amend succeeds"
+  auto_message="$(git -C "$r" log -1 --format=%B)"
+  t_expect_rc 0 "$(printf '%s\n' "$auto_message" | grep -c 'codex@users.noreply.github.com')" \
+    "commentChar=auto amend drops the legacy trailer"
+  t_expect_rc 1 "$(printf '%s\n' "$auto_message" | grep -c '^Co-authored-by: Codex <noreply@openai.com>$')" \
+    "commentChar=auto amend carries exactly one canonical co-author"
+  printf '%s\n' "$auto_message" | grep -qx '# a markdown heading in the body'
+  t_assert "$?" "commentChar=auto amend keeps the '#' body line"
+
   # A human (no agent) never has a message rewritten, legacy line included.
   printf 'human amend\n\nCo-authored-by: Codex <codex@users.noreply.github.com>\n' > "$r/human-legacy-message"
   cp "$r/human-legacy-message" "$r/human-legacy-before"
