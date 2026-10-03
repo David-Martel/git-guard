@@ -38,6 +38,41 @@ if [ "$GIT_GUARD" = "0" ] || [ "$LEFTHOOK" = "0" ]; then
   exit 0
 fi
 
+# Per-agent authorship attestation over every pushed range (docs/IDENTITY.md).
+# WARN-ONLY by default: it reports commits whose real SSH signature does not
+# match their Agent: trailer, and blocks only under GIT_GUARD_IDENTITY=enforce.
+# A silent no-op when no allowed_signers file resolves. It consumes the ref
+# list, so buffer stdin (unless the LFS step already did) and replay it below.
+git_guard_identity_mode="${GIT_GUARD_IDENTITY:-warn}"
+case "$git_guard_identity_mode" in
+  off|warn|enforce) : ;;
+  *)
+    printf "git-guard pre-push: unknown GIT_GUARD_IDENTITY='%s' (want off|warn|enforce); using warn\n" \
+      "$git_guard_identity_mode" >&2
+    git_guard_identity_mode=warn
+    ;;
+esac
+if [ "$git_guard_identity_mode" != "off" ]; then
+  if [ -z "$git_guard_stdin" ]; then
+    git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX")" || exit 1
+    trap 'rm -f "$git_guard_stdin"' EXIT
+    cat > "$git_guard_stdin"
+  fi
+  git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
+  sh "$git_guard_hook_dir/common/identity.sh" pre-push "$@" < "$git_guard_stdin"
+  git_guard_identity_rc=$?
+  if [ "$git_guard_identity_rc" -ne 0 ]; then
+    if [ "$git_guard_identity_mode" = "enforce" ]; then
+      printf '%s\n' \
+        "git-guard BLOCK (GIT_GUARD_IDENTITY=enforce): pushed commits fail authorship attestation (see above)." \
+        "Do NOT use --no-verify." >&2
+      exit 1
+    fi
+    printf '%s\n' \
+      "git-guard identity: WARN only, the push proceeds (GIT_GUARD_IDENTITY=enforce would block it)." >&2
+  fi
+fi
+
 # Replay the buffered ref list to whichever downstream gate runs below.
 if [ -n "$git_guard_stdin" ]; then
   exec < "$git_guard_stdin"

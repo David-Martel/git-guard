@@ -8,6 +8,8 @@
 #   rules      print the rule manifest (categories, counts, the BLOCK trio)
 #   verify     self-test: BLOCK trio fires, clean commit passes (scratch repo)
 #   test       run the comprehensive validation suite (tests/), hermetic temp repos
+#   identity   per-agent signing identity + authorship attestation
+#              (keygen|env|status|allowed-signers|verify; see docs/IDENTITY.md)
 #   install    install a versioned release (delegates to install.sh; default
 #              --to v$(cat VERSION); accepts --to/--store/--rules-dir/--dev-symlink/--dry-run)
 #   update     re-point the installed `current` release at another tag
@@ -233,6 +235,7 @@ case "${1:-help}" in
   rules)      cmd_rules ;;
   verify)     cmd_verify ;;
   test)       shift; cmd_test "$@" ;;
+  identity)   shift; sh "$GG_ENGINE/identity.sh" "$@" ;;
   install)    shift; cmd_install "$@" ;;
   update)     shift; cmd_update "$@" ;;
   uninstall)  shift; cmd_uninstall "$@" ;;

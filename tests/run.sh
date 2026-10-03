@@ -43,6 +43,14 @@ export PYTHONHOME=
 # hook treats an empty marker as absent.
 export CLAUDECODE='' CLAUDE_CODE_ENTRYPOINT='' CODEX_THREAD_ID='' GIT_GUARD_AGENT=''
 
+# Neutralise an inherited per-agent signing identity (git-guard identity env).
+# GIT_CONFIG_COUNT is COMMAND scope, so it beats every fixture repo's local
+# `commit.gpgsign false`: an agent shell running the suite would otherwise sign
+# each fixture commit with the agent's real key. The identity knobs are emptied
+# so the hooks see their defaults. (KEY_n/VALUE_n are inert without COUNT.)
+unset GIT_CONFIG_COUNT
+export GIT_GUARD_IDENTITY='' GIT_GUARD_ALLOWED_SIGNERS='' GIT_GUARD_IDENTITY_KEYDIR='' GIT_GUARD_HOST=''
+
 # Per-suite temp root, cleaned on exit (covers any repo a case forgot to remove).
 GG_T_TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/git-guard-tests.XXXXXX")"
 export GG_T_TMPROOT
@@ -93,6 +101,9 @@ t_case_panic_set
 t_case_silent_failures
 t_case_attribution
 t_case_attribution_claude
+t_case_identity_cli
+t_case_identity_verify
+t_case_identity_hooks
 t_case_secret_scan
 t_case_cache_staleness
 t_case_powershell

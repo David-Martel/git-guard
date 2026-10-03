@@ -1,0 +1,76 @@
+#!/bin/sh
+#
+# git-guard commit-msg — per-agent authorship cross-check + downstream chaining.
+#
+# 1. Identity (WARN-ONLY by default). Runs BEFORE git signs the commit, so it
+#    checks intent: the principal that `user.signingkey` maps to in
+#    allowed_signers must equal the `Agent:` trailer prepare-commit-msg wrote
+#    (an agent key), or there must be no trailer (a human key). The REAL
+#    signature is checked later, by pre-push and `git-guard identity verify`.
+#    It is a silent no-op unless the commit will be SSH-signed and an
+#    allowed_signers file exists, so installing it changes nothing on a host
+#    that has no signing set up.
+#      GIT_GUARD_IDENTITY=off|warn|enforce   (default warn: report, never block)
+# 2. Downstream chaining. Installing git-guard through core.hooksPath makes
+#    git ignore a repo's own commit-msg hook, so chain one if configured:
+#    $GIT_GUARD_DOWNSTREAM_COMMIT_MSG > repo .git-guard/commit-msg.local >
+#    `lefthook run commit-msg` (only when lefthook is installed AND the repo
+#    has a lefthook config at its root).
+#
+# Bypass: `GIT_GUARD=0 git commit ...` (an auditable human emergency). Do NOT
+# use --no-verify.
+
+set -u
+
+if [ "${GIT_GUARD:-1}" = "0" ]; then
+  exit 0
+fi
+
+git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
+git_guard_identity_mode="${GIT_GUARD_IDENTITY:-warn}"
+case "$git_guard_identity_mode" in
+  off|warn|enforce) : ;;
+  *)
+    printf "git-guard commit-msg: unknown GIT_GUARD_IDENTITY='%s' (want off|warn|enforce); using warn\n" \
+      "$git_guard_identity_mode" >&2
+    git_guard_identity_mode=warn
+    ;;
+esac
+
+if [ "$git_guard_identity_mode" != "off" ]; then
+  sh "$git_guard_hook_dir/common/identity.sh" check-msg "$1"
+  git_guard_identity_rc=$?
+  if [ "$git_guard_identity_rc" -ne 0 ]; then
+    if [ "$git_guard_identity_mode" = "enforce" ]; then
+      printf '%s\n' \
+        "git-guard BLOCK (GIT_GUARD_IDENTITY=enforce): commit authorship does not match the signing key." \
+        "  Inspect with: git-guard identity status" >&2
+      exit 1
+    fi
+    printf '%s\n' \
+      "git-guard identity: WARN only, the commit proceeds (GIT_GUARD_IDENTITY=enforce would block it)." \
+      "  Inspect with: git-guard identity status" >&2
+  fi
+fi
+
+git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
+git_guard_has_lefthook_config() {
+  [ -n "$1" ] || return 1
+  for _gg_stem in lefthook .lefthook .config/lefthook; do
+    for _gg_ext in yml yaml json toml; do
+      [ -f "$1/${_gg_stem}.${_gg_ext}" ] && return 0
+    done
+  done
+  return 1
+}
+
+if [ -n "${GIT_GUARD_DOWNSTREAM_COMMIT_MSG:-}" ] && [ -x "${GIT_GUARD_DOWNSTREAM_COMMIT_MSG}" ]; then
+  "${GIT_GUARD_DOWNSTREAM_COMMIT_MSG}" "$@" || exit $?
+elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/commit-msg.local" ]; then
+  "$git_guard_repo_root/.git-guard/commit-msg.local" "$@" || exit $?
+elif [ "${LEFTHOOK:-1}" != "0" ] && command -v lefthook >/dev/null 2>&1 &&
+     git_guard_has_lefthook_config "$git_guard_repo_root"; then
+  lefthook run commit-msg "$@" || exit $?
+fi
+
+exit 0

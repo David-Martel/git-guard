@@ -1,0 +1,25 @@
+# git-guard fleet allowed_signers — maps each SSH signing key to ONE principal.
+#
+# Format (ssh-keygen(1) ALLOWED SIGNERS), one key per line:
+#   <principal> namespaces="git" <key-type> <base64-key> <comment>
+#
+#   principal  the agent id for an agent key: claude, codex, jules, gemini
+#              (git-guard treats every other principal as a human, whose
+#              commits must carry NO Agent: trailer)
+#   namespaces="git"  required (`git-guard identity allowed-signers check`
+#              rejects a line without it: the key would verify any namespace)
+#   comment    agent-<agent>@<host>, the same title the key carries on GitHub
+#
+# Retire a key by adding valid-before="YYYYMMDD" instead of deleting the line,
+# so history it signed still verifies.
+#
+# INTENTIONALLY EMPTY. This repository is public; listing the fleet's keys and
+# host names here is an owner decision that has not been made yet. Until then
+# hosts point gpg.ssh.allowedSignersFile at their own file. To add a key once
+# the owner has registered it on GitHub (in a git-guard CHECKOUT, then a PR):
+#   git-guard identity allowed-signers add claude ~/.ssh/agent-signing/claude@<host>.pub \
+#     --file identity/allowed_signers
+#   git-guard identity allowed-signers check --file identity/allowed_signers
+#
+# Example shape (NOT a real key):
+# claude namespaces="git" ssh-ed25519 AAAAC3Nza...example agent-claude@examplehost
