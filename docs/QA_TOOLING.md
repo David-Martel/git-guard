@@ -449,9 +449,14 @@ The contract is deliberately restrictive:
   canonical filesystem scanner could otherwise read. Keep virtual environments,
   generated caches and reports outside these checkouts. CRLF or smudge-filter
   transformations that change committed bytes are refused.
-- Tracked symlinks must resolve inside their checkout. Broken links, escapes,
-  submodule entries, sparse/missing files and non-regular file substitutions are
-  refused rather than treated as an incomplete clean inventory. This does not
+- A tracked symlink must use a relative target, and every hop of its chain must
+  itself be a tracked entry, ending at a tracked regular file. So a link into
+  Git metadata (`check.py -> ../../.git/evil.py`), through any untracked path,
+  to an absolute path, or to a directory is refused before anything runs. A
+  tracked file reached through a symlinked directory is refused as well.
+  Broken links, escapes, submodule entries, sparse/missing files and non-regular
+  file substitutions are refused rather than treated as an incomplete clean
+  inventory. This does not
   make a concurrently mutable directory an atomic snapshot.
 - Python 3.11+ and Git must already be available. Set
   `GIT_GUARD_VERSIONS_PYTHON` to an existing interpreter path if necessary. The

@@ -217,6 +217,81 @@ class AdapterTests(unittest.TestCase):
         self.target_sha = commit(self.target)
         self.assert_result(0)
 
+    def plant_metadata_checker(self, marker):
+        # Untracked, unpinned code inside Git metadata: if it ever runs, the
+        # marker file appears.
+        evil = self.checker / ".git" / "evil.py"
+        evil.write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\n")
+        return evil
+
+    def replace_checker_with_link(self, destination):
+        script = self.checker / "tools/fleet_versions/check.py"
+        script.unlink()
+        script.symlink_to(destination)
+        self.checker_sha = commit(self.checker)
+
+    def test_symlink_into_git_metadata_refused_before_execution(self):
+        marker = Path(self.temp.name) / "metadata-ran"
+        self.plant_metadata_checker(marker)
+        self.replace_checker_with_link("../../.git/evil.py")
+        result = self.assert_result(2)
+        self.assertFalse(marker.exists(), "metadata code executed")
+        self.assertIn("tracked", result.stderr)
+
+    def test_target_symlink_into_git_metadata_refused(self):
+        (self.target / ".git" / "version-shadow.txt").write_text("99\n")
+        (self.target / "version-alias.txt").symlink_to(".git/version-shadow.txt")
+        self.target_sha = commit(self.target)
+        self.assert_result(2)
+
+    def test_absolute_symlinks_refused_before_execution(self):
+        marker = Path(self.temp.name) / "absolute-ran"
+        outside = Path(self.temp.name) / "outside-check.py"
+        outside.write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\n")
+        self.replace_checker_with_link(str(outside))
+        self.assert_result(2)
+        self.assertFalse(marker.exists(), "absolute-path code executed")
+        # Absolute even when it points back INTO the checkout: the pinned tree
+        # would mean different bytes at a different path, so it is refused too.
+        impl = self.checker / "tools/fleet_versions/impl.py"
+        impl.write_text(CHECKER)
+        script = self.checker / "tools/fleet_versions/check.py"
+        script.unlink()
+        script.symlink_to(str(impl))
+        self.checker_sha = commit(self.checker)
+        self.assertIn("absolute", self.assert_result(2).stderr)
+
+    def test_symlink_chain_through_metadata_refused(self):
+        marker = Path(self.temp.name) / "chain-ran"
+        self.plant_metadata_checker(marker)
+        # check.py -> alias.py (tracked symlink) -> ../../.git/evil.py
+        (self.checker / "tools/fleet_versions/alias.py").symlink_to("../../.git/evil.py")
+        self.replace_checker_with_link("alias.py")
+        self.assert_result(2)
+        self.assertFalse(marker.exists(), "chained metadata code executed")
+
+    def test_symlink_hop_through_metadata_to_tracked_file_refused(self):
+        # The final file is tracked, but WHICH file runs is chosen by an
+        # untracked link inside .git, so the hop itself is refused.
+        (self.checker / ".git" / "hop.py").symlink_to("../tools/fleet_versions/impl.py")
+        (self.checker / "tools/fleet_versions/impl.py").write_text(CHECKER)
+        self.replace_checker_with_link("../../.git/hop.py")
+        self.assert_result(2)
+
+    def test_symlink_to_directory_refused(self):
+        (self.target / "sub").mkdir()
+        (self.target / "sub/data.txt").write_text("data\n")
+        (self.target / "sub-link").symlink_to("sub")
+        self.target_sha = commit(self.target)
+        self.assertIn("tracked regular file", self.assert_result(2).stderr)
+
+    def test_tracked_symlink_chain_to_tracked_checker_runs(self):
+        # Positive control: check.py -> alias.py -> impl.py, all tracked.
+        (self.checker / "tools/fleet_versions/impl.py").write_text(CHECKER)
+        (self.checker / "tools/fleet_versions/alias.py").symlink_to("impl.py")
+        self.replace_checker_with_link("alias.py")
+        self.assertIn('"fixture_checker": true', self.assert_result(0).stdout)
+
     def test_environment_cannot_replace_local_module(self):
         outside = Path(self.temp.name) / "outside"
         outside.mkdir()
