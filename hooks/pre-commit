@@ -48,7 +48,7 @@ fi
 #    language-agnostic). NUKENUL_MANDATORY=1 -> blocks on a genuine failure.
 #    qa_gate is told to skip its own nul step (QA_SKIP_NUL=1) to avoid a re-run.
 if [ -x "$git_guard_hooks_dir/common/nul-cleanup.sh" ]; then
-  NUKENUL_MANDATORY=1 "$git_guard_hooks_dir/common/nul-cleanup.sh" >/dev/null 2>&1 || {
+  NUKENUL_MANDATORY=1 "$git_guard_hooks_dir/common/nul-cleanup.sh" || {
     printf '%s\n' "git-guard BLOCKED: reserved-filename (NUL) cleanup failed. Your changes are STAGED but UNCOMMITTED — do NOT 'git reset --hard'. Resolve the reserved file, re-commit." >&2
     exit 1
   }

@@ -22,7 +22,7 @@ t_case_downstream_chaining() {
   GG_T_PATH_NO_LEFTHOOK="$GG_T_TMPROOT/no-lefthook-bin"
   mkdir -p "$GG_T_PATH_NO_LEFTHOOK"
   for tool in git sh dirname basename cat sed grep awk sort uniq tr cut head tail \
-      wc find xargs mkdir rm mv cp chmod mktemp date uname sleep touch; do
+      wc find xargs mkdir rm mv cp chmod mktemp date uname sleep touch stat id; do
     tool_path="$(command -v "$tool")" || {
       t_fail "required fixture command missing: $tool"
       return 1

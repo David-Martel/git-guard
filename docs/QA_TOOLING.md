@@ -87,7 +87,7 @@ errors. The default blocking surface is deliberately NARROW.
 | Check | Trigger (staged files) | Tool | Default | Notes |
 |---|---|---|---|---|
 | secret-scan | added lines (any file) | `secret_scan.sh` | **BLOCK** | MVC; added-lines-only |
-| nul-cleanup | always | NukeNul.exe / shell | **BLOCK** | reserved-filename hygiene, PII-safe |
+| nul-cleanup | always | bundled Rust inventory / physical shell scan | **BLOCK** | owned regular single-link zero-byte removal only; ambiguous/nonempty matches retained |
 | ast-grep trio | `*.rs` | `sg` (batched) | **BLOCK** | avoid-static-mut, no-glob-reexport, unsafe-with-panic |
 | ast-grep panic-set | `*.rs` | `sg` | **WARN** | unwrap/panic/unchecked… never blocks |
 | ast-grep other | source files | `sg` | **WARN** | core/security/csharp/powershell rules |
@@ -136,7 +136,7 @@ no tool is required. The table shows where each reads its config.
 | shellcheck | `PATH` | none |
 | cargo | `PATH` | repo `rustfmt.toml` / `Cargo.toml` |
 | dotnet | `PATH` | repo `.editorconfig` |
-| NukeNul (optional NUL accelerator) | `$NUKENUL_BIN` (else POSIX-shell fallback) | n/a |
+| Reserved-path inventory | bundled Rust source + `rustc` on Linux x64/ARM64; physical POSIX scan otherwise | external `NUKENUL_BIN` is never executed |
 
 Files OWNED by this subsystem (all under `~/.git-hooks/common/` unless noted):
 
@@ -146,7 +146,8 @@ Files OWNED by this subsystem (all under `~/.git-hooks/common/` unless noted):
 | `qa-gate.conf` | GLOBAL DEFAULT config (block/warn/off per check) |
 | `qa-sgconfig.yml` | ast-grep root config → points at the validated rule cache |
 | `qa-rules/` | VALIDATED rule cache (auto-rebuilt; see §4) |
-| `nul-cleanup.sh` | pre-existing reserved-filename cleanup (reused, not modified) |
+| `nul-cleanup.sh` | scope, owner, type, identity and zero-byte checks plus qualified removal |
+| `reserved_path_inventory.rs` | read-only NUL-delimited inventory with protected-scope pruning |
 | `~/.git-hooks/pre-commit` | git-guard sentinel block invokes the above |
 | `~/.config/codex-security/git-hooks/pre-commit` | override-repo entry → secret-scan + QA |
 
@@ -392,9 +393,11 @@ QA_DEBUG=1 ~/.git-hooks/common/qa_gate.sh   # with files staged
 4. **basedpyright** is not installed on this host → its check no-ops.
 5. **First commit after editing `~/.claude/rules`** pays a ~15s one-time cache
    rebuild.
-6. **NukeNul** targets genuine Windows reserved device-names; a normal file
-   literally named `nul.txt` on Git-Bash's POSIX FS is left alone (it is not a
-   reserved device there).
+6. Reserved-name normalization includes extensions and trailing spaces/dots.
+   Only owned regular single-link zero-byte matches can be removed; meaningful
+   or ambiguous matches are retained and block. PowerShell is audit-only until
+   Windows qualification. The POSIX stat-to-unlink race remains documented;
+   neither inventory nor repeated checks establish an atomic filesystem snapshot.
 
 ---
 
@@ -406,7 +409,7 @@ QA_DEBUG=1 ~/.git-hooks/common/qa_gate.sh   # with files staged
 | Blocked "ast-grep rule 'avoid-static-mut'" | `static mut` in staged rust | use atomics/OnceLock; or `astgrep=off` for the repo |
 | Every `.unwrap()` warns | panic-set rules (advisory) | informational only — never blocks |
 | Commit very slow (>10s) | cold ast-grep rule cache rebuild | one-time; subsequent commits fast |
-| Docs commit slow | NukeNul spawn + lefthook stub | expected ~2s; QA itself is ~200ms |
+| Docs commit slow | accumulated generated outputs, physical fallback scans or downstream gates | prune obsolete owned outputs; inspect inventory/gate timings. Native inventory still scans metadata and compiles per invocation. |
 | "shellcheck errors" on a fine script | real SC finding | fix, or `shell.shellcheck=warn` |
 | QA not running at all | `LEFTHOOK=0`, `--no-verify`, or `qa.enabled=off` | remove the bypass |
 | Commit blocked, "malformed config line FILE:N" | a `.qa-gate.conf` line has no `=`, an empty key, or a value with a disallowed character | fix that exact line (message quotes it); values limited to `[A-Za-z0-9_,.:/-]` |

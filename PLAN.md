@@ -40,7 +40,7 @@ local config by **symlinking** into the versioned source, so nothing is lost.
 | --- | --- | --- |
 | Rules directory | `QA_RULES_DIR="${HOME}/.claude/rules"` hardcoded in `qa_gate.sh` | `$GIT_GUARD_RULES_DIR` env → `rules_dir` conf key → **bundled `rules-examples/`**. No private path in the engine. |
 | ast-grep config | static sgconfig with machine-absolute `C:/Users/.../qa-rules` paths | **generated at runtime** with `cygpath`-converted absolute ruleDirs from the local cache — portable + CWD-correct. |
-| NUL accelerator | a hardcoded personal `NukeNul.exe` path | `$NUKENUL_BIN` (optional); pure-POSIX shell fallback is the universal default. |
+| Reserved-path inventory | external destructive accelerator and repeated full walks | bundled read-only Rust inventory on supported Linux, one physical POSIX walk otherwise; qualified zero-byte removal only. External accelerators are refused. |
 | Downstream hooks | David's npx-lefthook path baked into `pre-commit` | generic `lefthook`-in-PATH detection + `GIT_GUARD_DOWNSTREAM_*` / `.git-guard/*.local` chaining. |
 | Docs | `~/.agents/*.md` | live in `docs/`; `~/.agents/*` become **symlinks** back into the repo. |
 | Private corpus overlay | implicit | explicit, gitignored `qa-gate.conf.local` written by `install.sh --rules-dir`. The committed `qa-gate.conf` stays public-safe. |

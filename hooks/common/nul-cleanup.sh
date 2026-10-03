@@ -1,208 +1,201 @@
 #!/bin/sh
+# Reserved-path hygiene: one physical walk of the active Git worktree.
+# Only owned, regular, single-link, zero-byte files may be removed. Foreign Git
+# trees, metadata, symlinks, nonempty files and ambiguous changes are preserved.
+# Paths travel as find -exec arguments, never newline-delimited shell text.
 #
-# Cross-platform reserved filename cleanup script
-# Removes Windows reserved filenames (nul, con, prn, aux, com1-9, lpt1-9) from git repositories
-#
-# Works in: Git Bash, WSL, Linux, macOS
-# Uses NukeNul.exe on Windows for comprehensive cleanup
-# Falls back to shell-based cleanup on non-Windows systems
-#
-# MANDATORY: This hook runs as part of pre-commit to ensure no reserved
-# filenames are committed to the repository.
-#
-# `local` is used intentionally: every shell this runs on (bash, dash, BusyBox
-# ash, Git-Bash) supports it. SC3043 (POSIX undefined) is suppressed file-wide.
-# shellcheck disable=SC3043
+# POSIX has no unlink operation conditional on an unchanged inode/size. Repeated
+# no-follow metadata/parent checks detect observed changes but leave a residual
+# stat-to-unlink race with an uncooperative concurrent writer. This is NOT
+# race-proof. Never run this hook in a concurrently adversarial workspace.
+# NUKENUL_BIN is deliberately not executed: its destructive contract is unknown.
+# Failures always propagate; NUKENUL_MANDATORY cannot weaken preservation rules.
+set -u
 
-set -e  # Exit on error - this is MANDATORY for pre-commit
-
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-
-if [ -z "$REPO_ROOT" ]; then
-    echo "ERROR: Not in a git repository"
-    exit 1
-fi
-
-# Optional native NukeNul.exe accelerator (Windows). Point $NUKENUL_BIN at it to
-# force a specific binary, or let PATH discovery find NukeNul.exe/NukNul.exe.
-# Otherwise the portable POSIX shell fallback handles every platform.
-NUKENUL_WIN="${NUKENUL_BIN:-}"
-NUKENUL_UNIX="${NUKENUL_BIN:-}"
-if [ -z "$NUKENUL_WIN" ]; then
-    if command -v NukeNul.exe >/dev/null 2>&1; then
-        _NUKENUL_DISCOVERED=$(command -v NukeNul.exe)
-    elif command -v NukNul.exe >/dev/null 2>&1; then
-        _NUKENUL_DISCOVERED=$(command -v NukNul.exe)
-    else
-        _NUKENUL_DISCOVERED=""
-    fi
-    if [ -n "$_NUKENUL_DISCOVERED" ]; then
-        case "$(uname -s 2>/dev/null || echo)" in
-            MINGW*|MSYS*|CYGWIN*|Windows_NT) NUKENUL_WIN="$_NUKENUL_DISCOVERED" ;;
-            Linux*) NUKENUL_UNIX="$_NUKENUL_DISCOVERED" ;;
-            *) NUKENUL_UNIX="$_NUKENUL_DISCOVERED" ;;
-        esac
-    fi
-fi
-
-FIND_BIN="find"
-if [ -x /usr/bin/find ]; then
-    FIND_BIN=/usr/bin/find
-elif command -v gfind >/dev/null 2>&1; then
-    FIND_BIN=$(command -v gfind)
-elif command -v find >/dev/null 2>&1; then
-    FIND_BIN=$(command -v find)
-fi
-
-# Function to check if running on Windows or WSL with access to Windows binaries
-detect_windows_env() {
-    # Check for native Windows (Git Bash, MSYS2, Cygwin)
-    case "$(uname -s 2>/dev/null || echo)" in
-        MINGW*|MSYS*|CYGWIN*|Windows_NT)
-            if [ -f "$NUKENUL_WIN" ]; then
-                echo "windows"
-                return 0
-            fi
-            ;;
-        Linux*)
-            # Check for WSL with access to Windows filesystem
-            if [ -f "$NUKENUL_UNIX" ] && grep -qi microsoft /proc/version 2>/dev/null; then
-                echo "wsl"
-                return 0
-            fi
-            ;;
-    esac
-    echo "unix"
-    return 0
+# Preserve command-output trailing newlines with a sentinel. Strip exactly the
+# command's record delimiter, then refuse newline-bearing roots instead of
+# silently resolving a different sibling directory after shell substitution.
+capture_path() {
+    captured=$("$@" && printf '.') || return 1
+    captured=${captured%.}
+    case "$captured" in *'
+') captured=${captured%?} ;; *) return 1 ;; esac
+    case "$captured" in ''|*'
+'*) return 1 ;; esac
 }
 
-# Function to convert path for Windows execution
-convert_path_for_windows() {
-    local path="$1"
-    local env="$2"
-
-    case "$env" in
-        windows)
-            # Git Bash: convert /c/path to C:/path
-            echo "$path" | sed 's|^/\([a-zA-Z]\)/|\1:/|'
-            ;;
-        wsl)
-            # WSL: convert /home/user to /mnt/c/... or keep as-is for Windows paths
-            if echo "$path" | grep -q "^/mnt/"; then
-                # Already a Windows path in WSL format, convert to Windows format
-                echo "$path" | sed 's|^/mnt/\([a-zA-Z]\)/|\1:/|'
-            else
-                # Linux path, use wslpath if available
-                if command -v wslpath >/dev/null 2>&1; then
-                    wslpath -w "$path" 2>/dev/null || echo "$path"
-                else
-                    echo "$path"
-                fi
-            fi
-            ;;
-        *)
-            echo "$path"
-            ;;
+reserved_leaf() {
+    leaf=$1
+    while :; do
+        case "$leaf" in *' '|*.) leaf=${leaf%?} ;; *) break ;; esac
+    done
+    stem=${leaf%%.*}
+    while :; do
+        case "$stem" in *' '|*.) stem=${stem%?} ;; *) break ;; esac
+    done
+    case "$stem" in
+        '$'[nN][uU][lL][lL]|[nN][uU][lL]|[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9]) return 0 ;;
+        *) return 1 ;;
     esac
 }
 
-# Function to run NukeNul.exe
-run_nukenul() {
-    local env="$1"
-    local target_path="$2"
-
-    echo "Running NukeNul.exe for comprehensive reserved filename cleanup..."
-
-    case "$env" in
-        windows)
-            "$NUKENUL_WIN" "$target_path"
-            ;;
-        wsl)
-            "$NUKENUL_UNIX" "$target_path"
-            ;;
-    esac
-
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-        echo "WARNING: NukeNul.exe returned exit code $exit_code"
+signature() {
+    if [ "$stat_style" = gnu ]; then stat -c '%d:%i:%f:%s:%h:%u' "$1"
+    else stat -f '%d:%i:%p:%z:%l:%u' "$1"
     fi
-    return $exit_code
 }
 
-# Function for fallback shell-based cleanup (non-Windows systems)
-shell_cleanup() {
-    local target="$1"
-    local found_files=0
+# Recheck EVERY ancestor, not merely the final leaf. A parent symlink or nested
+# Git marker makes lexical containment insufficient. Root itself is physical.
+owned_parent() {
+    parent_identity=
+    parent_failure=PRESERVED_SCOPE
+    case "$file" in "$root"/*) : ;; *) return 1 ;; esac
+    parent=${file%/*}
+    while [ "$parent" != "$root" ]; do
+        [ -n "$parent" ] && [ "$parent" != / ] || return 1
+        if [ -L "$parent" ] || [ ! -d "$parent" ]; then parent_failure=PRESERVED_PARENT_CHANGED; return 1; fi
+        case "${parent##*/}" in .git|worktrees|.worktrees) return 1 ;; esac
+        [ "$parent" != "$GG_NUL_GIT_DIR" ] && [ "$parent" != "$GG_NUL_GIT_COMMON" ] || return 1
+        [ ! -e "$parent/.git" ] && [ ! -L "$parent/.git" ] || return 1
+        if [ -f "$parent/HEAD" ] && [ -d "$parent/objects" ] && [ -d "$parent/refs" ]; then return 1; fi
+        if ! ancestor=$(signature "$parent"); then parent_failure=ERROR_PARENT_STAT; return 1; fi
+        parent_identity="${parent_identity}${ancestor};"
+        parent=${parent%/*}
+    done
+    if [ -L "$root" ] || [ ! -d "$root" ]; then parent_failure=PRESERVED_PARENT_CHANGED; return 1; fi
+    if ! ancestor=$(signature "$root"); then parent_failure=ERROR_PARENT_STAT; return 1; fi
+    root_identity=${ancestor%:*:*:*:*}
+    if [ "$root_identity" != "$GG_NUL_ROOT_IDENTITY" ]; then parent_failure=PRESERVED_ROOT_CHANGED; return 1; fi
+    parent_identity="${parent_identity}${ancestor};"
+}
 
-    echo "Running shell-based reserved filename cleanup..."
+failure() {
+    printf '%s: %s\n' "$1" "$file" >&2
+    : > "$failure_marker" || exit 1
+}
 
-    # List of Windows reserved filenames (case-insensitive patterns)
-    # nul, con, prn, aux, com1-9, lpt1-9
-    RESERVED_PATTERNS="nul con prn aux com1 com2 com3 com4 com5 com6 com7 com8 com9 lpt1 lpt2 lpt3 lpt4 lpt5 lpt6 lpt7 lpt8 lpt9"
-
-    for pattern in $RESERVED_PATTERNS; do
-        # Find files matching the pattern (case-insensitive)
-        FILES=$("$FIND_BIN" "$target" -iname "$pattern" -type f 2>/dev/null || true)
-        if [ -n "$FILES" ]; then
-            echo "$FILES" | while read -r file; do
-                if [ -f "$file" ]; then
-                    rm -f "$file" 2>/dev/null && echo "  Removed: $file"
-                    found_files=1
-                fi
-            done
+# Internal batch worker. Only the parent launches it with its private marker.
+if [ "${1:-}" = --check-candidates ]; then
+    [ "$#" -ge 5 ] || exit 2
+    root=$2; stat_style=$3; failure_marker=$4
+    shift 4
+    current_uid=$(id -u) || exit 1
+    for file do
+        reserved_leaf "${file##*/}" || continue
+        if ! owned_parent; then
+            if [ "$parent_failure" = PRESERVED_SCOPE ]; then printf 'PRESERVED_SCOPE: %s\n' "$file" >&2
+            else failure "$parent_failure"
+            fi
+            continue
         fi
-
-        # Also check for files with extensions (e.g., nul.txt)
-        FILES_EXT=$("$FIND_BIN" "$target" -iname "${pattern}.*" -type f 2>/dev/null || true)
-        if [ -n "$FILES_EXT" ]; then
-            echo "$FILES_EXT" | while read -r file; do
-                if [ -f "$file" ]; then
-                    rm -f "$file" 2>/dev/null && echo "  Removed: $file"
-                    found_files=1
-                fi
-            done
+        before_parent_identity=$parent_identity
+        if [ -L "$file" ] || [ ! -f "$file" ]; then
+            failure PRESERVED_NONREGULAR
+            continue
+        fi
+        if ! before=$(signature "$file"); then
+            failure ERROR_STAT
+            continue
+        fi
+        bytes=${before#*:*:*:}; bytes=${bytes%%:*}
+        links=${before#*:*:*:*:}; links=${links%%:*}
+        owner_uid=${before##*:}
+        if [ "$bytes" != 0 ]; then failure PRESERVED_NONEMPTY; continue; fi
+        if [ "$links" != 1 ]; then failure PRESERVED_SHARED_IDENTITY; continue; fi
+        if [ "$owner_uid" != "$current_uid" ]; then failure PRESERVED_FOREIGN_OWNER; continue; fi
+        if ! owned_parent || [ "$parent_identity" != "$before_parent_identity" ] ||
+            [ -L "$file" ] || [ ! -f "$file" ] || [ -s "$file" ]; then
+            failure PRESERVED_CHANGED
+            continue
+        fi
+        if ! after=$(signature "$file") || [ "$before" != "$after" ]; then
+            failure PRESERVED_CHANGED
+            continue
+        fi
+        if ! rm -- "$file"; then failure ERROR_DELETE
+        else printf 'REMOVED_ZERO_BYTE: %s\n' "$file" >&2
         fi
     done
+    exit 0
+fi
 
-    if [ $found_files -eq 0 ]; then
-        echo "  No reserved filenames found."
-    fi
-
-    echo "Shell cleanup complete."
-}
-
-# Main execution
-echo "=== Reserved Filename Cleanup (MANDATORY) ==="
-
-ENV_TYPE=$(detect_windows_env)
-echo "Detected environment: $ENV_TYPE"
-echo "Repository root: $REPO_ROOT"
-
-EXIT_CODE=0
-
-case "$ENV_TYPE" in
-    windows|wsl)
-        WIN_PATH=$(convert_path_for_windows "$REPO_ROOT" "$ENV_TYPE")
-        echo "Windows path: $WIN_PATH"
-        run_nukenul "$ENV_TYPE" "$WIN_PATH" || EXIT_CODE=$?
-        ;;
-    *)
-        shell_cleanup "$REPO_ROOT" || EXIT_CODE=$?
+if [ "$#" -ne 0 ]; then printf '%s\n' 'ERROR_USAGE: no public arguments accepted' >&2; exit 2; fi
+if ! capture_path git rev-parse --show-toplevel 2>/dev/null; then
+    printf '%s\n' 'ERROR_ROOT: not in a Git worktree' >&2; exit 1
+fi
+root=$captured
+# Refuse broad or newline-ambiguous roots rather than guessing after Git output.
+case "$root" in ''|/|"${HOME:-}"|*'
+'*) printf '%s\n' 'ERROR_ROOT: unsafe or ambiguous workspace root' >&2; exit 1 ;; esac
+if ! capture_path sh -c 'cd "$1" && pwd -P' sh "$root"; then printf '%s\n' 'ERROR_ROOT: cannot resolve workspace' >&2; exit 1; fi
+root=$captured
+if ! capture_path git rev-parse --absolute-git-dir; then printf '%s\n' 'ERROR_ROOT: cannot determine Git directory' >&2; exit 1; fi
+git_directory=$captured
+if ! capture_path git rev-parse --path-format=absolute --git-common-dir; then printf '%s\n' 'ERROR_ROOT: cannot determine common Git directory' >&2; exit 1; fi
+git_common_directory=$captured
+if ! capture_path sh -c 'cd "$1" && pwd -P' sh "$git_directory"; then printf '%s\n' 'ERROR_ROOT: cannot resolve Git directory' >&2; exit 1; fi
+GG_NUL_GIT_DIR=$captured
+if ! capture_path sh -c 'cd "$1" && pwd -P' sh "$git_common_directory"; then printf '%s\n' 'ERROR_ROOT: cannot resolve common Git directory' >&2; exit 1; fi
+GG_NUL_GIT_COMMON=$captured
+export GG_NUL_GIT_DIR GG_NUL_GIT_COMMON
+# Escape find's glob interpretation so brackets/star/question marks in real
+# metadata paths cannot accidentally broaden or invalidate the pruning boundary.
+git_dir_pattern=$(printf '%s' "$GG_NUL_GIT_DIR" | sed 's/[][\\*?]/\\&/g')
+git_common_pattern=$(printf '%s' "$GG_NUL_GIT_COMMON" | sed 's/[][\\*?]/\\&/g')
+if stat -c '%d:%i:%f:%s:%h' "$root" >/dev/null 2>&1; then stat_style=gnu
+elif stat -f '%d:%i:%p:%z:%l' "$root" >/dev/null 2>&1; then stat_style=bsd
+else printf '%s\n' 'ERROR_TOOL: compatible no-follow stat unavailable' >&2; exit 1
+fi
+if ! initial_root=$(signature "$root"); then printf '%s\n' 'ERROR_ROOT: cannot identify workspace' >&2; exit 1; fi
+GG_NUL_ROOT_IDENTITY=${initial_root%:*:*:*:*}
+export GG_NUL_ROOT_IDENTITY
+if ! scratch=$(mktemp -d "${TMPDIR:-/tmp}/git-guard-nul.XXXXXX"); then
+    printf '%s\n' 'ERROR_TEMP: cannot create private result directory' >&2; exit 1
+fi
+trap 'rm -rf -- "$scratch"' EXIT
+trap 'exit 1' HUP INT TERM
+failure_marker=$scratch/failed
+self=$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")
+# GNU/BSD/Git-Bash find default to physical traversal; never add -L. Reserved
+# prefixes are a superset; the worker performs exact, suffix-normalized matching.
+# Metadata and conventional agent worktree containers are pruned before descent.
+inventory_source=${self%/*}/reserved_path_inventory.rs
+inventory_native=false
+case "$(uname -s 2>/dev/null):$(uname -m 2>/dev/null)" in
+    Linux:x86_64|Linux:aarch64)
+        if [ -f "$inventory_source" ] && command -v rustc >/dev/null 2>&1; then
+            inventory_native=true
+        fi
         ;;
 esac
-
-if [ $EXIT_CODE -ne 0 ]; then
-    echo "WARNING: Cleanup encountered errors (exit code: $EXIT_CODE)"
+if [ "$inventory_native" = true ]; then
+    # Compile the bundled, reviewed read-only helper. Never execute an arbitrary
+    # external cleanup binary. Complete inventory must succeed before any worker
+    # sees candidates; each worker still enforces all ownership/identity gates.
+    if ! rustc --edition=2021 -D warnings -O "$inventory_source" -o "$scratch/inventory"; then
+        printf '%s\n' 'ERROR_INVENTORY_BUILD: native scan build failed' >&2
+        exit 1
+    fi
+    if ! "$scratch/inventory" "$root" "$GG_NUL_GIT_DIR" "$GG_NUL_GIT_COMMON" > "$scratch/candidates"; then
+        printf '%s\n' 'ERROR_TRAVERSAL: native reserved-path inventory failed' >&2
+        exit 1
+    fi
+    if [ -s "$scratch/candidates" ] && ! xargs -0 sh "$self" --check-candidates \
+        "$root" "$stat_style" "$failure_marker" < "$scratch/candidates"; then
+        printf '%s\n' 'ERROR_WORKER: native inventory candidate worker failed' >&2
+        exit 1
+    fi
+elif ! /usr/bin/find "$root" \
+    \( \( -path "$git_dir_pattern" -o -path "$git_common_pattern" -o -name .git \) -prune \) -o \
+    \( -type d \( -name worktrees -o -name .worktrees \) -prune \
+       -exec printf 'PRESERVED_SCOPE: %s\n' {} \; \) -o \
+    \( -type d -exec sh -c '[ "$1" != "$2" ] && { [ -e "$1/.git" ] || [ -L "$1/.git" ] || { [ -f "$1/HEAD" ] && [ -d "$1/objects" ] && [ -d "$1/refs" ]; }; }' sh {} "$root" \; \
+       -prune -exec printf 'PRESERVED_SCOPE: %s\n' {} \; \) -o \
+    \( \( -iname '\$null*' -o -iname 'nul*' -o -iname 'con*' -o -iname 'prn*' -o -iname 'aux*' -o -iname 'com[1-9]*' -o -iname 'lpt[1-9]*' \) \
+       -exec sh "$self" --check-candidates "$root" "$stat_style" "$failure_marker" {} + \); then
+    printf '%s\n' 'ERROR_TRAVERSAL: reserved-path scan or worker failed' >&2
+    exit 1
 fi
-
-echo "=== Cleanup Complete ==="
-
-# Exit with proper status
-# MANDATORY mode: Set NUKENUL_MANDATORY=1 to fail pre-commit on errors
-# Default: Cleanup errors are warnings only (backward compatible)
-if [ "${NUKENUL_MANDATORY:-0}" = "1" ] || [ "${NUKENUL_MANDATORY:-0}" = "true" ]; then
-    exit $EXIT_CODE
-fi
-
-# Non-mandatory mode: Always succeed (original behavior)
+[ ! -e "$failure_marker" ] || exit 1
 exit 0
