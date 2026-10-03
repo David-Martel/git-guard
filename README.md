@@ -51,6 +51,24 @@ can soften or disable any check with a per-repo `.qa-gate.conf`.
 
 Full schema, precedence, and the rule catalog: [`docs/QA_TOOLING.md`](docs/QA_TOOLING.md).
 
+### Fleet version minimums
+
+`git-guard versions` delegates to the canonical `vigil-utils` checker and policy;
+it carries no second list of minimums. Use it in a clean, isolated CI checkout:
+
+```sh
+git-guard versions --repo "$TARGET_CHECKOUT" --commit "$TARGET_SHA" \
+  --checker-root "$UTILS_CHECKOUT" --checker-commit "$UTILS_SHA" --report --json "$EVIDENCE_DIR/versions.json"
+# After reviewing compatibility lanes, select --enforce instead of --report.
+```
+
+Both SHAs must be reviewed full commit IDs. Both checkouts must match their
+committed bytes, without staged, untracked or ignored additions. `--enforce`
+propagates checker failures; a missing or mismatched checker fails in either
+mode. This is an explicit CI/review command, not an automatically installed hook
+or an assessment of installed fleet software. See the
+[contract and current checker limits](docs/QA_TOOLING.md#fleet-version-minimums).
+
 ## Quick start
 
 ```sh
@@ -211,9 +229,11 @@ sh bin/git-guard-run gate /path/to/repo  # run the gate against a repo's staged 
 | `GIT_GUARD_AGENT` | explicit commit agent (`codex` or `claude`; any other value disables attribution) |
 
 The `prepare-commit-msg` hook also detects Codex through `CODEX_THREAD_ID` and
-adds `Agent: codex` plus Codex's stable `noreply` co-author trailer to Git's final
-parsed trailer block. It detects Claude Code through `CLAUDECODE=1` or
-`CLAUDE_CODE_ENTRYPOINT` and adds only `Agent: claude` (Claude writes its own
+adds `Agent: codex` plus `Co-authored-by: Codex <noreply@openai.com>` (the address
+the Codex CLI itself writes) to Git's final parsed trailer block. When it
+re-attributes a message, the earlier generated `codex@users.noreply.github.com`
+trailer is collapsed into that one line rather than duplicated.
+It detects Claude Code through `CLAUDECODE=1` or `CLAUDE_CODE_ENTRYPOINT` and adds only `Agent: claude` (Claude writes its own
 model-specific co-author line). `CODEX_THREAD_ID` outranks the Claude markers,
 because a Codex process started inside Claude Code inherits `CLAUDECODE`. Human
 commits get no trailer. An earlier matching body paragraph is preserved and does
