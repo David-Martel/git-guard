@@ -91,38 +91,45 @@ case "$agent" in
     # 267193182). An `.invalid` address can never be verified by any GitHub
     # account, so it can never credit a stranger.
     #
-    # Remove ONLY that exact generated legacy line, and only from the final
-    # (trailer) paragraph, so an amend or reword of a Codex commit stops
-    # carrying it. Body text, other contributors' Co-authored-by lines and any
-    # other Codex address are left untouched. Published history is not
-    # rewritten: this only affects commits created from now on.
+    # Remove ONLY that exact generated legacy line, and only when Git itself
+    # parses it as a trailer of the final trailer block (so a prose paragraph
+    # that merely quotes it, which Git does not treat as trailers, is kept).
+    # An amend or reword of a Codex commit then stops carrying it. Body text,
+    # other contributors' Co-authored-by lines and any other Codex address are
+    # left untouched. Published history is not rewritten: this only affects
+    # commits created from now on.
     git_guard_legacy_coauthor='Co-authored-by: Codex <codex@users.noreply.github.com>'
-    git_guard_msg_tmp="${message_file}.git-guard.$$"
-    if ! awk -v legacy="$git_guard_legacy_coauthor" '
-      { line[NR] = $0 }
-      END {
-        last = 0
-        for (i = NR; i >= 1; i--) {
-          if (line[i] !~ /^#/ && line[i] !~ /^[[:space:]]*$/) { last = i; break }
+    if git interpret-trailers --parse "$message_file" 2>/dev/null |
+       grep -qxF "$git_guard_legacy_coauthor"; then
+      # Comment lines use core.commentString / core.commentChar (default "#";
+      # "auto" picks a character per message, so fall back to "#").
+      git_guard_comment="$(git config --get core.commentString 2>/dev/null ||
+        git config --get core.commentChar 2>/dev/null || echo '#')"
+      case "$git_guard_comment" in ""|auto) git_guard_comment='#' ;; esac
+      git_guard_msg_tmp="${message_file}.git-guard.$$"
+      if ! awk -v legacy="$git_guard_legacy_coauthor" -v cc="$git_guard_comment" '
+        function is_comment(s) { return substr(s, 1, length(cc)) == cc }
+        { line[NR] = $0 }
+        END {
+          last = 0
+          for (i = NR; i >= 1; i--) {
+            if (!is_comment(line[i]) && line[i] !~ /^[[:space:]]*$/) { last = i; break }
+          }
+          start = last
+          while (start > 1 && line[start - 1] !~ /^[[:space:]]*$/) start--
+          for (i = 1; i <= NR; i++) {
+            if (start > 1 && i >= start && i <= last && line[i] == legacy) continue
+            print line[i]
+          }
         }
-        start = last
-        while (start > 1 && line[start - 1] !~ /^[[:space:]]*$/) start--
-        for (i = 1; i <= NR; i++) {
-          if (start > 1 && i >= start && i <= last && line[i] == legacy) continue
-          print line[i]
-        }
-      }
-    ' "$message_file" > "$git_guard_msg_tmp"; then
-      rm -f "$git_guard_msg_tmp"
-      printf 'git-guard prepare-commit-msg: could not rewrite %s\n' "$message_file" >&2
-      exit 1
-    fi
-    # Only touch the file when something was removed, so a message without the
-    # legacy line stays byte-identical (and keeps its inode and mode).
-    if ! cmp -s "$git_guard_msg_tmp" "$message_file"; then
+      ' "$message_file" > "$git_guard_msg_tmp"; then
+        rm -f "$git_guard_msg_tmp"
+        printf 'git-guard prepare-commit-msg: could not rewrite %s\n' "$message_file" >&2
+        exit 1
+      fi
       cat "$git_guard_msg_tmp" > "$message_file"
+      rm -f "$git_guard_msg_tmp"
     fi
-    rm -f "$git_guard_msg_tmp"
     # Add the co-author first, then replace/add Agent at the end, without
     # replacing another contributor's Co-authored-by trailer.
     git interpret-trailers --in-place \

@@ -108,6 +108,33 @@ t_case_attribution() {
   cmp -s "$r/legacy-repeat" "$r/legacy-message"
   t_assert "$?" "legacy removal is byte-idempotent on a second run"
 
+  # A FINAL paragraph that Git does not parse as a trailer block (prose plus
+  # the quoted legacy line) is body text: the legacy line must survive.
+  printf 'subject\n\nline one of prose\nline two of prose\nline three of prose\nline four of prose\nline five of prose\nCo-authored-by: Codex <codex@users.noreply.github.com>\n' > "$r/prose-legacy-message"
+  git interpret-trailers --parse "$r/prose-legacy-message" | grep -q 'users.noreply'
+  t_expect_rc 1 "$?" "precondition: Git does not parse the prose paragraph as trailers"
+  (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/prose-legacy-message")
+  t_expect_rc 0 "$?" "prose-paragraph hook run succeeds"
+  sed -n 3,8p "$r/prose-legacy-message" > "$r/prose-legacy-body"
+  printf 'line one of prose\nline two of prose\nline three of prose\nline four of prose\nline five of prose\nCo-authored-by: Codex <codex@users.noreply.github.com>\n' > "$r/prose-legacy-expected"
+  cmp -s "$r/prose-legacy-expected" "$r/prose-legacy-body"
+  t_assert "$?" "legacy text in a non-trailer final paragraph is preserved"
+
+  # core.commentChar: an editor/amend message ends with comment lines in the
+  # CONFIGURED character; the trailer block above them is still found.
+  git -C "$r" config core.commentChar ';'
+  printf 'subject\n\nCo-authored-by: Codex <codex@users.noreply.github.com>\nAgent: codex\n\n; Please enter the commit message for your changes.\n; Lines starting with ; will be ignored.\n' > "$r/commentchar-message"
+  (cd "$r" && GIT_GUARD_AGENT=codex "$r/test-hooks/prepare-commit-msg" "$r/commentchar-message")
+  t_expect_rc 0 "$?" "commentChar hook run succeeds"
+  if grep -q 'users.noreply' "$r/commentchar-message"; then
+    t_fail "legacy trailer is removed when core.commentChar is ';'"
+  else
+    t_ok "legacy trailer is removed when core.commentChar is ';'"
+  fi
+  grep -qx '; Lines starting with ; will be ignored.' "$r/commentchar-message"
+  t_assert "$?" "configured-character comment lines are preserved"
+  git -C "$r" config --unset core.commentChar
+
   # A human (no agent) never has a message rewritten, legacy line included.
   printf 'human amend\n\nCo-authored-by: Codex <codex@users.noreply.github.com>\n' > "$r/human-legacy-message"
   cp "$r/human-legacy-message" "$r/human-legacy-before"
