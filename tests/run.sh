@@ -68,6 +68,18 @@ export GIT_GUARD_RULE_CACHE="$GG_T_TMPROOT/qa-rules"
 # shellcheck disable=SC2064  # expand GG_T_TMPROOT now (trap fires after vars may change)
 trap "rm -rf \"$GG_T_TMPROOT\"" EXIT INT TERM
 
+# Run every case from INSIDE the temp root, with git discovery fenced at it.
+# A case whose `r="$(gg_mktemp_repo)"` came back empty (for example after the
+# temp root was removed by an interrupted run) then reaches `git -C "" config`
+# or `cd "" && git config`, which act on the CURRENT directory. From the
+# git-guard checkout that wrote fixture settings (core.hooksPath, a
+# gitGuard.downstreamPostCommit path) into the developer's real .git/config
+# (observed 2026-10-03 after a timeout-killed run). Fenced here, git fails with
+# "not a git repository" instead.
+cd "$GG_T_TMPROOT" || exit 1
+GIT_CEILING_DIRECTORIES="$GG_T_TMPROOT${GIT_CEILING_DIRECTORIES:+:$GIT_CEILING_DIRECTORIES}"
+export GIT_CEILING_DIRECTORIES
+
 # --- load helpers + every case file ---
 # shellcheck source=tests/lib.sh disable=SC1091
 . "$GG_TESTS_DIR/lib.sh"
