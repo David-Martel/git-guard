@@ -43,6 +43,14 @@ export PYTHONHOME=
 # hook treats an empty marker as absent.
 export CLAUDECODE='' CLAUDE_CODE_ENTRYPOINT='' CODEX_THREAD_ID='' GIT_GUARD_AGENT=''
 
+# Neutralise an inherited per-agent signing identity (git-guard identity env).
+# GIT_CONFIG_COUNT is COMMAND scope, so it beats every fixture repo's local
+# `commit.gpgsign false`: an agent shell running the suite would otherwise sign
+# each fixture commit with the agent's real key. The identity knobs are emptied
+# so the hooks see their defaults. (KEY_n/VALUE_n are inert without COUNT.)
+unset GIT_CONFIG_COUNT
+export GIT_GUARD_IDENTITY='' GIT_GUARD_ALLOWED_SIGNERS='' GIT_GUARD_IDENTITY_KEYDIR='' GIT_GUARD_HOST=''
+
 # Per-suite temp root, cleaned on exit (covers any repo a case forgot to remove).
 GG_T_TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/git-guard-tests.XXXXXX")"
 export GG_T_TMPROOT
@@ -59,6 +67,18 @@ export GG_T_TMPROOT
 export GIT_GUARD_RULE_CACHE="$GG_T_TMPROOT/qa-rules"
 # shellcheck disable=SC2064  # expand GG_T_TMPROOT now (trap fires after vars may change)
 trap "rm -rf \"$GG_T_TMPROOT\"" EXIT INT TERM
+
+# Run every case from INSIDE the temp root, with git discovery fenced at it.
+# A case whose `r="$(gg_mktemp_repo)"` came back empty (for example after the
+# temp root was removed by an interrupted run) then reaches `git -C "" config`
+# or `cd "" && git config`, which act on the CURRENT directory. From the
+# git-guard checkout that wrote fixture settings (core.hooksPath, a
+# gitGuard.downstreamPostCommit path) into the developer's real .git/config
+# (observed 2026-10-03 after a timeout-killed run). Fenced here, git fails with
+# "not a git repository" instead.
+cd "$GG_T_TMPROOT" || exit 1
+GIT_CEILING_DIRECTORIES="$GG_T_TMPROOT${GIT_CEILING_DIRECTORIES:+:$GIT_CEILING_DIRECTORIES}"
+export GIT_CEILING_DIRECTORIES
 
 # --- load helpers + every case file ---
 # shellcheck source=tests/lib.sh disable=SC1091
@@ -93,6 +113,9 @@ t_case_panic_set
 t_case_silent_failures
 t_case_attribution
 t_case_attribution_claude
+t_case_identity_cli
+t_case_identity_verify
+t_case_identity_hooks
 t_case_secret_scan
 t_case_cache_staleness
 t_case_powershell

@@ -31,8 +31,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1
 
 # Core OS toolchain: git, a POSIX sh (dash is /bin/sh on Debian) + bash,
-# shellcheck, jq, python3, ca-certs, curl (for uv), and nodejs/npm for the
-# ast-grep CLI. --no-install-recommends keeps the image lean.
+# shellcheck, jq, openssh-client (ssh-keygen: SSH commit signing and the
+# identity suite's throwaway keys), python3, ca-certs, curl (for uv), and
+# nodejs/npm for the ast-grep CLI. --no-install-recommends keeps the image lean.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -41,6 +42,7 @@ RUN apt-get update \
         bash \
         shellcheck \
         jq \
+        openssh-client \
         python3 \
         python3-yaml \
         nodejs \

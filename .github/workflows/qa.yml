@@ -74,8 +74,10 @@ jobs:
       - name: git-guard verify — BLOCK trio fires, clean commit passes (in image)
         run: docker run --rm git-guard:ci verify
 
+      # CI=true turns a missing ssh-keygen into a FAILURE instead of a skip, so
+      # the identity suite's controls cannot silently stop running.
       - name: git-guard test — comprehensive validation suite (in image)
-        run: docker run --rm --entrypoint git-guard git-guard:ci test
+        run: docker run --rm -e CI=true --entrypoint git-guard git-guard:ci test
 
       - name: validate bundled example rules (in image)
         run: |
@@ -118,10 +120,12 @@ jobs:
       # baked into the runner image at /usr/bin/shellcheck, so the unconditional
       # `apt-get update && apt-get install` was pure latency plus a network dependency
       # that can fail the whole gate for a reason unrelated to the code under test.
-      - name: Ensure shellcheck + python3-venv
+      - name: Ensure shellcheck + ssh-keygen + python3-venv
         run: |
           missing=""
           command -v shellcheck >/dev/null 2>&1 || missing="$missing shellcheck"
+          # ssh-keygen signs the identity suite's throwaway-key commits (tests/22).
+          command -v ssh-keygen >/dev/null 2>&1 || missing="$missing openssh-client"
           # Probe `ensurepip`, NOT `venv`. On Debian/Ubuntu the `venv` module imports
           # fine while python3-venv is absent, and the failure only surfaces later as
           # "ensurepip is not available" when something actually creates a venv — a
@@ -136,7 +140,7 @@ jobs:
             # space-separated package list, and quoting it would pass one bogus argument.
             sudo apt-get update && sudo apt-get install -y $missing
           else
-            echo "shellcheck and python3-venv already present in the runner image — skipping apt"
+            echo "shellcheck, ssh-keygen and python3-venv already present in the runner image — skipping apt"
           fi
 
       - name: Versions
@@ -184,8 +188,8 @@ jobs:
       - name: shellcheck the engine + hooks + runner + tests
         run: |
           shellcheck -S warning \
-            hooks/pre-commit hooks/prepare-commit-msg hooks/post-commit hooks/pre-push \
-            hooks/common/qa_gate.sh hooks/common/secret_scan.sh \
+            hooks/pre-commit hooks/prepare-commit-msg hooks/commit-msg hooks/post-commit hooks/pre-push \
+            hooks/common/qa_gate.sh hooks/common/secret_scan.sh hooks/common/identity.sh \
             hooks/common/nul-cleanup.sh bin/git-guard bin/git-guard-run \
             install.sh branch-protection.sh \
             tests/run.sh tests/lib.sh tests/*.t.sh
