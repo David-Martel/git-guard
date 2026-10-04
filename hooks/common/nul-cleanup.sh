@@ -11,7 +11,8 @@
 # NUKENUL_BIN is deliberately not executed: its destructive contract is unknown.
 # NUKENUL_MANDATORY cannot weaken preservation rules. A preserved path blocks
 # the commit only when it is TRACKED or STAGED (it is in the index); untracked
-# and ignored content, scan trouble and toolchain trouble only warn. Git Bash,
+# and ignored content, scan trouble and toolchain trouble only warn. A crashed
+# candidate worker blocks only if a reserved path is tracked or staged. Git Bash,
 # MSYS and Cygwin are audit-only, and a work tree rooted at / or HOME is skipped.
 set -u
 
@@ -86,21 +87,49 @@ tracked_or_staged() {
     [ -s "$tracked_list" ]
 }
 
+# A worker that cannot finish never evaluated its candidates. Record that in a
+# marker distinct from a per-path failure, so the parent can fail closed.
+worker_failed() {
+    : > "${failure_marker%/*}/worker-failed" 2>/dev/null
+    exit 1
+}
+
 failure() {
     if tracked_or_staged "$file"; then
         printf '%s: %s\n' "$1" "$file" >&2
-        : > "$failure_marker" || exit 1
+        : > "$failure_marker" || worker_failed
     else
         printf '%s (untracked or ignored; warning only): %s\n' "$1" "$file" >&2
     fi
 }
+
+# Internal: print every index path that has a reserved-name component and
+# touch the marker ($2) when one exists. Used only after a worker crash.
+if [ "${1:-}" = --index-reserved ]; then
+    [ "$#" -ge 2 ] || exit 2
+    reserved_found=$2
+    shift 2
+    for indexed do
+        rest=$indexed
+        while [ -n "$rest" ]; do
+            component=${rest%%/*}
+            if reserved_leaf "$component"; then
+                printf 'STAGED_RESERVED: %s\n' "$indexed" >&2
+                : > "$reserved_found" || exit 1
+                break
+            fi
+            case "$rest" in */*) rest=${rest#*/} ;; *) rest= ;; esac
+        done
+    done
+    exit 0
+fi
 
 # Internal batch worker. Only the parent launches it with its private marker.
 if [ "${1:-}" = --check-candidates ]; then
     [ "$#" -ge 5 ] || exit 2
     root=$2; stat_style=$3; failure_marker=$4
     shift 4
-    current_uid=$(id -u) || exit 1
+    current_uid=$(id -u) || worker_failed
     for file do
         reserved_leaf "${file##*/}" || continue
         if ! owned_parent; then
@@ -242,8 +271,7 @@ fi
 if [ "$inventory_native" = true ]; then
     if [ -s "$scratch/candidates" ] && ! xargs -0 sh "$self" --check-candidates \
         "$root" "$stat_style" "$failure_marker" < "$scratch/candidates"; then
-        printf '%s\n' 'ERROR_WORKER: native inventory candidate worker failed' >&2
-        exit 1
+        : > "$scratch/worker-failed"
     fi
 elif ! /usr/bin/find "$root" \
     \( \( -path "$git_dir_pattern" -o -path "$git_common_pattern" -o -name .git \) -prune \) -o \
@@ -256,7 +284,19 @@ elif ! /usr/bin/find "$root" \
     # An unreadable or vanished entry anywhere in the work tree (often ignored
     # build output) makes find exit nonzero. That is not a reason to block a
     # commit: every candidate it did reach was still fully checked.
-    printf '%s\n' 'WARN_TRAVERSAL: reserved-path scan incomplete (unreadable or vanished entries); non-blocking' >&2
+    [ -e "$scratch/worker-failed" ] ||
+        printf '%s\n' 'WARN_TRAVERSAL: reserved-path scan incomplete (unreadable or vanished entries); non-blocking' >&2
+fi
+# A crashed worker left candidates unevaluated. Fail CLOSED if any reserved
+# path is tracked or staged (it could reach this commit); otherwise only warn.
+if [ -e "$scratch/worker-failed" ]; then
+    if ! git ls-files -z > "$scratch/index" ||
+        ! xargs -0 sh "$self" --index-reserved "$scratch/index-reserved" < "$scratch/index" ||
+        [ -e "$scratch/index-reserved" ]; then
+        printf '%s\n' 'ERROR_WORKER: reserved-path candidate worker failed and a reserved path is tracked or staged (or the index could not be read)' >&2
+        exit 1
+    fi
+    printf '%s\n' 'WARN_WORKER: reserved-path candidate worker failed; no reserved path is tracked or staged (non-blocking)' >&2
 fi
 [ ! -e "$failure_marker" ] || exit 1
 exit 0
