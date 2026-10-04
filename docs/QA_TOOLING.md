@@ -6,7 +6,8 @@
 > if a commit is blocked, or if you need to add/extend a rule — start here.
 >
 > Companion docs: [`~/.agents/GIT_COMMIT_SAFETY.md`](GIT_COMMIT_SAFETY.md)
-> (commit-safety doctrine / IRON RULES) and [`PLAN.md`](../PLAN.md) (the
+> (commit-safety doctrine / IRON RULES) and [`PLAN.md`](../PLAN.md) (at the
+> root of the git-guard checkout or release tree, not beside `~/.agents`: the
 > severable-engine architecture and staged rollout plan, which superseded §3 of
 > the earlier, no-longer-published VIGIL partition plan). See `git log` for
 > this file's revision history.
@@ -82,7 +83,7 @@ branch. "Unset" means the default behaviour applies.
 
 | Variable | Read by | Effect |
 |---|---|---|
-| `GIT_GUARD=0` | `hooks/pre-commit`, `hooks/pre-push`, `hooks/prepare-commit-msg` | **A near-total bypass, not an attribution switch** (the auditable human emergency escape). `pre-commit` exits at its first check (`hooks/pre-commit:16`), so secret scanning, NUL cleanup, the QA gate and the downstream pre-commit chain are all skipped. `pre-push` still uploads git-lfs objects, then exits before any downstream push gate (`hooks/pre-push:37`). `prepare-commit-msg` adds no `Agent:` trailer. `post-commit` does not read it. `LEFTHOOK=0` has the same effect in `pre-commit` and `pre-push`. Git's hook-skip flag does not skip `prepare-commit-msg`; `GIT_GUARD=0` is the only way to suppress attribution. |
+| `GIT_GUARD=0` | `hooks/pre-commit`, `hooks/pre-push`, `hooks/prepare-commit-msg` | **A near-total bypass, not an attribution switch** (the auditable human emergency escape). `pre-commit` exits at its first check (`hooks/pre-commit:16`), so secret scanning, NUL cleanup, the QA gate and the downstream pre-commit chain are all skipped. `pre-push` still uploads git-lfs objects, then exits before any downstream push gate (`hooks/pre-push:37`). `prepare-commit-msg` adds no `Agent:` trailer. `post-commit` does not read it. `LEFTHOOK=0` has the same effect in `pre-commit` and `pre-push`. Git's hook-skip flag does not skip `prepare-commit-msg`. To suppress only attribution, set `GIT_GUARD_AGENT` to any value other than `codex`/`claude` (for example `none`) instead of using this near-total bypass. |
 | `GIT_GUARD_AGENT` | `hooks/prepare-commit-msg` | Forces attribution: `codex` or `claude`. Any other non-empty value disables attribution. Unset means auto-detect from `CODEX_THREAD_ID` / `CLAUDECODE` / `CLAUDE_CODE_ENTRYPOINT`. |
 | `GIT_GUARD_DOWNSTREAM_HOOK` | `hooks/pre-commit` | Executable chained after git-guard's pre-commit. It takes precedence over the repo's `.git-guard/pre-commit.local` and over lefthook. |
 | `GIT_GUARD_DOWNSTREAM_PRE_PUSH` | `hooks/pre-push` | The same, for pre-push (precedence over `.git-guard/pre-push.local` and lefthook). |
@@ -109,7 +110,7 @@ passes all of its arguments straight to `install.sh` (`bin/git-guard`
 | `--dev-symlink` | Legacy mode: links the hooks at this live checkout. Only for git-guard's own development. |
 | `--dry-run` | Prints every mutation as `DRY: …` and changes nothing. |
 | `--status` | Runs `bin/git-guard status` (install state, version, resolved rules dir). |
-| `--uninstall` | Restores the pre-git-guard `~/.git-hooks` backup. |
+| `--uninstall` | Removes the `~/.git-hooks` symlink and restores its pre-git-guard backup, removes the `~/.agents/QA_TOOLING.md` and `GIT_COMMIT_SAFETY.md` symlinks and restores their backups. It leaves `core.hooksPath` and the materialized versions under the store in place (`install.sh:110-124`). |
 
 ---
 
