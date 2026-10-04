@@ -157,11 +157,12 @@ GitHub (`%G?` = `E` locally), which drops the per-agent signature. See
   repo's own commit-msg hook, which `core.hooksPath` otherwise silently shadows:
   `$GIT_GUARD_DOWNSTREAM_COMMIT_MSG` > `.git-guard/commit-msg.local` >
   `lefthook run commit-msg`. The lefthook step runs when the repo has a root
-  lefthook config. Configured-but-unrunnable is an error, as in `pre-commit`
-  and `pre-push`: a `$GIT_GUARD_DOWNSTREAM_COMMIT_MSG` that is set but missing
-  or not executable blocks the commit, and so does a root lefthook config
-  without the lefthook binary (`GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1` opts out;
-  `LEFTHOOK=0` still disables lefthook). agent-hub's advisory `conventional`
+  lefthook config. Configured-but-unrunnable is an error: a
+  `$GIT_GUARD_DOWNSTREAM_COMMIT_MSG` that is set but missing or not executable
+  blocks the commit, and so does a root lefthook config without the lefthook
+  binary, the same lefthook rule `pre-commit` and `pre-push` apply
+  (`GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1` opts out; `LEFTHOOK=0` still disables
+  lefthook). agent-hub's advisory `conventional`
   commit-msg check starts running under this rule.
 - **`pre-push`** checks the *real* signatures of every pushed range. That is
   `remote..local`, or `local --not --remotes=<that remote>` for a new ref or an
@@ -171,7 +172,9 @@ GitHub (`%G?` = `E` locally), which drops the per-agent signature. See
   counts. A range above `GIT_GUARD_IDENTITY_MAX_COMMITS` (default 500) is not
   checked: it is reported as unknown, which blocks under `enforce`.
   It buffers the ref list and replays it, so LFS and downstream hooks still
-  receive it.
+  receive it. If the buffer cannot be created (an unwritable `TMPDIR`), the
+  check is skipped with a warning and the push proceeds; under `enforce` the
+  push is refused with that reason.
 
 Repos that set their own `core.hooksPath` (vigil-spark, vigil-utils:
 `.githooks`) only get these checks if their hooks delegate to git-guard's.

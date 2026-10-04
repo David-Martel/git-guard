@@ -59,17 +59,42 @@ git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
 # before this check existed.
 if [ "$git_guard_identity_mode" != "off" ] && [ ! -t 0 ] &&
    sh "$git_guard_hook_dir/common/identity.sh" configured; then
+  git_guard_identity_rc=0
   if [ -z "$git_guard_stdin" ]; then
-    git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX")" || exit 1
-    trap 'rm -f "$git_guard_stdin"' EXIT
-    cat > "$git_guard_stdin"
+    if git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)"; then
+      trap 'rm -f "$git_guard_stdin"' EXIT
+      cat > "$git_guard_stdin"
+    else
+      # Cannot buffer the ref list (stale or unwritable TMPDIR). A WARN-ONLY
+      # check must never block the push: skip attestation LOUDLY and leave
+      # stdin unread, so the downstream gate below still receives the ref
+      # list. Only enforce mode refuses, and it says why.
+      git_guard_stdin=""
+      git_guard_identity_rc=skip
+      printf "git-guard identity: cannot buffer the ref list (TMPDIR='%s' is not writable); attestation skipped.\n" \
+        "${TMPDIR:-/tmp}" >&2
+      if [ "$git_guard_identity_mode" = "enforce" ]; then
+        printf '%s\n' \
+          "git-guard BLOCK (GIT_GUARD_IDENTITY=enforce): authorship attestation could not run." \
+          "Fix TMPDIR (or unset it to use /tmp), then push again. Do NOT use --no-verify." >&2
+        exit 1
+      fi
+    fi
   fi
-  sh "$git_guard_hook_dir/common/identity.sh" pre-push "$@" < "$git_guard_stdin"
-  git_guard_identity_rc=$?
+  if [ "$git_guard_identity_rc" != "skip" ]; then
+    sh "$git_guard_hook_dir/common/identity.sh" pre-push "$@" < "$git_guard_stdin"
+    git_guard_identity_rc=$?
+  else
+    git_guard_identity_rc=0
+  fi
   if [ "$git_guard_identity_rc" -ne 0 ]; then
     if [ "$git_guard_identity_mode" = "enforce" ]; then
+      case "$git_guard_identity_rc" in
+        1|2) git_guard_identity_why="pushed commits fail authorship attestation (see above)" ;;
+        *)   git_guard_identity_why="authorship attestation could not run (identity.sh exit $git_guard_identity_rc)" ;;
+      esac
       printf '%s\n' \
-        "git-guard BLOCK (GIT_GUARD_IDENTITY=enforce): pushed commits fail authorship attestation (see above)." \
+        "git-guard BLOCK (GIT_GUARD_IDENTITY=enforce): $git_guard_identity_why." \
         "Do NOT use --no-verify." >&2
       exit 1
     fi
