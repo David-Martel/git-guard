@@ -254,6 +254,27 @@ GG_FIND
     t_ok "traversal failure reported as a warning without removing candidate"
   else t_fail "traversal failure blocked, was swallowed, or lost a candidate"; fi
   rm -f "$gg_safe_repo/nul"
+
+  # A crashed candidate worker (here `id` fails) means candidates were never
+  # evaluated. On the POSIX path (forced by a failing rustc) that must still
+  # fail CLOSED when a reserved path is tracked or staged; a crash with only
+  # untracked reserved content warns.
+  printf '#!/bin/sh\nexit 1\n' > "$gg_safe_tools/id"
+  printf '#!/bin/sh\nexit 7\n' > "$gg_safe_tools/rustc"
+  chmod +x "$gg_safe_tools/id" "$gg_safe_tools/rustc"
+  printf 'print(1)\n' > "$gg_safe_repo/con.py"
+  (cd "$gg_safe_repo" && PATH="$gg_safe_tools:$PATH" sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  if [ "$gg_safe_rc" = 0 ] && [ -f "$gg_safe_repo/con.py" ]; then
+    t_ok "worker crash with only untracked reserved content warns (rc=0)"
+  else t_fail "worker crash with only untracked reserved content blocked or lost data (rc=$gg_safe_rc)"; fi
+  git -C "$gg_safe_repo" add -f con.py
+  (cd "$gg_safe_repo" && PATH="$gg_safe_tools:$PATH" sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  if [ "$gg_safe_rc" = 1 ] && [ -f "$gg_safe_repo/con.py" ] && grep -q '^ERROR_WORKER' "$gg_safe_log"; then
+    t_ok "worker crash with a STAGED reserved file fails closed (POSIX path)"
+  else t_fail "worker crash let a staged reserved file through (rc=$gg_safe_rc)"; fi
+  git -C "$gg_safe_repo" rm -q --cached con.py
+  rm -f "$gg_safe_repo/con.py" "$gg_safe_tools/id" "$gg_safe_tools/rustc"
+
   : > "$gg_safe_repo/aux"
   ln "$gg_safe_repo/aux" "$gg_safe_repo/shared-link"
   git -C "$gg_safe_repo" add -f aux
