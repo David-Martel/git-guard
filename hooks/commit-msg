@@ -1,27 +1,129 @@
 #!/bin/sh
 #
-# git-guard commit-msg — completes the preserve/* exemption.
+# git-guard commit-msg — per-agent authorship cross-check + downstream chaining.
 #
-# On a preserve/* branch, pre-commit runs only the structural checks and leaves
-# a deferral marker, because the commit message (and so the `Preserve-Of:`
-# trailer) does not exist yet at pre-commit time. Here the marker is consumed:
-# a valid trailer logs the exemption and passes; anything else runs the
-# deferred QA (the full pre-commit) now. With no marker this is a no-op.
-# See hooks/common/preserve.sh and docs/QA_TOOLING.md "preserve/* exemption".
+# 1. Identity (WARN-ONLY by default). Runs BEFORE git signs the commit, so it
+#    checks intent: the principal that `user.signingkey` maps to in
+#    allowed_signers must equal the `Agent:` trailer prepare-commit-msg wrote
+#    (an agent key), or there must be no trailer (a human key). The REAL
+#    signature is checked later, by pre-push and `git-guard identity verify`.
+#    It is a silent no-op unless the commit will be SSH-signed and an
+#    allowed_signers file exists, so installing it changes nothing on a host
+#    that has no signing set up.
+#      GIT_GUARD_IDENTITY=off|warn|enforce   (default warn: report, never block)
+# 2. preserve/* exemption (common/preserve.sh, docs/QA_TOOLING.md). On a
+#    preserve/* branch pre-commit ran only the structural checks and deferred
+#    the rest here, because the `Preserve-Of:` trailer did not exist yet. A
+#    valid trailer logs the exemption and skips the downstream chain below too;
+#    anything else re-runs the full pre-commit now. No marker = a no-op.
+# 3. Downstream chaining. Installing git-guard through core.hooksPath makes
+#    git ignore a repo's own commit-msg hook, so chain one if configured:
+#    $GIT_GUARD_DOWNSTREAM_COMMIT_MSG > repo .git-guard/commit-msg.local >
+#    `lefthook run commit-msg` (when the repo has a lefthook config at its
+#    root). Configured-but-unrunnable fails loudly: a set-but-missing or
+#    non-executable $GIT_GUARD_DOWNSTREAM_COMMIT_MSG blocks, and a lefthook
+#    config without the lefthook binary blocks (the same lefthook rule as
+#    pre-commit/pre-push) unless GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1
+#    (LEFTHOOK=0 still disables lefthook).
 #
-# Bypass: `GIT_GUARD=0 git commit ...`. Do NOT use --no-verify.
+# Bypass: `GIT_GUARD=0 git commit ...` (an auditable human emergency). Do NOT
+# use --no-verify.
 
-if [ "$GIT_GUARD" = "0" ] || [ "$LEFTHOOK" = "0" ]; then
+set -u
+
+if [ "${GIT_GUARD:-1}" = "0" ]; then
   exit 0
 fi
 
 git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
+git_guard_identity_mode="${GIT_GUARD_IDENTITY:-warn}"
+case "$git_guard_identity_mode" in
+  off|warn|enforce) : ;;
+  *)
+    printf "git-guard commit-msg: unknown GIT_GUARD_IDENTITY='%s' (want off|warn|enforce); using warn\n" \
+      "$git_guard_identity_mode" >&2
+    git_guard_identity_mode=warn
+    ;;
+esac
 
-# 0 = exempted (a later commit-msg downstream chain is skipped too),
+if [ "$git_guard_identity_mode" != "off" ]; then
+  sh "$git_guard_hook_dir/common/identity.sh" check-msg "$1"
+  git_guard_identity_rc=$?
+  if [ "$git_guard_identity_rc" -ne 0 ]; then
+    if [ "$git_guard_identity_mode" = "enforce" ]; then
+      case "$git_guard_identity_rc" in
+        1|2) git_guard_identity_why="commit authorship does not match the signing key" ;;
+        *)   git_guard_identity_why="authorship could not be checked (identity.sh exit $git_guard_identity_rc)" ;;
+      esac
+      printf '%s\n' \
+        "git-guard BLOCK (GIT_GUARD_IDENTITY=enforce): $git_guard_identity_why." \
+        "  Inspect with: git-guard identity status" >&2
+      exit 1
+    fi
+    printf '%s\n' \
+      "git-guard identity: WARN only, the commit proceeds (GIT_GUARD_IDENTITY=enforce would block it)." \
+      "  Inspect with: git-guard identity status" >&2
+  fi
+fi
+
+# preserve/* exemption: 0 = exempted (skip the downstream chain too),
 # 3 = not exempted (carry on), anything else = blocked.
 if [ -x "$git_guard_hook_dir/common/preserve.sh" ]; then
   "$git_guard_hook_dir/common/preserve.sh" commit-msg "$1"; git_guard_preserve_rc=$?
   [ "$git_guard_preserve_rc" -eq 3 ] || exit "$git_guard_preserve_rc"
+fi
+
+git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
+# Echo the lefthook config file name if one exists at the repo ROOT (stem list
+# is lefthook's own; see hooks/pre-commit for the full rationale).
+git_guard_lefthook_config() {
+  [ -n "$1" ] || return 1
+  for _gg_stem in lefthook .lefthook .config/lefthook; do
+    for _gg_ext in yml yaml json toml; do
+      if [ -f "$1/${_gg_stem}.${_gg_ext}" ]; then
+        printf '%s' "${_gg_stem}.${_gg_ext}"; return 0
+      fi
+    done
+  done
+  return 1
+}
+
+# CONFIGURED-BUT-UNRUNNABLE is an ERROR, not silence (pre-commit and pre-push
+# apply the same rule to a root lefthook config without the lefthook binary).
+# An explicitly configured downstream that is missing or not executable would
+# otherwise skip the repo's commit-msg gate with output identical to a pass.
+# An EMPTY variable means "not configured".
+if [ -n "${GIT_GUARD_DOWNSTREAM_COMMIT_MSG:-}" ]; then
+  if [ ! -f "${GIT_GUARD_DOWNSTREAM_COMMIT_MSG}" ] || [ ! -x "${GIT_GUARD_DOWNSTREAM_COMMIT_MSG}" ]; then
+    printf '%s\n' \
+      "git-guard BLOCK: GIT_GUARD_DOWNSTREAM_COMMIT_MSG is set but is not a runnable file." \
+      "  path: ${GIT_GUARD_DOWNSTREAM_COMMIT_MSG}" \
+      "The repo's commit-msg gate would be SKIPPED SILENTLY." \
+      "Fix: point it at an executable hook (chmod +x), or unset it if no downstream is wanted." \
+      "Do NOT use --no-verify." >&2
+    exit 1
+  fi
+  "${GIT_GUARD_DOWNSTREAM_COMMIT_MSG}" "$@" || exit $?
+elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/commit-msg.local" ]; then
+  "$git_guard_repo_root/.git-guard/commit-msg.local" "$@" || exit $?
+elif [ "${LEFTHOOK:-1}" = "0" ]; then
+  : # lefthook's own documented disable switch: a deliberate opt-out.
+elif git_guard_lefthook_cfg="$(git_guard_lefthook_config "$git_guard_repo_root")"; then
+  if command -v lefthook >/dev/null 2>&1; then
+    lefthook run commit-msg "$@" || exit $?
+  elif [ "${GIT_GUARD_ALLOW_MISSING_LEFTHOOK:-}" != "1" ]; then
+    printf '%s\n' \
+      "git-guard BLOCK: this repo configures lefthook but lefthook is NOT installed." \
+      "  repo:   $git_guard_repo_root" \
+      "  config: $git_guard_lefthook_cfg" \
+      "Every commit-msg gate that config defines is being SKIPPED SILENTLY." \
+      "Fix (pick one):" \
+      "  * install lefthook so the repo's gates actually run   <- preferred" \
+      "  * GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 git commit ...   (this commit only)" \
+      "  * export GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1           (this machine, deliberate)" \
+      "Do NOT use --no-verify." >&2
+    exit 1
+  fi
 fi
 
 exit 0

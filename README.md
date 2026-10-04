@@ -146,6 +146,8 @@ git-guard status     install state (this checkout AND what's actually installed)
 git-guard doctor     prerequisite check (git, ast-grep, shellcheck, ruff, cygpath…) + installed version
 git-guard rules      rule manifest (categories, counts, the BLOCK trio)
 git-guard verify     self-test (BLOCK trio fires, clean commit passes)
+git-guard identity   per-agent signing keys + authorship attestation
+                      (keygen | env | status | allowed-signers | verify) — docs/IDENTITY.md
 git-guard install    materialize + install a versioned release (delegates to install.sh;
                       default --to v$(cat VERSION); accepts --to/--store/--rules-dir/--dev-symlink)
 git-guard update      --to <tag>  re-point the installed `current` release at another tag (atomic)
@@ -178,21 +180,23 @@ git-guard/
 ├── hooks/                 drop-in for a global core.hooksPath
 │   ├── pre-commit         compose: secret-scan → nul → preserve/* exemption → qa_gate → warnings → downstream
 │   ├── prepare-commit-msg deterministic agent attribution trailers (Codex, Claude)
-│   ├── commit-msg         completes the preserve/* exemption (Preserve-Of: trailer check)
+│   ├── commit-msg         Agent trailer vs signing key (warn-only) + preserve/* Preserve-Of: check + downstream chaining
 │   ├── post-commit        landed-SHA feedback (verify before any reset)
-│   ├── pre-push           git-lfs upload (when the repo uses LFS) + optional downstream chaining
+│   ├── pre-push           git-lfs upload + pushed-range attestation (warn-only) + downstream chaining
 │   └── common/            the engine
 │       ├── qa_gate.sh         language-gated, configurable QA gate
 │       ├── secret_scan.sh     added-lines secret scanner
+│       ├── identity.sh        per-agent signing identity + attestation (git-guard identity)
 │       ├── nul-cleanup.{sh,ps1}  reserved-filename hygiene
 │       ├── preserve.sh        preserve/* structural-only exemption (docs/QA_TOOLING.md §11)
 │       ├── qa-gate.conf       global defaults (block|warn|off per check)
 │       └── qa-sgconfig.yml    ast-grep rule-category reference
+├── identity/allowed_signers  versioned key -> principal map (ships empty; see docs/IDENTITY.md)
 ├── rules-examples/        curated, public example ast-grep rules (incl. the BLOCK trio)
 ├── bin/git-guard          the CLI
 ├── install.sh             idempotent, reversible installer (symlinks + overlay)
 ├── branch-protection.sh   optional GitHub ruleset applier
-├── docs/                  QA_TOOLING.md, GIT_COMMIT_SAFETY.md
+├── docs/                  QA_TOOLING.md, GIT_COMMIT_SAFETY.md, IDENTITY.md
 └── .github/workflows/qa.yml   Manual self-hosted QA: git-guard self-tests itself
 ```
 
@@ -238,6 +242,18 @@ not suppress attribution. Existing matching trailers are not multiplied, other
 co-authors are preserved, and a conflicting `Agent:` line anywhere blocks
 the commit. `GIT_GUARD=0` is the hook's explicit emergency-human bypass; routine
 agent work must not use it.
+
+The trailer is only a claim while every agent signs with one shared host key.
+`git-guard identity` gives each (agent, host) its own SSH signing key, injected
+per process with `GIT_CONFIG_COUNT` (`git-guard identity env <agent>`), and maps
+each key to a principal in a versioned `allowed_signers` file. `commit-msg` then
+checks the configured key against the trailer before signing, `pre-push` checks
+the real signatures of the pushed range, and `git-guard identity verify <range>`
+is the CI form (exit 0 ok, 1 mismatch, 2 unknown key, 3 usage). The hooks are
+**warn-only** and a silent no-op on a host without SSH signing configured;
+`GIT_GUARD_IDENTITY=enforce` blocks, `off` disables. See
+[`docs/IDENTITY.md`](docs/IDENTITY.md) for launcher snippets (Claude Code,
+Codex), the custody limits and the rollout steps.
 
 Post-commit chaining selects the first runnable hook from
 `GIT_GUARD_DOWNSTREAM_POST_COMMIT`, repository `.git-guard/post-commit.local`,
