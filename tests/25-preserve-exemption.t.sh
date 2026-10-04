@@ -1,5 +1,5 @@
 #!/bin/sh
-# Category 24 — the preserve/* exemption: structural checks only, trailer-gated.
+# Category 25 — the preserve/* exemption: structural checks only, trailer-gated.
 #
 # A preservation commit snapshots WIP the hooks did not author, so a repo's
 # language/lint gates (clarius lefthook: ast-grep, pyright, rust-no-panic;
@@ -52,7 +52,7 @@ t_pres_check() {
 t_pres_head() { ( cd "$1" && git log -1 --format=%s 2>/dev/null ); }
 
 t_case_preserve_exemption() {
-  t_begin "24 preserve/* exemption (structural checks only, trailer-gated)"
+  t_begin "25 preserve/* exemption (structural checks only, trailer-gated)"
 
   # The witness: a downstream gate that always fails and records that it ran.
   GG_T_PRES_DIR="$GG_T_TMPROOT/preserve"

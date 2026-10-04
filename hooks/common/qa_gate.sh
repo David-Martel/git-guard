@@ -1067,7 +1067,7 @@ qa_check_largefile() {
   max=$((kb * 1024))
   # `|| [ -n "$f" ]`: qa_staged_all prints no trailing newline, so a bare
   # `read` dropped the LAST staged file, and a single-file commit was never
-  # size-checked at all (found by tests/24-preserve-exemption.t.sh).
+  # size-checked at all (found by tests/25-preserve-exemption.t.sh).
   qa_staged_all | while IFS= read -r f || [ -n "$f" ]; do
     [ -n "$f" ] && [ -f "$REPO_ROOT/$f" ] || continue
     sz=$(wc -c < "$REPO_ROOT/$f" 2>/dev/null || echo 0)
