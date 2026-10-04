@@ -16,8 +16,41 @@ t_case_reserved_path_safety() {
   if [ -f "$gg_safe_repo/nul" ] && [ "$(cat "$gg_safe_repo/nul")" = 'retain meaningful data' ]; then
     t_ok "nonempty reserved file preserved byte-for-byte"
   else t_fail "nonempty reserved file was deleted or changed"; fi
-  t_expect_rc 1 "$gg_safe_rc" "nonempty owned match blocks with diagnostic"
+  # Only the index can reach a commit: an UNTRACKED preserved path warns, a
+  # STAGED one blocks.
+  t_expect_rc 0 "$gg_safe_rc" "untracked nonempty reserved file warns without blocking"
+  grep -q 'PRESERVED_NONEMPTY (untracked or ignored; warning only):' "$gg_safe_log"
+  t_assert "$?" "untracked nonempty reserved file is reported"
+  git -C "$gg_safe_repo" add -f nul
+  (cd "$gg_safe_repo" && NUKENUL_MANDATORY=1 sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  t_expect_rc 1 "$gg_safe_rc" "staged nonempty reserved file blocks with diagnostic"
+  if [ "$(cat "$gg_safe_repo/nul")" = 'retain meaningful data' ] && grep -q '^PRESERVED_NONEMPTY: ' "$gg_safe_log"; then
+    t_ok "staged nonempty reserved file preserved and named"
+  else t_fail "staged nonempty reserved file changed or not named"; fi
+  git -C "$gg_safe_repo" rm -q --cached nul
   rm -f "$gg_safe_repo/nul"
+
+  # Reserved-name directories, symlinks and unreadable directories anywhere in
+  # the work tree (often ignored build output) must not lock out every commit.
+  mkdir -p "$gg_safe_repo/aux" "$gg_safe_repo/Con.d" "$gg_safe_repo/locked"
+  printf 'data\n' > "$gg_safe_repo/aux/notes.txt"
+  printf 'data\n' > "$gg_safe_repo/Con.d/notes.txt"
+  ln -s notes.txt "$gg_safe_repo/nul.lnk"
+  : > "$gg_safe_repo/locked/nul"
+  chmod 000 "$gg_safe_repo/locked"
+  (cd "$gg_safe_repo" && NUKENUL_MANDATORY=1 sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  chmod 755 "$gg_safe_repo/locked"
+  t_expect_rc 0 "$gg_safe_rc" "untracked reserved dirs, symlink and unreadable dir do not block"
+  if [ -f "$gg_safe_repo/aux/notes.txt" ] && [ -f "$gg_safe_repo/Con.d/notes.txt" ] && [ -L "$gg_safe_repo/nul.lnk" ] && [ -f "$gg_safe_repo/locked/nul" ]; then
+    t_ok "untracked reserved dirs, symlink and unreadable content preserved"
+  else t_fail "untracked reserved dir, symlink or unreadable content changed"; fi
+  grep -q 'PRESERVED_NONREGULAR (untracked or ignored; warning only):' "$gg_safe_log"
+  t_assert "$?" "untracked reserved dir/symlink reported as a warning"
+  git -C "$gg_safe_repo" add -f aux/notes.txt
+  (cd "$gg_safe_repo" && NUKENUL_MANDATORY=1 sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  t_expect_rc 1 "$gg_safe_rc" "a reserved directory with staged content blocks"
+  git -C "$gg_safe_repo" rm -q --cached aux/notes.txt
+  rm -rf "$gg_safe_repo/aux" "$gg_safe_repo/Con.d" "$gg_safe_repo/nul.lnk" "$gg_safe_repo/locked"
 
   mkdir -p "$gg_safe_repo/worktrees/other" "$gg_safe_repo/nested" "$gg_safe_repo/.git/private"
   : > "$gg_safe_repo/worktrees/other/CON.txt"
@@ -57,7 +90,14 @@ with newline/COM1.txt" ] && [ ! -e "$gg_safe_repo/\$null" ] && [ ! -e "$gg_safe_
   if [ -L "$gg_safe_repo/aux" ] && [ -f "$gg_safe_outside/nul" ]; then
     t_ok "symlink and external target preserved"
   else t_fail "symlink or external target changed"; fi
-  t_expect_rc 1 "$gg_safe_rc" "owned reserved symlink blocks safely"
+  t_expect_rc 0 "$gg_safe_rc" "untracked reserved symlink warns without blocking"
+  git -C "$gg_safe_repo" add -f aux
+  (cd "$gg_safe_repo" && NUKENUL_MANDATORY=1 sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  if [ -L "$gg_safe_repo/aux" ] && [ -f "$gg_safe_outside/nul" ]; then
+    t_ok "staged symlink and external target preserved"
+  else t_fail "staged symlink or external target changed"; fi
+  t_expect_rc 1 "$gg_safe_rc" "staged reserved symlink blocks safely"
+  git -C "$gg_safe_repo" rm -q --cached aux
   rm -f "$gg_safe_repo/aux"
 
   (cd "$gg_safe_repo" && NUKENUL_MANDATORY=1 sh -x "$gg_safe_hook" >"$gg_safe_log" 2>&1)
@@ -134,6 +174,7 @@ GG_STAT
   for gg_safe_kind in grow replace symlink parent statfail parentstat; do
     mkdir -p "$gg_safe_repo/race"
     : > "$gg_safe_repo/race/nul"
+    git -C "$gg_safe_repo" add -f race/nul
     rm -f "$gg_safe_repo/race-marker"
     (cd "$gg_safe_repo" && PATH="$gg_safe_tools:$PATH" GG_SAFE_REAL_STAT="$gg_safe_real_stat" \
       GG_SAFE_REAL_RM="$gg_safe_real_rm" GG_SAFE_RACE_FILE="$gg_safe_repo/race/nul" \
@@ -142,6 +183,7 @@ GG_STAT
     if [ "$gg_safe_rc" = 1 ] && { [ -e "$gg_safe_repo/race/nul" ] || [ -L "$gg_safe_repo/race/nul" ]; }; then
       t_ok "observed $gg_safe_kind mutation preserved and blocks"
     else t_fail "observed $gg_safe_kind mutation was not preserved/blocking"; fi
+    git -C "$gg_safe_repo" rm -rq --cached --ignore-unmatch race
     rm -rf "$gg_safe_repo/race" "$gg_safe_repo/race.original"
   done
   rm -f "$gg_safe_tools/stat"
@@ -154,11 +196,13 @@ exec "$GG_SAFE_REAL_RM" "$@"
 GG_RM
   chmod +x "$gg_safe_tools/rm"
   : > "$gg_safe_repo/nul"
+  git -C "$gg_safe_repo" add -f nul
   (cd "$gg_safe_repo" && PATH="$gg_safe_tools:$PATH" GG_SAFE_REAL_RM="$gg_safe_real_rm" \
     GG_SAFE_DELETE_FILE="$gg_safe_repo/nul" NUKENUL_MANDATORY=0 sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
   if [ "$gg_safe_rc" = 1 ] && [ -f "$gg_safe_repo/nul" ] && grep -q ERROR_DELETE "$gg_safe_log"; then
     t_ok "failed unlink preserved/reported even when legacy mandatory flag is off"
   else t_fail "unlink failure swallowed or file lost"; fi
+  git -C "$gg_safe_repo" rm -q --cached nul
   rm -f "$gg_safe_tools/rm" "$gg_safe_repo/nul"
   if [ "$(uname -s):$(uname -m)" = Linux:x86_64 ] && command -v rustc >/dev/null 2>&1; then
     : > "$gg_safe_repo/nul"
@@ -168,9 +212,11 @@ exit 7
 GG_BUILD_FAIL
     chmod +x "$gg_safe_tools/rustc"
     (cd "$gg_safe_repo" && PATH="$gg_safe_tools:$PATH" sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
-    if [ "$gg_safe_rc" = 1 ] && [ -f "$gg_safe_repo/nul" ] && grep -q ERROR_INVENTORY_BUILD "$gg_safe_log"; then
-      t_ok "native compilation failure blocks before deleting candidates"
-    else t_fail "native compilation failure was swallowed or deleted a candidate"; fi
+    # Toolchain trouble never blocks: warn, then the POSIX scan does the work.
+    if [ "$gg_safe_rc" = 0 ] && [ ! -e "$gg_safe_repo/nul" ] && grep -q WARN_INVENTORY_BUILD "$gg_safe_log"; then
+      t_ok "native compilation failure warns and falls back to the POSIX scan"
+    else t_fail "native compilation failure blocked or skipped the POSIX fallback"; fi
+    : > "$gg_safe_repo/nul"
     cat > "$gg_safe_tools/rustc" <<'GG_PARTIAL_INVENTORY'
 #!/bin/sh
 for arg do output=$arg; done
@@ -183,9 +229,10 @@ chmod +x "$output"
 GG_PARTIAL_INVENTORY
     (cd "$gg_safe_repo" && PATH="$gg_safe_tools:$PATH" GG_SAFE_NATIVE_CANDIDATE="$gg_safe_repo/nul" \
       sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
-    if [ "$gg_safe_rc" = 1 ] && [ -f "$gg_safe_repo/nul" ] && grep -q ERROR_TRAVERSAL "$gg_safe_log"; then
-      t_ok "partial failed native inventory is never dispatched to deletion worker"
-    else t_fail "partial failed inventory was used or silently accepted"; fi
+    if [ "$gg_safe_rc" = 0 ] && [ ! -e "$gg_safe_repo/nul" ] && grep -q WARN_INVENTORY_RUN "$gg_safe_log" &&
+      ! grep -q INVENTORY_OK "$gg_safe_log"; then
+      t_ok "failed native inventory is discarded and the POSIX scan takes over"
+    else t_fail "failed native inventory blocked or skipped the POSIX fallback"; fi
     rm -f "$gg_safe_tools/rustc" "$gg_safe_repo/nul"
   else
     t_skip "native inventory failure fixtures require qualified Linux x64 Rust compiler"
@@ -201,17 +248,54 @@ GG_FIND
   : > "$gg_safe_repo/nul"
   (cd "$gg_safe_repo" && GG_SAFE_FIND_FAILURE="$gg_safe_tools/failing-find" \
     sh "$gg_safe_tools/find-failure-hook.sh" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
-  if [ "$gg_safe_rc" = 1 ] && [ -e "$gg_safe_repo/nul" ] && grep -q ERROR_TRAVERSAL "$gg_safe_log"; then
-    t_ok "traversal failure reported and blocks without removing candidate"
-  else t_fail "traversal failure swallowed or candidate lost"; fi
+  if [ "$gg_safe_rc" = 0 ] && [ -e "$gg_safe_repo/nul" ] && grep -q WARN_TRAVERSAL "$gg_safe_log"; then
+    t_ok "traversal failure reported as a warning without removing candidate"
+  else t_fail "traversal failure blocked, was swallowed, or lost a candidate"; fi
   rm -f "$gg_safe_repo/nul"
   : > "$gg_safe_repo/aux"
   ln "$gg_safe_repo/aux" "$gg_safe_repo/shared-link"
+  git -C "$gg_safe_repo" add -f aux
   (cd "$gg_safe_repo" && sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
   if [ "$gg_safe_rc" = 1 ] && [ -e "$gg_safe_repo/aux" ] && [ -e "$gg_safe_repo/shared-link" ]; then
     t_ok "shared hardlink identity preserved and blocks"
   else t_fail "shared identity deleted"; fi
+  git -C "$gg_safe_repo" rm -q --cached aux
   rm -f "$gg_safe_repo/aux" "$gg_safe_repo/shared-link"
+
+  # A repository rooted at HOME (a dotfiles work tree) is never walked or
+  # cleaned, but it is not locked out either.
+  : > "$gg_safe_repo/nul"
+  gg_safe_physical="$(cd "$gg_safe_repo" && pwd -P)"
+  ln -s "$gg_safe_physical" "$GG_T_TMPROOT/home-link"
+  for gg_safe_home in "$gg_safe_physical" "$GG_T_TMPROOT/home-link"; do
+    (cd "$gg_safe_repo" && HOME="$gg_safe_home" sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+    if [ "$gg_safe_rc" = 0 ] && [ -e "$gg_safe_repo/nul" ] && grep -q '^SKIPPED_CLEANUP:' "$gg_safe_log"; then
+      t_ok "HOME-rooted repository skips cleanup without blocking ($gg_safe_home)"
+    else t_fail "HOME-rooted repository blocked or was cleaned ($gg_safe_home)"; fi
+  done
+  rm -f "$GG_T_TMPROOT/home-link"
+
+  # Git Bash / MSYS2 / Cygwin run this same shell script. Deletion is not
+  # qualified there, so it must be audit-only: report, never remove.
+  cat > "$gg_safe_tools/uname" <<'GG_UNAME'
+#!/bin/sh
+case "${1:-}" in
+  -m) echo x86_64 ;;
+  *) echo MINGW64_NT-10.0-19045 ;;
+esac
+GG_UNAME
+  chmod +x "$gg_safe_tools/uname"
+  (cd "$gg_safe_repo" && unset MSYSTEM && PATH="$gg_safe_tools:$PATH" sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  if [ "$gg_safe_rc" = 0 ] && [ -e "$gg_safe_repo/nul" ] && grep -q '^WOULD_REMOVE_ZERO_BYTE' "$gg_safe_log" &&
+    ! grep -q '^INVENTORY_OK:' "$gg_safe_log"; then
+    t_ok "MINGW uname: POSIX path is audit-only (reported, not removed)"
+  else t_fail "MINGW uname: shell hook deleted or did not report"; fi
+  rm -f "$gg_safe_tools/uname"
+  (cd "$gg_safe_repo" && MSYSTEM=MINGW64 sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  if [ "$gg_safe_rc" = 0 ] && [ -e "$gg_safe_repo/nul" ] && grep -q '^WOULD_REMOVE_ZERO_BYTE' "$gg_safe_log"; then
+    t_ok "MSYSTEM set: shell hook is audit-only (reported, not removed)"
+  else t_fail "MSYSTEM set: shell hook deleted or did not report"; fi
+  rm -f "$gg_safe_repo/nul"
   cat > "$gg_safe_tools/NukeNul.exe" <<'GG_ACCEL'
 #!/bin/sh
 touch "$GG_SAFE_ACCEL_MARKER"

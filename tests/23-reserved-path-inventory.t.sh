@@ -112,34 +112,38 @@ EOF
       fi
     done
 
-    # Explicit caller selection is still authoritative, but a missing selection
-    # must fail closed without rustup fetching it or a physical-scan fallback.
+    # Explicit caller selection is still authoritative and is never fetched, but
+    # a missing selection is toolchain trouble: it must not block the commit.
+    # The hook warns and the POSIX scan does the cleanup instead.
     : > "$gg_inventory_repo/NUL.txt"
     (cd "$gg_inventory_repo" && RUSTUP_HOME="$gg_inventory_rustup_home" \
       RUSTUP_TOOLCHAIN=nightly-2099-01-01 RUSTUP_AUTO_INSTALL=0 \
       sh "$gg_inventory_hook" >"$gg_inventory_log" 2>&1)
     gg_inventory_rc=$?
-    if [ "$gg_inventory_rc" = 1 ] && [ -e "$gg_inventory_repo/NUL.txt" ] &&
-      grep -q 'ERROR_INVENTORY_BUILD' "$gg_inventory_log" &&
+    if [ "$gg_inventory_rc" = 0 ] && [ ! -e "$gg_inventory_repo/NUL.txt" ] &&
+      grep -q 'WARN_INVENTORY_BUILD' "$gg_inventory_log" &&
       grep -q 'not installed' "$gg_inventory_log" &&
-      ! grep -Eq 'syncing channel|downloading|INVENTORY_OK:|REMOVED_ZERO_BYTE:' "$gg_inventory_log"; then
-      t_ok "explicit unavailable toolchain blocks without downloading or fallback"
+      grep -q 'REMOVED_ZERO_BYTE:' "$gg_inventory_log" &&
+      ! grep -Eq 'syncing channel|downloading|INVENTORY_OK:' "$gg_inventory_log"; then
+      t_ok "explicit unavailable toolchain falls back to the POSIX scan without downloading"
     else
-      t_fail "explicit unavailable toolchain was downloaded, bypassed or misclassified"
+      t_fail "explicit unavailable toolchain was downloaded, blocked or skipped the fallback"
       cat "$gg_inventory_log" >&2
     fi
   else
     t_skip "rustup shim not selected; repository-local toolchain fixtures unavailable"
   fi
 
-  # A real selected compiler failure remains blocking. The wrapper records the
-  # actual environment/cwd rather than pretending to produce an inventory.
+  # A real selected compiler failure is surfaced but does not block: the POSIX
+  # scan takes over. The wrapper records the actual environment, cwd and
+  # arguments rather than pretending to produce an inventory.
   gg_inventory_fail_bin="$GG_T_TMPROOT/failing-compiler"
   gg_inventory_env_log="$GG_T_TMPROOT/compiler-environment.log"
   mkdir -p "$gg_inventory_fail_bin"
   cat > "$gg_inventory_fail_bin/rustc" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$RUSTUP_TOOLCHAIN" "$RUSTUP_HOME" "$RUSTUP_AUTO_INSTALL" "$(pwd -P)" > "$GG_INVENTORY_ENV_LOG"
+printf ' %s ' "$*" > "$GG_INVENTORY_ENV_LOG.args"
 printf '%s\n' 'FIXTURE_COMPILE_FAILURE: selected compiler failed' >&2
 exit 47
 EOF
@@ -150,12 +154,24 @@ EOF
     RUSTUP_AUTO_INSTALL=1 GG_INVENTORY_ENV_LOG="$gg_inventory_env_log" \
     sh "$gg_inventory_hook" >"$gg_inventory_log" 2>&1)
   gg_inventory_rc=$?
-  if [ "$gg_inventory_rc" = 1 ] && [ -e "$gg_inventory_repo/NUL.txt" ] &&
+  if [ "$gg_inventory_rc" = 0 ] && [ ! -e "$gg_inventory_repo/NUL.txt" ] &&
     grep -q 'FIXTURE_COMPILE_FAILURE' "$gg_inventory_log" &&
-    grep -q 'ERROR_INVENTORY_BUILD' "$gg_inventory_log" &&
-    ! grep -Eq 'INVENTORY_OK:|REMOVED_ZERO_BYTE:' "$gg_inventory_log"; then
-    t_ok "selected helper compile failure blocks without deletion or fallback"
-  else t_fail "helper compile failure did not remain blocking"; fi
+    grep -q 'WARN_INVENTORY_BUILD' "$gg_inventory_log" &&
+    grep -q 'REMOVED_ZERO_BYTE:' "$gg_inventory_log" &&
+    ! grep -q 'INVENTORY_OK:' "$gg_inventory_log"; then
+    t_ok "selected helper compile failure is shown and the POSIX scan takes over"
+  else t_fail "helper compile failure blocked or skipped the POSIX fallback"; fi
+  # The hook's runtime build must not deny warnings: a lint that a newer rustc
+  # makes warn-by-default would otherwise block every commit on that host.
+  gg_inventory_args="$(cat "$gg_inventory_env_log.args" 2>/dev/null)"
+  case "$gg_inventory_args" in
+    *' --cap-lints warn '*)
+      case "$gg_inventory_args" in
+        *' -D '*|*' -Dwarnings '*|*' --deny '*) t_fail "hook runtime build still denies warnings" ;;
+        *) t_ok "hook runtime build caps lints at warn and denies nothing" ;;
+      esac ;;
+    *) t_fail "hook runtime build does not cap lints at warn" ;;
+  esac
   printf '%s\n' caller-selected "$gg_inventory_rustup_home" 0 / > "$GG_T_TMPROOT/compiler-environment.expected"
   if cmp -s "$gg_inventory_env_log" "$GG_T_TMPROOT/compiler-environment.expected"; then
     t_ok "neutral cwd and no auto-install preserve explicit Rustup authority"
