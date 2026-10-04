@@ -112,15 +112,23 @@ t_case_preserve_exemption() {
   case "$marker" in /*) : ;; *) marker="$r/$marker" ;; esac
   t_pres_check "the deferral marker is consumed by commit-msg" [ ! -e "$marker" ]
 
+  # --- 2b. The commit-msg downstream chain is skipped too --------------------
+  ( cd "$r" && printf 'msg-chain\n' >> a.txt && git add a.txt )
+  rm -f "$GG_T_PRES_RAN"
+  t_pres_commit "$r" "$msg_ok" "$log" GIT_GUARD_DOWNSTREAM_COMMIT_MSG="$GG_T_PRES_HOOK"; rc=$?
+  t_expect_rc 0 "$rc" "exempted commit + failing downstream commit-msg gate: lands"
+  t_pres_check "the downstream commit-msg gate was skipped" [ ! -f "$GG_T_PRES_RAN" ]
+
   # --- 3. No trailer: the deferred QA runs in commit-msg and blocks ----------
   ( cd "$r" && printf 'more\n' >> a.txt && git add a.txt )
+  head_before="$(cd "$r" && git rev-parse HEAD)"
   rm -f "$GG_T_PRES_RAN"
   t_pres_commit "$r" "$msg_none" "$log"; rc=$?
   if [ "$rc" -ne 0 ]; then t_ok "preserve/* without a trailer: the deferred gate blocks (rc=$rc)"
   else t_fail "preserve/* without a trailer: commit landed with QA skipped"; fi
   t_pres_check "without a trailer the downstream gate ran" [ -f "$GG_T_PRES_RAN" ]
   grep -q 'running the deferred QA' "$log"; t_assert $? "stderr says the deferred QA is running"
-  t_pres_check "no commit landed" [ "$(t_pres_head "$r")" = "preserve: snapshot WIP" ]
+  t_pres_check "no commit landed" [ "$(cd "$r" && git rev-parse HEAD)" = "$head_before" ]
 
   # --- 4. A trailer naming nothing must not unlock ---------------------------
   rm -f "$GG_T_PRES_RAN"
