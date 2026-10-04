@@ -285,7 +285,26 @@ scan_match() {
 # can report file:line. -U0 keeps context to zero; --diff-filter=ACM ignores
 # deletions/renames-without-content. We parse the unified diff ourselves to
 # track the current file and the new-file line number of each '+' line.
-added="$(git diff --cached -U0 --diff-filter=ACM --no-color 2>/dev/null)"
+#
+# GIT_GUARD_SECRET_SCAN_COMMITS="<sha> ..." scans those COMMITS instead (each
+# against its first parent, a root commit against the empty tree). pre-push
+# sets it for preserve/* pushes (hooks/common/preserve.sh): refs/preserve/*
+# commits are written by update-ref, so no pre-commit scan ever saw them.
+gg_scan_commits() {
+  gg_empty_tree="$(git hash-object -t tree /dev/null)" || return 1
+  for c in $GIT_GUARD_SECRET_SCAN_COMMITS; do
+    if p="$(git rev-parse --verify --quiet "${c}^1")"; then :; else p="$gg_empty_tree"; fi
+    git diff -U0 --diff-filter=ACM --no-color "$p" "$c" || return 1
+  done
+}
+if [ -n "${GIT_GUARD_SECRET_SCAN_COMMITS:-}" ]; then
+  added="$(gg_scan_commits)" || {
+    printf '%s\n' "git-guard BLOCKED: secret scan could not read the commits being pushed ($GIT_GUARD_SECRET_SCAN_COMMITS). Nothing was pushed." >&2
+    exit 1
+  }
+else
+  added="$(git diff --cached -U0 --diff-filter=ACM --no-color 2>/dev/null)"
+fi
 [ -z "$added" ] && exit 0
 
 cur_file=""
@@ -360,6 +379,10 @@ done <<EOF
 $added
 EOF
 
+if [ -n "$hit_label" ] && [ -n "${GIT_GUARD_SECRET_SCAN_COMMITS:-}" ]; then
+  printf '%s\n' "git-guard BLOCKED: possible secret in ${hit_file}:${hit_line} (${hit_label}) in a commit being pushed. Nothing was pushed. Rewrite the commit to remove the secret (and rotate it if it is real); if it is genuinely not a secret, tag the line '# pragma: allowlist secret'." >&2
+  exit 1
+fi
 if [ -n "$hit_label" ]; then
   printf '%s\n' "git-guard BLOCKED: possible secret in ${hit_file}:${hit_line} (${hit_label}). Your changes are STAGED but UNCOMMITTED — do NOT 'git reset --hard' (it permanently destroys git-add'ed work). Remove the secret, use .env/secret store, re-stage, re-commit. If it is genuinely not a secret, tag the line '# pragma: allowlist secret'. Verify: git log -1 --pretty='%h %G? %s'" >&2
   exit 1

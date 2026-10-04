@@ -38,6 +38,25 @@ if [ "$GIT_GUARD" = "0" ] || [ "$LEFTHOOK" = "0" ]; then
   exit 0
 fi
 
+# preserve/* exemption (common/preserve.sh, docs/QA_TOOLING.md): a push whose
+# every updated ref is refs/heads/preserve/* or refs/preserve/*, and whose new
+# commits all carry a valid `Preserve-Of:` trailer, gets a secret scan of those
+# commits and skips the downstream gate below. 3 = not exempt, carry on. It
+# consumes the ref list, so buffer stdin (unless the LFS step already did).
+git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
+if [ -x "$git_guard_hook_dir/common/preserve.sh" ] && [ ! -t 0 ]; then
+  if [ -z "$git_guard_stdin" ] &&
+     git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)"; then
+    trap 'rm -f "$git_guard_stdin"' EXIT
+    cat > "$git_guard_stdin"
+  fi
+  if [ -n "$git_guard_stdin" ]; then
+    "$git_guard_hook_dir/common/preserve.sh" pre-push "$@" < "$git_guard_stdin"
+    git_guard_preserve_rc=$?
+    [ "$git_guard_preserve_rc" -eq 3 ] || exit "$git_guard_preserve_rc"
+  fi
+fi
+
 # Replay the buffered ref list to whichever downstream gate runs below.
 if [ -n "$git_guard_stdin" ]; then
   exec < "$git_guard_stdin"

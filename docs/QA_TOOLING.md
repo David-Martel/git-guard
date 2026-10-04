@@ -275,7 +275,7 @@ git-guard QA BLOCKED: unknown config key at .qa-gate.conf:8: 'python.pyright'.
   >> python.pyright=warn
 Valid keys:
   astgrep astgrep_autofix astgrep_panics csharp.format largefile largefile_kb
-  nul_cleanup powershell.astgrep powershell.psscriptanalyzer
+  nul_cleanup powershell.astgrep powershell.psscriptanalyzer preserve_exemption
   python.basedpyright python.mypy python.ruff_check python.ruff_format
   qa.enabled rules_dir rust.clippy rust.fmt shell.shellcheck validate.json
   validate.yaml
@@ -302,6 +302,7 @@ csharp.format=warn
 powershell.astgrep=warn   powershell.psscriptanalyzer=warn
 validate.json=block   validate.yaml=warn
 largefile=warn   largefile_kb=5120
+preserve_exemption=on     # off: preserve/* commits get the normal gates (§11)
 rules_dir=                # unset by default; see §4 (SEVERABLE rule source)
 ```
 
@@ -512,3 +513,61 @@ policy correctness remains covered by vigil-utils' own tests and ratchet.
   `qa-sgconfig.yml`, `qa-rules/`, and `~/.config/codex-security/git-hooks/pre-commit`.
 - **Per-check:** set the offending check to `off` in `qa-gate.conf` (global) or a
   repo `.qa-gate.conf` (one repo). No file deletion needed.
+
+## 11. preserve/* exemption
+
+A preservation commit snapshots work-in-progress that the hooks did not author,
+so a repo's language/lint gates (clarius's lefthook ast-grep/pyright/
+rust-no-panic, intublade's `astgrep_panics=strict`) refuse it. That pushed
+preservation out of commits and into fragile `git stash create` objects. The
+exemption lets such a commit through with **only the structural checks**.
+
+**It applies only when both hold:**
+
+- the branch is `preserve/*` (at pre-push: **every** updated remote ref is
+  `refs/heads/preserve/*` or `refs/preserve/*`), and
+- the message carries `Preserve-Of: <ref-or-sha>` and the value resolves to a
+  commit (`git rev-parse --verify <value>^{commit}`). Only ref names and shas
+  are accepted. Revision syntax such as `:/text` or `@{...}` is refused, so a
+  trailer naming nothing unlocks nothing.
+
+```
+git switch -c preserve/clarius-wip-20261004
+git add -A
+git commit -m "preserve: WIP from the clarius lane" -m "Preserve-Of: $(git rev-parse --short HEAD)"
+```
+
+**What still runs:**
+
+| Check | Where it lives | On an exempted commit / push |
+|---|---|---|
+| Secret scan (BLOCK) | `pre-commit` step 1, `common/secret_scan.sh` | runs before the exemption is consulted; at pre-push, every new commit being pushed is scanned too (`refs/preserve/*` written by `update-ref` never met a commit hook) |
+| NUL / reserved-path cleanup (BLOCK) | `pre-commit` step 2, `common/nul-cleanup.sh` | runs before the exemption is consulted |
+| Large-file guard (WARN) | `common/qa_gate.sh` | runs via `QA_ONLY_CHECKS` (listed in `GG_PRESERVE_QA_STRUCTURAL`, `common/preserve.sh`). It is warn-only, as everywhere |
+
+**What it skips:** the rest of `qa_gate.sh` (the language and lint checks) and
+the repo's downstream chain (`GIT_GUARD_DOWNSTREAM_HOOK` /
+`GIT_GUARD_DOWNSTREAM_PRE_PUSH`, `.git-guard/pre-commit.local` /
+`pre-push.local`, `lefthook run`).
+
+**How it works.** The message does not exist yet at pre-commit, so on a
+`preserve/*` branch pre-commit runs the structural checks and writes a deferral
+marker (`$(git rev-parse --git-path git-guard/preserve-deferred)`, holding the
+index tree and branch). The `commit-msg` hook consumes it. A valid trailer logs
+the exemption and passes. A missing or invalid trailer, or a marker that does
+not match the commit, re-runs the full `pre-commit` right there, so no QA is
+skipped without a valid trailer. pre-commit deletes any marker it did not write
+itself.
+
+**Logging.** Every use prints `git-guard: preserve exemption USED (...)` on
+stderr and appends a line to
+`$(git rev-parse --git-common-dir)/git-guard/preserve-exemptions.log`. That is
+one log per repository, shared by its worktrees, with the timestamp, hook,
+branch or refs, the index tree or commit count, the resolved `Preserve-Of`
+values, and what was skipped.
+
+**Opt-out:** `preserve_exemption=off` in the repo's `.qa-gate.conf` (§5), or
+`GIT_GUARD_PRESERVE_EXEMPTION=0` in the environment. The environment can only
+disable it. A malformed `.qa-gate.conf` also disables it (fail closed), and the
+normal gate then reports the error.
+

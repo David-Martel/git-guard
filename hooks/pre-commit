@@ -54,6 +54,15 @@ if [ -x "$git_guard_hooks_dir/common/nul-cleanup.sh" ]; then
   }
 fi
 
+# 2b. preserve/* exemption (common/preserve.sh, docs/QA_TOOLING.md): on a
+#     preserve/* branch only the structural checks run (steps 1-2 above plus
+#     the large-file guard); the rest is DEFERRED to commit-msg, which skips it
+#     only for a valid `Preserve-Of:` trailer. 3 = not exempt, carry on.
+if [ -x "$git_guard_hooks_dir/common/preserve.sh" ]; then
+  "$git_guard_hooks_dir/common/preserve.sh" pre-commit; git_guard_preserve_rc=$?
+  [ "$git_guard_preserve_rc" -eq 3 ] || exit "$git_guard_preserve_rc"
+fi
+
 # 3. Broad LANGUAGE-GATED QA layer — BLOCKS on real, fast, configured errors;
 #    WARNs otherwise; true no-op on docs-only repos. Per-repo .qa-gate.conf
 #    overrides the global defaults. QA_DEBUG=1 for verbose per-check output.

@@ -178,12 +178,14 @@ git-guard/
 ├── hooks/                 drop-in for a global core.hooksPath
 │   ├── pre-commit         compose: secret-scan → nul → qa_gate → warnings → downstream
 │   ├── prepare-commit-msg deterministic agent attribution trailers (Codex, Claude)
+│   ├── commit-msg         completes the preserve/* exemption (Preserve-Of: trailer check)
 │   ├── post-commit        landed-SHA feedback (verify before any reset)
 │   ├── pre-push           git-lfs upload (when the repo uses LFS) + optional downstream chaining
 │   └── common/            the engine
 │       ├── qa_gate.sh         language-gated, configurable QA gate
 │       ├── secret_scan.sh     added-lines secret scanner
 │       ├── nul-cleanup.{sh,ps1}  reserved-filename hygiene
+│       ├── preserve.sh        preserve/* structural-only exemption (docs/QA_TOOLING.md §11)
 │       ├── qa-gate.conf       global defaults (block|warn|off per check)
 │       └── qa-sgconfig.yml    ast-grep rule-category reference
 ├── rules-examples/        curated, public example ast-grep rules (incl. the BLOCK trio)
