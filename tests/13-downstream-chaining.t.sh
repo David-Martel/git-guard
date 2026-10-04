@@ -77,11 +77,11 @@ t_case_downstream_chaining() {
   t_expect_rc 0 "$n" "no commit landed when the gates could not run"
   grep -q 'git-guard BLOCK' "$log"; t_assert $? "the refusal is LOUD (names git-guard BLOCK)"
   grep -q 'GIT_GUARD_ALLOW_MISSING_LEFTHOOK' "$log"; t_assert $? "the message names its own escape hatch"
-  ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" sh "$GG_ROOT/hooks/pre-push" >"$log" 2>&1 ); rc=$?
+  ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" sh "$GG_ROOT/hooks/pre-push" >"$log" 2>&1 </dev/null ); rc=$?
   t_expect_rc 1 "$rc" "pre-push also blocks configured-but-missing lefthook"
   grep -q 'git-guard BLOCK' "$log"; t_assert $? "pre-push refusal identifies the missing runner"
   ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 \
-      sh "$GG_ROOT/hooks/pre-push" >/dev/null 2>&1 ); rc=$?
+      sh "$GG_ROOT/hooks/pre-push" >/dev/null 2>&1 </dev/null ); rc=$?
   t_expect_rc 0 "$rc" "pre-push escape hatch permits the deliberate opt-out"
 
   # 3. Same repo + the escape hatch: must pass (deliberate opt-out is honoured).
@@ -126,4 +126,46 @@ t_case_downstream_chaining() {
       git commit -q -m "vendored config" >/dev/null 2>&1 ); rc=$?
   t_expect_rc 0 "$rc" "a vendored subdirectory lefthook.yml does NOT trip the gate"
   gg_rmrepo "$r"
+
+  # 7. commit-msg follows the same CONFIGURED-BUT-UNRUNNABLE contract.
+  #    The hook is invoked directly (as pre-push is above) so pre-commit's own
+  #    lefthook block cannot mask the result. The repo has no signing configured,
+  #    so commit-msg's identity step is a silent no-op and only chaining is tested.
+  r="$(gg_mktemp_repo)"
+  msg="$r/.git/COMMIT_EDITMSG"; printf 'subject\n' > "$msg"
+  log="$(gg_tmp_log)"
+  cm() { ( cd "$r" && env PATH="$GG_T_PATH_NO_LEFTHOOK" "$@" sh "$GG_ROOT/hooks/commit-msg" "$msg" ) >"$log" 2>&1; }
+
+  cm GIT_GUARD_IDENTITY=warn; rc=$?
+  t_expect_rc 0 "$rc" "commit-msg: nothing configured -> clean exit (negative control)"
+
+  printf '#!/bin/sh\necho downstream-commit-msg-ran >&2\nexit 7\n' > "$r/downstream-ok"
+  chmod +x "$r/downstream-ok"
+  cm GIT_GUARD_DOWNSTREAM_COMMIT_MSG="$r/downstream-ok"; rc=$?
+  t_expect_rc 7 "$rc" "commit-msg: a configured executable downstream's exit code propagates"
+  grep -q downstream-commit-msg-ran "$log"; t_assert $? "commit-msg: the configured downstream actually ran"
+
+  cm GIT_GUARD_DOWNSTREAM_COMMIT_MSG="$r/no-such-hook"; rc=$?
+  t_expect_rc 1 "$rc" "commit-msg: a configured but MISSING downstream refuses"
+  grep -q 'git-guard BLOCK' "$log"; t_assert $? "commit-msg: the missing-downstream refusal is LOUD"
+  grep -q 'no-such-hook' "$log"; t_assert $? "commit-msg: the refusal names the configured path"
+
+  printf '#!/bin/sh\nexit 0\n' > "$r/downstream-noexec"; chmod -x "$r/downstream-noexec"
+  cm GIT_GUARD_DOWNSTREAM_COMMIT_MSG="$r/downstream-noexec"; rc=$?
+  t_expect_rc 1 "$rc" "commit-msg: a configured but NON-EXECUTABLE downstream refuses"
+  grep -q 'git-guard BLOCK' "$log"; t_assert $? "commit-msg: the non-executable refusal is LOUD"
+
+  cm GIT_GUARD_DOWNSTREAM_COMMIT_MSG=""; rc=$?
+  t_expect_rc 0 "$rc" "commit-msg: an EMPTY downstream variable means not configured"
+
+  printf 'commit-msg:\n  commands: {}\n' > "$r/lefthook.yml"
+  cm GIT_GUARD_IDENTITY=warn; rc=$?
+  t_expect_rc 1 "$rc" "commit-msg: lefthook configured but binary missing refuses"
+  grep -q 'git-guard BLOCK' "$log"; t_assert $? "commit-msg: the missing-lefthook refusal is LOUD"
+  grep -q 'GIT_GUARD_ALLOW_MISSING_LEFTHOOK' "$log"; t_assert $? "commit-msg: the refusal names its escape hatch"
+  cm GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1; rc=$?
+  t_expect_rc 0 "$rc" "commit-msg: GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 permits the deliberate opt-out"
+  cm LEFTHOOK=0; rc=$?
+  t_expect_rc 0 "$rc" "commit-msg: LEFTHOOK=0 (lefthook's own disable) is honoured"
+  rm -f "$log"; gg_rmrepo "$r"
 }
