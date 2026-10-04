@@ -36,7 +36,9 @@ t_case_reserved_path_safety() {
   printf 'data\n' > "$gg_safe_repo/aux/notes.txt"
   printf 'data\n' > "$gg_safe_repo/Con.d/notes.txt"
   ln -s notes.txt "$gg_safe_repo/nul.lnk"
-  : > "$gg_safe_repo/locked/nul"
+  # Nonempty so it is preserved whether or not the directory is readable: root
+  # (the docker job) ignores chmod 000 and may legitimately clean a zero-byte one.
+  printf 'locked data\n' > "$gg_safe_repo/locked/nul"
   chmod 000 "$gg_safe_repo/locked"
   (cd "$gg_safe_repo" && NUKENUL_MANDATORY=1 sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
   chmod 755 "$gg_safe_repo/locked"
