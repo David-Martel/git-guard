@@ -370,5 +370,28 @@ t_case_identity_hooks() {
     t_ok "pre-push ENFORCE: refused mirror push did not land"
   fi
 
+  # An unwritable TMPDIR must not turn the WARN-ONLY check into a push block:
+  # the ref list cannot be buffered, so attestation is skipped LOUDLY and the
+  # push proceeds; the downstream hook still gets the ref list on stdin. Under
+  # enforce the same failure refuses the push with a git-guard reason.
+  rm -f "$lab/downstream-stdin"
+  (cd "$r" && TMPDIR="$lab/no-such-tmpdir" GIT_GUARD_IDENTITY=warn git push -q origin mixed:refs/heads/tmpdir-warn) 2>"$lab/p.err"
+  t_expect_rc 0 "$?" "pre-push WARN: unwritable TMPDIR does not block the push"
+  grep -q 'cannot buffer the ref list' "$lab/p.err"
+  t_assert "$?" "pre-push WARN: unwritable TMPDIR is reported, not silent"
+  grep -q 'refs/heads/tmpdir-warn' "$lab/downstream-stdin" 2>/dev/null
+  t_assert "$?" "pre-push WARN: unwritable TMPDIR still passes the ref list downstream"
+  third="$lab/third.git"; git init -q --bare "$third"
+  git -C "$r" remote add third "$third"
+  (cd "$r" && TMPDIR="$lab/no-such-tmpdir" GIT_GUARD_IDENTITY=enforce git push -q third mixed) 2>"$lab/p.err"
+  t_expect_rc 1 "$?" "pre-push ENFORCE: unwritable TMPDIR refuses the push"
+  grep -q 'cannot buffer the ref list' "$lab/p.err"
+  t_assert "$?" "pre-push ENFORCE: the refusal names the TMPDIR cause"
+  if git --git-dir="$third" rev-parse -q --verify refs/heads/mixed >/dev/null; then
+    t_fail "pre-push ENFORCE: unwritable-TMPDIR push did not land"
+  else
+    t_ok "pre-push ENFORCE: unwritable-TMPDIR push did not land"
+  fi
+
   gg_rmrepo "$r"; rm -rf "$lab"
 }
