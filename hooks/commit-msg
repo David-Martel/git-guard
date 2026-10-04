@@ -17,8 +17,11 @@ fi
 
 git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
 
+# 0 = exempted (a later commit-msg downstream chain is skipped too),
+# 3 = not exempted (carry on), anything else = blocked.
 if [ -x "$git_guard_hook_dir/common/preserve.sh" ]; then
-  "$git_guard_hook_dir/common/preserve.sh" commit-msg "$1" || exit $?
+  "$git_guard_hook_dir/common/preserve.sh" commit-msg "$1"; git_guard_preserve_rc=$?
+  [ "$git_guard_preserve_rc" -eq 3 ] || exit "$git_guard_preserve_rc"
 fi
 
 exit 0

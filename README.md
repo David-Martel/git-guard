@@ -176,7 +176,7 @@ weeks with no output anywhere.
 ```
 git-guard/
 ├── hooks/                 drop-in for a global core.hooksPath
-│   ├── pre-commit         compose: secret-scan → nul → qa_gate → warnings → downstream
+│   ├── pre-commit         compose: secret-scan → nul → preserve/* exemption → qa_gate → warnings → downstream
 │   ├── prepare-commit-msg deterministic agent attribution trailers (Codex, Claude)
 │   ├── commit-msg         completes the preserve/* exemption (Preserve-Of: trailer check)
 │   ├── post-commit        landed-SHA feedback (verify before any reset)

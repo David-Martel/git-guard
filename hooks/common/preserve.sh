@@ -41,7 +41,9 @@
 #
 # Usage (from the hooks; exit 3 = "not exempt, run the normal hook"):
 #   preserve.sh pre-commit             0 deferred | 1 blocked | 3 not exempt
-#   preserve.sh commit-msg <msgfile>   0 pass     | non-zero blocked
+#   preserve.sh commit-msg <msgfile>   0 exempt   | 1 blocked | 3 not exempt
+#                                      (3 also when the deferred QA ran and
+#                                      passed: the commit was not exempted)
 #   preserve.sh pre-push <remote> <url> < ref-list
 #                                      0 exempt   | 1 blocked | 3 not exempt
 
@@ -128,8 +130,8 @@ gg_preserve_pre_commit() {
 
 gg_preserve_commit_msg() {
   _msg="${1:-}"
-  _marker="$(gg_preserve_marker)" || return 0
-  [ -f "$_marker" ] || return 0
+  _marker="$(gg_preserve_marker)" || return 3
+  [ -f "$_marker" ] || return 3
   _m_tree=""; _m_branch=""
   read -r _m_tree _m_branch < "$_marker" || :
   rm -f "$_marker"
@@ -152,7 +154,9 @@ gg_preserve_commit_msg() {
     fi
   fi
   gg_preserve_say "preserve exemption NOT applied: $_why; running the deferred QA now."
-  GIT_GUARD_PRESERVE_FULL_RUN=1 "$GG_PRESERVE_DIR/../pre-commit"
+  # Any failure is 1: a downstream gate's own exit code must not read as 3.
+  GIT_GUARD_PRESERVE_FULL_RUN=1 "$GG_PRESERVE_DIR/../pre-commit" || return 1
+  return 3
 }
 
 gg_preserve_all_zero() { case "$1" in *[!0]*) return 1 ;; *) return 0 ;; esac; }

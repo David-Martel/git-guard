@@ -3,6 +3,7 @@
 # git-guard pre-commit — account-wide git-safety + language-gated QA.
 #
 # Composes (in order): secret-scan (BLOCK) -> NUL/reserved-name cleanup (BLOCK)
+# -> preserve/* exemption (structural-only; see common/preserve.sh)
 # -> language-gated QA gate (BLOCK on real fast errors, WARN otherwise) ->
 # protected-branch WARN -> partial-staging WARN -> optional downstream hook.
 #
