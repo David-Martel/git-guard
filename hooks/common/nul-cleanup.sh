@@ -9,7 +9,10 @@
 # stat-to-unlink race with an uncooperative concurrent writer. This is NOT
 # race-proof. Never run this hook in a concurrently adversarial workspace.
 # NUKENUL_BIN is deliberately not executed: its destructive contract is unknown.
-# Failures always propagate; NUKENUL_MANDATORY cannot weaken preservation rules.
+# NUKENUL_MANDATORY cannot weaken preservation rules. A preserved path blocks
+# the commit only when it is TRACKED or STAGED (it is in the index); untracked
+# and ignored content, scan trouble and toolchain trouble only warn. Git Bash,
+# MSYS and Cygwin are audit-only, and a work tree rooted at / or HOME is skipped.
 set -u
 
 # Preserve command-output trailing newlines with a sentinel. Strip exactly the
@@ -70,9 +73,26 @@ owned_parent() {
     parent_identity="${parent_identity}${ancestor};"
 }
 
+# A preserved path can only reach a commit through the index, so only a path
+# that is TRACKED or STAGED blocks (git ls-files reads the index, including the
+# GIT_INDEX_FILE of a partial commit). Untracked and ignored content is out of
+# scope: it is reported as a warning and never blocks. If git cannot answer,
+# treat the path as tracked (fail closed on the one question that matters).
+tracked_or_staged() {
+    rel=${1#"$root"/}
+    [ "$rel" != "$1" ] || return 0
+    tracked_list=${failure_marker%/*}/tracked.$$
+    git ls-files -z -- ":(top,literal)$rel" > "$tracked_list" 2>/dev/null || return 0
+    [ -s "$tracked_list" ]
+}
+
 failure() {
-    printf '%s: %s\n' "$1" "$file" >&2
-    : > "$failure_marker" || exit 1
+    if tracked_or_staged "$file"; then
+        printf '%s: %s\n' "$1" "$file" >&2
+        : > "$failure_marker" || exit 1
+    else
+        printf '%s (untracked or ignored; warning only): %s\n' "$1" "$file" >&2
+    fi
 }
 
 # Internal batch worker. Only the parent launches it with its private marker.
@@ -113,6 +133,11 @@ if [ "${1:-}" = --check-candidates ]; then
             failure PRESERVED_CHANGED
             continue
         fi
+        # Git Bash / MSYS / Cygwin run this shell hook too: report only there.
+        if [ "${GG_NUL_AUDIT_ONLY:-1}" != 0 ]; then
+            printf 'WOULD_REMOVE_ZERO_BYTE (audit-only on this platform): %s\n' "$file" >&2
+            continue
+        fi
         if ! rm -- "$file"; then failure ERROR_DELETE
         else printf 'REMOVED_ZERO_BYTE: %s\n' "$file" >&2
         fi
@@ -125,11 +150,30 @@ if ! capture_path git rev-parse --show-toplevel 2>/dev/null; then
     printf '%s\n' 'ERROR_ROOT: not in a Git worktree' >&2; exit 1
 fi
 root=$captured
-# Refuse broad or newline-ambiguous roots rather than guessing after Git output.
-case "$root" in ''|/|"${HOME:-}"|*'
+# Refuse newline-ambiguous roots rather than guessing after Git output.
+case "$root" in ''|*'
 '*) printf '%s\n' 'ERROR_ROOT: unsafe or ambiguous workspace root' >&2; exit 1 ;; esac
 if ! capture_path sh -c 'cd "$1" && pwd -P' sh "$root"; then printf '%s\n' 'ERROR_ROOT: cannot resolve workspace' >&2; exit 1; fi
 root=$captured
+# A repository rooted at / or at HOME (a dotfiles work tree) is too broad to
+# walk or clean, but refusing it would lock the repo out of every commit. Skip
+# the cleanup there, loudly, and let the commit proceed.
+home_root=
+if [ -n "${HOME:-}" ] && capture_path sh -c 'cd "$1" && pwd -P' sh "$HOME" 2>/dev/null; then
+    home_root=$captured
+fi
+if [ "$root" = / ] || [ "$root" = "${HOME:-}" ] || { [ -n "$home_root" ] && [ "$root" = "$home_root" ]; }; then
+    printf 'SKIPPED_CLEANUP: workspace root %s is / or HOME; reserved-path scan skipped (non-blocking)\n' "$root" >&2
+    exit 0
+fi
+# Windows shells (Git Bash, MSYS2, Cygwin) run this script as well. Deletion is
+# qualified only on Linux/macOS, so there it is audit-only: report, never rm.
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) GG_NUL_AUDIT_ONLY=1 ;;
+    *) GG_NUL_AUDIT_ONLY=0 ;;
+esac
+[ -z "${MSYSTEM:-}" ] || GG_NUL_AUDIT_ONLY=1
+export GG_NUL_AUDIT_ONLY
 if ! capture_path git rev-parse --absolute-git-dir; then printf '%s\n' 'ERROR_ROOT: cannot determine Git directory' >&2; exit 1; fi
 git_directory=$captured
 if ! capture_path git rev-parse --path-format=absolute --git-common-dir; then printf '%s\n' 'ERROR_ROOT: cannot determine common Git directory' >&2; exit 1; fi
@@ -168,7 +212,7 @@ inventory_source=${self%/*}/reserved_path_inventory.rs
 inventory_native=false
 case "$(uname -s 2>/dev/null):$(uname -m 2>/dev/null)" in
     Linux:x86_64|Linux:aarch64)
-        if [ -f "$inventory_source" ] && command -v rustc >/dev/null 2>&1; then
+        if [ -f "$inventory_source" ] && [ -d /proc/self/fd ] && command -v rustc >/dev/null 2>&1; then
             inventory_native=true
         fi
         ;;
@@ -181,14 +225,21 @@ if [ "$inventory_native" = true ]; then
     # ancestry even when TMPDIR is nested in that repository. Keep explicit
     # caller Rustup authority, but never auto-install an unavailable toolchain.
     # Source and output paths are absolute; cd is the shell builtin.
-    if ! (cd / && RUSTUP_AUTO_INSTALL=0 rustc --edition=2021 -D warnings -O "$inventory_source" -o "$scratch/inventory"); then
-        printf '%s\n' 'ERROR_INVENTORY_BUILD: native scan build failed' >&2
-        exit 1
+    # Toolchain trouble must never block a commit: the hook's runtime build caps
+    # lints at warn (CI compiles the same source with -D warnings), and a failed
+    # build or run falls back to the POSIX scan below, with a visible warning.
+    # A failed run's partial output is discarded, never dispatched.
+    if ! (cd / && RUSTUP_AUTO_INSTALL=0 rustc --edition=2021 --cap-lints warn -O "$inventory_source" -o "$scratch/inventory") 2>"$scratch/build.log"; then
+        cat "$scratch/build.log" >&2
+        printf '%s\n' 'WARN_INVENTORY_BUILD: native scan build failed; falling back to the POSIX scan (non-blocking)' >&2
+        inventory_native=false
+    elif ! "$scratch/inventory" "$root" "$GG_NUL_GIT_DIR" "$GG_NUL_GIT_COMMON" > "$scratch/candidates"; then
+        rm -f -- "$scratch/candidates"
+        printf '%s\n' 'WARN_INVENTORY_RUN: native reserved-path inventory failed; falling back to the POSIX scan (non-blocking)' >&2
+        inventory_native=false
     fi
-    if ! "$scratch/inventory" "$root" "$GG_NUL_GIT_DIR" "$GG_NUL_GIT_COMMON" > "$scratch/candidates"; then
-        printf '%s\n' 'ERROR_TRAVERSAL: native reserved-path inventory failed' >&2
-        exit 1
-    fi
+fi
+if [ "$inventory_native" = true ]; then
     if [ -s "$scratch/candidates" ] && ! xargs -0 sh "$self" --check-candidates \
         "$root" "$stat_style" "$failure_marker" < "$scratch/candidates"; then
         printf '%s\n' 'ERROR_WORKER: native inventory candidate worker failed' >&2
@@ -202,8 +253,10 @@ elif ! /usr/bin/find "$root" \
        -prune -exec printf 'PRESERVED_SCOPE: %s\n' {} \; \) -o \
     \( \( -iname '\$null*' -o -iname 'nul*' -o -iname 'con*' -o -iname 'prn*' -o -iname 'aux*' -o -iname 'com[1-9]*' -o -iname 'lpt[1-9]*' \) \
        -exec sh "$self" --check-candidates "$root" "$stat_style" "$failure_marker" {} + \); then
-    printf '%s\n' 'ERROR_TRAVERSAL: reserved-path scan or worker failed' >&2
-    exit 1
+    # An unreadable or vanished entry anywhere in the work tree (often ignored
+    # build output) makes find exit nonzero. That is not a reason to block a
+    # commit: every candidate it did reach was still fully checked.
+    printf '%s\n' 'WARN_TRAVERSAL: reserved-path scan incomplete (unreadable or vanished entries); non-blocking' >&2
 fi
 [ ! -e "$failure_marker" ] || exit 1
 exit 0

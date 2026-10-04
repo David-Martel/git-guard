@@ -87,7 +87,7 @@ errors. The default blocking surface is deliberately NARROW.
 | Check | Trigger (staged files) | Tool | Default | Notes |
 |---|---|---|---|---|
 | secret-scan | added lines (any file) | `secret_scan.sh` | **BLOCK** | MVC; added-lines-only |
-| nul-cleanup | always | bundled Rust inventory / physical shell scan | **BLOCK** | owned regular single-link zero-byte removal only; directories, symlinks, nonempty/ambiguous matches and unreadable eligible subtrees preserved and blocking |
+| nul-cleanup | always | bundled Rust inventory / physical shell scan | **BLOCK** | owned regular single-link zero-byte removal only; directories, symlinks and nonempty/ambiguous matches are preserved, and block only when tracked or staged; untracked/ignored content, unreadable subtrees and toolchain failures warn; audit-only under Git Bash/MSYS/Cygwin; skipped for a `/` or `$HOME` work tree |
 | ast-grep trio | `*.rs` | `sg` (batched) | **BLOCK** | avoid-static-mut, no-glob-reexport, unsafe-with-panic |
 | ast-grep panic-set | `*.rs` | `sg` | **WARN** | unwrap/panic/unchecked… never blocks |
 | ast-grep other | source files | `sg` | **WARN** | core/security/csharp/powershell rules |
@@ -140,14 +140,19 @@ no tool is required. The table shows where each reads its config.
 
 Reserved-path hygiene traverses the full eligible metadata tree, not only a
 staged-file delta. Its availability and cost therefore depend on that tree.
-Reserved-name directories/symlinks and unreadable eligible subtrees are
-preserved and blocking: inspect/rename the conflicting path or restore access
-outside the hook, never bypass it with unsafe chmod or deletion. On Linux the
+Reserved-name directories/symlinks and nonempty matches are preserved. They
+block only when the path is tracked or staged (`git ls-files -z` over the
+index, which honours a partial commit's `GIT_INDEX_FILE`); untracked and
+ignored content and unreadable subtrees only warn. Inspect/rename a blocking
+path outside the hook, never bypass it with unsafe chmod or deletion. On Linux the
 bundled helper compiles from the neutral physical `/` cwd using absolute
 source/output paths and `RUSTUP_AUTO_INSTALL=0`. Repository-local toolchain
 files cannot select the compiler; trusted host/user Rustup defaults and explicit
-`RUSTUP_TOOLCHAIN` / `RUSTUP_HOME` remain authoritative. A selected compiler or
-inventory failure blocks; it does not fall back to the physical scan.
+`RUSTUP_TOOLCHAIN` / `RUSTUP_HOME` remain authoritative, but are never
+auto-installed. The runtime build uses `--cap-lints warn` (the self-test
+compiles with `-D warnings`). A compiler or inventory failure warns
+(`WARN_INVENTORY_BUILD` / `WARN_INVENTORY_RUN`), discards any partial output
+and falls back to the physical scan; it never blocks the commit.
 
 Files OWNED by this subsystem (all under `~/.git-hooks/common/` unless noted):
 
@@ -406,8 +411,10 @@ QA_DEBUG=1 ~/.git-hooks/common/qa_gate.sh   # with files staged
    rebuild.
 6. Reserved-name normalization includes extensions and trailing spaces/dots.
    Only owned regular single-link zero-byte matches can be removed; meaningful
-   or ambiguous matches are retained and block. PowerShell is audit-only until
-   Windows qualification. The POSIX stat-to-unlink race remains documented;
+   or ambiguous matches are retained, and block only when tracked or staged.
+   On Windows the shell hook runs under Git Bash/MSYS/Cygwin and is audit-only
+   there until Windows qualification; `nul-cleanup.ps1` is not wired into any
+   hook. The POSIX stat-to-unlink race remains documented;
    neither inventory nor repeated checks establish an atomic filesystem snapshot.
 
 ---

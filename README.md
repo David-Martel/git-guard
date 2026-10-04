@@ -55,23 +55,33 @@ Full schema, precedence, and the rule catalog: [`docs/QA_TOOLING.md`](docs/QA_TO
 
 Only owned, regular, single-link, zero-byte reserved-name files in the active
 worktree may be removed. Git metadata, linked worktree containers and nested
-repositories are pruned; nonempty, symlinked, foreign-owned or changed matches
-are preserved and block with a diagnostic. Reserved-name directories and
-symlinks, and unreadable eligible subtrees, are deliberately preserved and
-blocking. Inspect and rename a conflicting path or restore access outside the
-hook; it never applies unsafe chmod or deletes meaningful content to proceed.
+repositories are pruned; nonempty, symlinked, foreign-owned or changed matches,
+and reserved-name directories, are preserved with a diagnostic. A preserved
+path **blocks only when it is tracked or staged** (it is in the index, so it
+could reach the commit). Untracked and ignored content, including unreadable
+subtrees, is reported as a warning and never blocks. Inspect and rename a
+conflicting path outside the hook; it never applies unsafe chmod or deletes
+meaningful content to proceed. A work tree rooted at `/` or at `$HOME` (a
+dotfiles repo) is not scanned: the hook prints `SKIPPED_CLEANUP` and the commit
+proceeds.
 
 On Linux x64/ARM64 with Rust available, the bundled read-only
 [`reserved_path_inventory.rs`](hooks/common/reserved_path_inventory.rs) replaces
 per-directory shell subprocesses. A complete successful NUL-delimited inventory
-precedes the existing removal checks. Build/scan failures block; unavailable Rust
-uses the physical POSIX scan. This is a full metadata scan, with no cache or
+precedes the existing removal checks. Toolchain trouble never blocks: the
+hook's runtime build caps lints at warn (CI compiles the same source with
+`-D warnings`), and a failed native build or run prints `WARN_INVENTORY_BUILD`
+/ `WARN_INVENTORY_RUN`, discards any partial output and uses the physical POSIX
+scan, as does a host without Rust or `/proc`. This is a full metadata scan, with no cache or
 atomic-unlink guarantee: availability and cost depend on the complete eligible
 tree, not just staged changes. The Linux compiler runs from `/` with absolute
 source/output paths and Rustup auto-install disabled. Repository-local
 `rust-toolchain` files cannot select it; trusted host/user Rustup defaults and
-explicit `RUSTUP_TOOLCHAIN` / `RUSTUP_HOME` remain authoritative. Windows
-PowerShell remains audit-only pending Windows qualification. External
+explicit `RUSTUP_TOOLCHAIN` / `RUSTUP_HOME` remain authoritative. On Windows
+the hook that runs is this shell script under Git Bash, MSYS2 or Cygwin
+(`uname -s` `MINGW*`/`MSYS*`/`CYGWIN*`, or `MSYSTEM` set), and there it is
+**audit-only**: it prints `WOULD_REMOVE_ZERO_BYTE` and never deletes, pending
+Windows qualification. `nul-cleanup.ps1` is not wired into any hook. External
 `NUKENUL_BIN` tools are never executed.
 
 ### Fleet version minimums
