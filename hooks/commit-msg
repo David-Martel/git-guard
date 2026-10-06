@@ -11,7 +11,12 @@
 #    allowed_signers file exists, so installing it changes nothing on a host
 #    that has no signing set up.
 #      GIT_GUARD_IDENTITY=off|warn|enforce   (default warn: report, never block)
-# 2. Downstream chaining. Installing git-guard through core.hooksPath makes
+# 2. preserve/* exemption (common/preserve.sh, docs/QA_TOOLING.md). On a
+#    preserve/* branch pre-commit ran only the structural checks and deferred
+#    the rest here, because the `Preserve-Of:` trailer did not exist yet. A
+#    valid trailer logs the exemption and skips the downstream chain below too;
+#    anything else re-runs the full pre-commit now. No marker = a no-op.
+# 3. Downstream chaining. Installing git-guard through core.hooksPath makes
 #    git ignore a repo's own commit-msg hook, so chain one if configured:
 #    $GIT_GUARD_DOWNSTREAM_COMMIT_MSG > repo .git-guard/commit-msg.local >
 #    `lefthook run commit-msg` (when the repo has a lefthook config at its
@@ -59,6 +64,13 @@ if [ "$git_guard_identity_mode" != "off" ]; then
       "git-guard identity: WARN only, the commit proceeds (GIT_GUARD_IDENTITY=enforce would block it)." \
       "  Inspect with: git-guard identity status" >&2
   fi
+fi
+
+# preserve/* exemption: 0 = exempted (skip the downstream chain too),
+# 3 = not exempted (carry on), anything else = blocked.
+if [ -x "$git_guard_hook_dir/common/preserve.sh" ]; then
+  "$git_guard_hook_dir/common/preserve.sh" commit-msg "$1"; git_guard_preserve_rc=$?
+  [ "$git_guard_preserve_rc" -eq 3 ] || exit "$git_guard_preserve_rc"
 fi
 
 git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"

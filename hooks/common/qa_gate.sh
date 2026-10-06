@@ -110,7 +110,7 @@ qa_cfg_malformed() {
 # form a human writes in a .qa-gate.conf), checked before the dots->underscores
 # transform.
 # ----------------------------------------------------------------------------
-QA_KNOWN_KEYS="qa.enabled nul_cleanup astgrep astgrep_panics astgrep_autofix rust.fmt rust.clippy python.ruff_check python.ruff_format python.mypy python.basedpyright shell.shellcheck csharp.format powershell.astgrep powershell.psscriptanalyzer validate.json validate.yaml largefile largefile_kb rules_dir"
+QA_KNOWN_KEYS="qa.enabled nul_cleanup astgrep astgrep_panics astgrep_autofix rust.fmt rust.clippy python.ruff_check python.ruff_format python.mypy python.basedpyright shell.shellcheck csharp.format powershell.astgrep powershell.psscriptanalyzer validate.json validate.yaml largefile largefile_kb rules_dir preserve_exemption"
 qa_cfg_key_known() {
   case " $QA_KNOWN_KEYS " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
@@ -215,6 +215,34 @@ qa_cfg() {
   eval "v=\"\${qacfg_${k}:-}\""
   [ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"
 }
+
+# Config query for sibling hooks (hooks/common/preserve.sh reads
+# `preserve_exemption`): `qa_gate.sh --get KEY DEFAULT` prints the resolved
+# value with the gate's own precedence and exits. A malformed config or an
+# unknown key exits 1, so the caller fails closed.
+if [ "${1:-}" = "--get" ]; then
+  [ "$QA_CFG_MALFORMED" = "0" ] && qa_cfg_key_known "${2:-}" || exit 1
+  qa_cfg "$2" "${3:-}"
+  exit 0
+fi
+
+# Restricted structural checks require explicit caller authority; ambient
+# QA_ONLY_CHECKS never changes an ordinary hook's full gate.
+QA_SELECTED_CHECKS=""
+if [ "$#" -gt 0 ]; then
+  if [ "$1" != "--only" ] || [ "$#" -lt 2 ]; then
+    printf 'usage: qa_gate.sh [--only largefile] | --get KEY DEFAULT\n' >&2
+    exit 1
+  fi
+  shift
+  for qa_selected in "$@"; do
+    case "$qa_selected" in
+      largefile) : ;;
+      *) qa_block "unknown restricted check '$qa_selected'."; exit 1 ;;
+    esac
+  done
+  QA_SELECTED_CHECKS="$*"
+fi
 
 # Finalize the rules dir now that conf is loaded (env > conf `rules_dir` >
 # bundled default). Kept allocation-light: a single qa_cfg lookup.
@@ -1055,7 +1083,10 @@ qa_check_largefile() {
   kb="$(qa_cfg largefile_kb 5120)"
   case "$kb" in ''|*[!0-9]*) kb=5120 ;; esac
   max=$((kb * 1024))
-  qa_staged_all | while IFS= read -r f; do
+  # `|| [ -n "$f" ]`: qa_staged_all prints no trailing newline, so a bare
+  # `read` dropped the LAST staged file, and a single-file commit was never
+  # size-checked at all (found by tests/25-preserve-exemption.t.sh).
+  qa_staged_all | while IFS= read -r f || [ -n "$f" ]; do
     [ -n "$f" ] && [ -f "$REPO_ROOT/$f" ] || continue
     sz=$(wc -c < "$REPO_ROOT/$f" 2>/dev/null || echo 0)
     if [ "$sz" -gt "$max" ]; then
@@ -1081,6 +1112,19 @@ qa_main() {
   [ "$(qa_cfg qa.enabled on)" = "on" ] || { qa_dbg "qa.enabled=off -> skip"; exit 0; }
   # Fast no-op when nothing is staged.
   [ -n "$(qa_staged_all)" ] || { qa_dbg "no staged files"; exit 0; }
+
+  # Restricted run for sibling hooks: only the named STRUCTURAL checks
+  # (hooks/common/preserve.sh, the preserve/* exemption). An unknown name
+  # refuses rather than silently running nothing.
+  if [ -n "$QA_SELECTED_CHECKS" ]; then
+    for qa_only in $QA_SELECTED_CHECKS; do
+      case "$qa_only" in
+        largefile) qa_check_largefile ;;
+        *) qa_block "unknown restricted check '$qa_only'." ;;
+      esac
+    done
+    [ "$QA_FAILED" = "0" ] && exit 0 || exit 1
+  fi
 
   if [ "$QA_DEBUG" = "1" ]; then
     printf 'qa-gate[debug] repo=%s types="%s" repo_conf=%s\n' "$REPO_ROOT" "$(qa_detect_types)" "${QA_REPO_CONF:-<none>}" >&2

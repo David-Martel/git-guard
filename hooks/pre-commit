@@ -3,6 +3,7 @@
 # git-guard pre-commit — account-wide git-safety + language-gated QA.
 #
 # Composes (in order): secret-scan (BLOCK) -> NUL/reserved-name cleanup (BLOCK)
+# -> preserve/* exemption (structural-only; see common/preserve.sh)
 # -> language-gated QA gate (BLOCK on real fast errors, WARN otherwise) ->
 # protected-branch WARN -> partial-staging WARN -> optional downstream hook.
 #
@@ -52,6 +53,15 @@ if [ -x "$git_guard_hooks_dir/common/nul-cleanup.sh" ]; then
     printf '%s\n' "git-guard BLOCKED: reserved-filename (NUL) cleanup failed. Your changes are STAGED but UNCOMMITTED — do NOT 'git reset --hard'. Resolve the reserved file, re-commit." >&2
     exit 1
   }
+fi
+
+# 2b. preserve/* exemption (common/preserve.sh, docs/QA_TOOLING.md): on a
+#     preserve/* branch only the structural checks run (steps 1-2 above plus
+#     the large-file guard); the rest is DEFERRED to commit-msg, which skips it
+#     only for a valid `Preserve-Of:` trailer. 3 = not exempt, carry on.
+if [ -x "$git_guard_hooks_dir/common/preserve.sh" ]; then
+  "$git_guard_hooks_dir/common/preserve.sh" pre-commit; git_guard_preserve_rc=$?
+  [ "$git_guard_preserve_rc" -eq 3 ] || exit "$git_guard_preserve_rc"
 fi
 
 # 3. Broad LANGUAGE-GATED QA layer — BLOCKS on real, fast, configured errors;

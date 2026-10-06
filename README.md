@@ -211,9 +211,9 @@ weeks with no output anywhere.
 ```
 git-guard/
 ├── hooks/                 drop-in for a global core.hooksPath
-│   ├── pre-commit         compose: secret-scan → nul → qa_gate → warnings → downstream
+│   ├── pre-commit         compose: secret-scan → nul → preserve/* exemption → qa_gate → warnings → downstream
 │   ├── prepare-commit-msg deterministic agent attribution trailers (Codex, Claude)
-│   ├── commit-msg         Agent trailer vs signing key (warn-only) + downstream chaining
+│   ├── commit-msg         Agent trailer vs signing key (warn-only) + preserve/* Preserve-Of: check + downstream chaining
 │   ├── post-commit        landed-SHA feedback (verify before any reset)
 │   ├── pre-push           git-lfs upload + pushed-range attestation (warn-only) + downstream chaining
 │   └── common/            the engine
@@ -221,6 +221,7 @@ git-guard/
 │       ├── secret_scan.sh     added-lines secret scanner
 │       ├── identity.sh        per-agent signing identity + attestation (git-guard identity)
 │       ├── nul-cleanup.{sh,ps1}  reserved-filename hygiene
+│       ├── preserve.sh        preserve/* structural-only exemption (docs/QA_TOOLING.md §11)
 │       ├── qa-gate.conf       global defaults (block|warn|off per check)
 │       └── qa-sgconfig.yml    ast-grep rule-category reference
 ├── identity/allowed_signers  versioned key -> principal map (ships empty; see docs/IDENTITY.md)
