@@ -255,6 +255,18 @@ GG_FIND
   else t_fail "traversal failure blocked, was swallowed, or lost a candidate"; fi
   rm -f "$gg_safe_repo/nul"
 
+  printf 'ordinary staged content\n' > "$gg_safe_repo/ordinary.txt"
+  git -C "$gg_safe_repo" add ordinary.txt
+  (cd "$gg_safe_repo" && GG_SAFE_FIND_FAILURE="$gg_safe_tools/failing-find" \
+    sh "$gg_safe_tools/find-failure-hook.sh" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  if [ "$gg_safe_rc" = 0 ] && [ "$(cat "$gg_safe_repo/ordinary.txt")" = 'ordinary staged content' ] &&
+    git -C "$gg_safe_repo" ls-files --error-unmatch ordinary.txt >/dev/null 2>&1 &&
+    grep -q WARN_TRAVERSAL "$gg_safe_log" && ! grep -q '^ERROR_WORKER' "$gg_safe_log"; then
+    t_ok "traversal failure with an ordinary staged file only warns and preserves it"
+  else t_fail "ordinary staged file made unrelated traversal failure block or lose data"; fi
+  git -C "$gg_safe_repo" rm -q --cached ordinary.txt
+  rm -f "$gg_safe_repo/ordinary.txt"
+
   # A crashed candidate worker (here `id` fails) means candidates were never
   # evaluated. On the POSIX path (forced by a failing rustc) that must still
   # fail CLOSED when a reserved path is tracked or staged; a crash with only
@@ -272,6 +284,32 @@ GG_FIND
   if [ "$gg_safe_rc" = 1 ] && [ -f "$gg_safe_repo/con.py" ] && grep -q '^ERROR_WORKER' "$gg_safe_log"; then
     t_ok "worker crash with a STAGED reserved file fails closed (POSIX path)"
   else t_fail "worker crash let a staged reserved file through (rc=$gg_safe_rc)"; fi
+
+  # Refuse the fatal-error marker itself on both root and non-root runners.
+  # Its dangling target is inside the fixture's private scratch, under a
+  # nonexistent parent. The worker's redirection really fails, while the
+  # parent's index-read scratch remains usable. No privileged or external
+  # filesystem access, production override or permission-based skip is needed.
+  gg_safe_marker_tmp="$GG_T_TMPROOT/marker-refusal"
+  mkdir -p "$gg_safe_marker_tmp"
+  cat > "$gg_safe_tools/id" <<'GG_MARKER_REFUSAL'
+#!/bin/sh
+for scratch in "$GG_SAFE_MARKER_TMP"/git-guard-nul.*; do
+  [ -d "$scratch" ] || continue
+  ln -s "$scratch/absent-parent/worker-failed" "$scratch/worker-failed" || exit 73
+done
+printf '%s\n' FIXTURE_MARKER_REFUSAL >&2
+exit 1
+GG_MARKER_REFUSAL
+  chmod +x "$gg_safe_tools/id"
+  (cd "$gg_safe_repo" && PATH="$gg_safe_tools:$PATH" TMPDIR="$gg_safe_marker_tmp" \
+    GG_SAFE_MARKER_TMP="$gg_safe_marker_tmp" sh "$gg_safe_hook" >"$gg_safe_log" 2>&1); gg_safe_rc=$?
+  if [ "$gg_safe_rc" = 1 ] && [ "$(cat "$gg_safe_repo/con.py")" = 'print(1)' ] &&
+    git -C "$gg_safe_repo" ls-files --error-unmatch con.py >/dev/null 2>&1 &&
+    grep -q FIXTURE_MARKER_REFUSAL "$gg_safe_log" && grep -q '^ERROR_WORKER' "$gg_safe_log"; then
+    t_ok "worker marker creation refusal still rejects a STAGED reserved file without losing data"
+  else t_fail "worker marker creation refusal let a staged reserved file through (rc=$gg_safe_rc)"; fi
+  rm -rf "$gg_safe_marker_tmp"
   git -C "$gg_safe_repo" rm -q --cached con.py
   rm -f "$gg_safe_repo/con.py" "$gg_safe_tools/id" "$gg_safe_tools/rustc"
 

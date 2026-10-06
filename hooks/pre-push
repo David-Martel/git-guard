@@ -112,6 +112,9 @@ fi
 # gates live (in the fleet's case cargo-deny, the pytest suite and the docs
 # traceability check), and they were being skipped in silence for the same
 # reason as pre-commit. A repo with NO lefthook config is unaffected.
+# $GIT_GUARD_DOWNSTREAM_PRE_PUSH set but missing or not executable BLOCKS too
+# (it used to fall through to the next provider, or to a clean exit). An EMPTY
+# variable means "not configured".
 git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
 
 # Echo the lefthook config file name if one exists at the repo ROOT (stem list
@@ -128,7 +131,16 @@ git_guard_lefthook_config() {
   return 1
 }
 
-if [ -n "${GIT_GUARD_DOWNSTREAM_PRE_PUSH:-}" ] && [ -x "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" ]; then
+if [ -n "${GIT_GUARD_DOWNSTREAM_PRE_PUSH:-}" ]; then
+  if [ ! -f "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" ] || [ ! -x "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" ]; then
+    printf '%s\n' \
+      "git-guard BLOCK: GIT_GUARD_DOWNSTREAM_PRE_PUSH is set but is not a runnable file." \
+      "  path: ${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" \
+      "The repo's pre-push gate would be SKIPPED SILENTLY." \
+      "Fix: point it at an executable hook (chmod +x), or unset it if no downstream is wanted." \
+      "Do NOT use --no-verify." >&2
+    exit 1
+  fi
   "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" "$@" || exit $?
 elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/pre-push.local" ]; then
   "$git_guard_repo_root/.git-guard/pre-push.local" "$@" || exit $?

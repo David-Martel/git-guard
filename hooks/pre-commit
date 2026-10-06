@@ -105,6 +105,9 @@ fi
 #    indistinguishable from the gates passing. That is how a repo can run for
 #    months believing local enforcement exists (measured 2026-09-11: 26 gates
 #    inert on 2 of 3 fleet hosts, 14 of them with no CI backstop at all).
+#    The same holds for $GIT_GUARD_DOWNSTREAM_HOOK: set but missing or not
+#    executable BLOCKS (it used to fall through to the next provider, or to a
+#    clean exit). An EMPTY variable means "not configured".
 #    A repo with NO lefthook config is unaffected -> still a clean exit.
 git_guard_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
 
@@ -127,7 +130,16 @@ git_guard_lefthook_config() {
   return 1
 }
 
-if [ -n "${GIT_GUARD_DOWNSTREAM_HOOK:-}" ] && [ -x "${GIT_GUARD_DOWNSTREAM_HOOK}" ]; then
+if [ -n "${GIT_GUARD_DOWNSTREAM_HOOK:-}" ]; then
+  if [ ! -f "${GIT_GUARD_DOWNSTREAM_HOOK}" ] || [ ! -x "${GIT_GUARD_DOWNSTREAM_HOOK}" ]; then
+    printf '%s\n' \
+      "git-guard BLOCK: GIT_GUARD_DOWNSTREAM_HOOK is set but is not a runnable file." \
+      "  path: ${GIT_GUARD_DOWNSTREAM_HOOK}" \
+      "The repo's pre-commit gate would be SKIPPED SILENTLY." \
+      "Fix: point it at an executable hook (chmod +x), or unset it if no downstream is wanted." \
+      "Do NOT use --no-verify: it skips git-guard's own blockers too." >&2
+    exit 1
+  fi
   "${GIT_GUARD_DOWNSTREAM_HOOK}" "$@" || exit $?
 elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/pre-commit.local" ]; then
   "$git_guard_repo_root/.git-guard/pre-commit.local" "$@" || exit $?

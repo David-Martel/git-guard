@@ -268,9 +268,11 @@ if [ "$inventory_native" = true ]; then
         inventory_native=false
     fi
 fi
+scan_failed=false
 if [ "$inventory_native" = true ]; then
     if [ -s "$scratch/candidates" ] && ! xargs -0 sh "$self" --check-candidates \
         "$root" "$stat_style" "$failure_marker" < "$scratch/candidates"; then
+        scan_failed=true
         : > "$scratch/worker-failed"
     fi
 elif ! /usr/bin/find "$root" \
@@ -281,22 +283,27 @@ elif ! /usr/bin/find "$root" \
        -prune -exec printf 'PRESERVED_SCOPE: %s\n' {} \; \) -o \
     \( \( -iname '\$null*' -o -iname 'nul*' -o -iname 'con*' -o -iname 'prn*' -o -iname 'aux*' -o -iname 'com[1-9]*' -o -iname 'lpt[1-9]*' \) \
        -exec sh "$self" --check-candidates "$root" "$stat_style" "$failure_marker" {} + \); then
+    scan_failed=true
     # An unreadable or vanished entry anywhere in the work tree (often ignored
     # build output) makes find exit nonzero. That is not a reason to block a
     # commit: every candidate it did reach was still fully checked.
     [ -e "$scratch/worker-failed" ] ||
         printf '%s\n' 'WARN_TRAVERSAL: reserved-path scan incomplete (unreadable or vanished entries); non-blocking' >&2
 fi
-# A crashed worker left candidates unevaluated. Fail CLOSED if any reserved
-# path is tracked or staged (it could reach this commit); otherwise only warn.
-if [ -e "$scratch/worker-failed" ]; then
+# A scan or worker failure may leave candidates unevaluated even when the worker
+# cannot create its error marker. The parent retains the actual dispatch status
+# independently. Fail CLOSED if a reserved path is tracked/staged or the index
+# cannot be checked; unrelated traversal trouble still only warns.
+if [ "$scan_failed" = true ] || [ -e "$scratch/worker-failed" ]; then
     if ! git ls-files -z > "$scratch/index" ||
         ! xargs -0 sh "$self" --index-reserved "$scratch/index-reserved" < "$scratch/index" ||
         [ -e "$scratch/index-reserved" ]; then
-        printf '%s\n' 'ERROR_WORKER: reserved-path candidate worker failed and a reserved path is tracked or staged (or the index could not be read)' >&2
+        printf '%s\n' 'ERROR_WORKER: reserved-path scan or candidate worker failed and a reserved path is tracked or staged (or the index could not be read)' >&2
         exit 1
     fi
-    printf '%s\n' 'WARN_WORKER: reserved-path candidate worker failed; no reserved path is tracked or staged (non-blocking)' >&2
+    if [ -e "$scratch/worker-failed" ]; then
+        printf '%s\n' 'WARN_WORKER: reserved-path candidate worker failed; no reserved path is tracked or staged (non-blocking)' >&2
+    fi
 fi
 [ ! -e "$failure_marker" ] || exit 1
 exit 0
