@@ -1,0 +1,30 @@
+# Dependabot version updates for GitHub Actions ONLY.
+#
+# Scope (approved by codex-dtm-p1gen7, agent-bus thread git-hygiene-20261002):
+#   * github-actions is the only ecosystem here. No other ecosystem is added, and the
+#     repository's existing Dependabot security-update settings are unchanged by this file.
+#   * One version-update group, and at most one version-update PR open at a time.
+#     `open-pull-requests-limit` caps open VERSION-update PRs only. Security-update PRs are
+#     not subject to it and do not count toward it (GitHub's options reference).
+#   * A 7-day cooldown: a new action release is not proposed until it is 7 days old.
+#     `cooldown` applies to version updates only. The semver-*-days keys do not apply to
+#     github-actions, so only `default-days` is set.
+#   * Nothing here is auto-merged.
+#
+# Coverage: `/` makes Dependabot read `.github/workflows/*` and a root action.yml.
+#
+# Version updates are not CVE coverage. A version bump PR proposes the newest tag; it is
+# not an advisory feed, and SHA-pinned references are only as current as their last bump.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    groups:
+      github-actions:
+        patterns:
+          - "*"

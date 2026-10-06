@@ -59,6 +59,30 @@
 
 set -u
 
+# Scan authority comes only from explicit arguments. Ambient historical scan
+# selectors must never replace the ordinary pre-commit's staged diff.
+gg_scan_history=0
+gg_scan_targets=""
+if [ "$#" -gt 0 ]; then
+  if [ "$1" != "--commits" ] || [ "$#" -lt 2 ]; then
+    printf 'usage: secret_scan.sh [--commits <full-commit-sha> ...]\n' >&2
+    exit 1
+  fi
+  shift
+  gg_object_format="$(git rev-parse --show-object-format 2>/dev/null)" || exit 1
+  case "$gg_object_format" in sha1) gg_oid_length=40 ;; sha256) gg_oid_length=64 ;; *) exit 1 ;; esac
+  for gg_target in "$@"; do
+    case "$gg_target" in ''|*[!0-9a-f]*) gg_target_valid=0 ;; *) gg_target_valid=1 ;; esac
+    if [ "$gg_target_valid" != 1 ] || [ "${#gg_target}" -ne "$gg_oid_length" ] ||
+       [ "$(git cat-file -t "$gg_target" 2>/dev/null)" != commit ]; then
+      printf 'git-guard BLOCKED: historical secret scan requires existing full commit SHAs.\n' >&2
+      exit 1
+    fi
+  done
+  gg_scan_history=1
+  gg_scan_targets="$*"
+fi
+
 # --- context helpers ---------------------------------------------------------
 
 # Credential-key regex, spelled with character classes rather than `grep -i`,
@@ -286,20 +310,20 @@ scan_match() {
 # deletions/renames-without-content. We parse the unified diff ourselves to
 # track the current file and the new-file line number of each '+' line.
 #
-# GIT_GUARD_SECRET_SCAN_COMMITS="<sha> ..." scans those COMMITS instead (each
+# Explicit `--commits <full-sha> ...` scans those COMMITS instead (each
 # against its first parent, a root commit against the empty tree). pre-push
-# sets it for preserve/* pushes (hooks/common/preserve.sh): refs/preserve/*
+# passes it for preserve/* pushes (hooks/common/preserve.sh): refs/preserve/*
 # commits are written by update-ref, so no pre-commit scan ever saw them.
 gg_scan_commits() {
   gg_empty_tree="$(git hash-object -t tree /dev/null)" || return 1
-  for c in $GIT_GUARD_SECRET_SCAN_COMMITS; do
+  for c in $gg_scan_targets; do
     if p="$(git rev-parse --verify --quiet "${c}^1")"; then :; else p="$gg_empty_tree"; fi
-    git diff -U0 --diff-filter=ACM --no-color "$p" "$c" || return 1
+    git diff -U0 --diff-filter=ACM --no-color "$p" "$c" -- || return 1
   done
 }
-if [ -n "${GIT_GUARD_SECRET_SCAN_COMMITS:-}" ]; then
+if [ "$gg_scan_history" = 1 ]; then
   added="$(gg_scan_commits)" || {
-    printf '%s\n' "git-guard BLOCKED: secret scan could not read the commits being pushed ($GIT_GUARD_SECRET_SCAN_COMMITS). Nothing was pushed." >&2
+    printf '%s\n' "git-guard BLOCKED: secret scan could not read the commits being pushed ($gg_scan_targets). Nothing was pushed." >&2
     exit 1
   }
 else
@@ -379,7 +403,7 @@ done <<EOF
 $added
 EOF
 
-if [ -n "$hit_label" ] && [ -n "${GIT_GUARD_SECRET_SCAN_COMMITS:-}" ]; then
+if [ -n "$hit_label" ] && [ "$gg_scan_history" = 1 ]; then
   printf '%s\n' "git-guard BLOCKED: possible secret in ${hit_file}:${hit_line} (${hit_label}) in a commit being pushed. Nothing was pushed. Rewrite the commit to remove the secret (and rotate it if it is real); if it is genuinely not a secret, tag the line '# pragma: allowlist secret'." >&2
   exit 1
 fi

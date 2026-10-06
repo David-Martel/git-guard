@@ -21,7 +21,7 @@
 #   paths            which also carries the reserved-path safety), likewise
 #                    BEFORE this file is consulted.
 #   large-file guard inside qa_gate.sh, so it is listed in
-#                    GG_PRESERVE_QA_STRUCTURAL below and run via QA_ONLY_CHECKS.
+#                    GG_PRESERVE_QA_STRUCTURAL below and run via explicit --only arguments.
 # Skipped: the rest of qa_gate.sh (language/lint checks) and the repo's
 # downstream chain (GIT_GUARD_DOWNSTREAM_HOOK / .git-guard/*.local / lefthook).
 #
@@ -52,7 +52,7 @@ set -u
 GG_PRESERVE_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 
 # qa_gate.sh-resident structural checks that still run on an exempted commit
-# (space-separated QA_ONLY_CHECKS names). Hook-native structural checks run
+# (space-separated explicit --only names). Hook-native structural checks run
 # ahead of the pre-commit call site and need no entry here.
 GG_PRESERVE_QA_STRUCTURAL="largefile"
 
@@ -119,7 +119,8 @@ gg_preserve_pre_commit() {
     gg_preserve_say "preserve exemption is disabled here (preserve_exemption / GIT_GUARD_PRESERVE_EXEMPTION); running the normal gates."
     return 3
   fi
-  QA_SKIP_NUL=1 QA_ONLY_CHECKS="$GG_PRESERVE_QA_STRUCTURAL" sh "$GG_PRESERVE_DIR/qa_gate.sh" || return 1
+  # shellcheck disable=SC2086  # split the source-owned structural check list
+  QA_SKIP_NUL=1 sh "$GG_PRESERVE_DIR/qa_gate.sh" --only $GG_PRESERVE_QA_STRUCTURAL || return 1
   # Never defer without a marker: any failure here falls back to the full gate.
   _tree="$(git write-tree 2>/dev/null)" || return 3
   mkdir -p "$(dirname "$_marker")" 2>/dev/null || return 3
@@ -184,7 +185,8 @@ gg_preserve_pre_push() {
   done
   [ -n "$_refs" ] || return 3
   if [ -n "$_commits" ]; then
-    GIT_GUARD_SECRET_SCAN_COMMITS="$_commits" sh "$GG_PRESERVE_DIR/secret_scan.sh" || return 1
+    # shellcheck disable=SC2086  # git rev-list emits full commit SHAs; callee validates every one
+    sh "$GG_PRESERVE_DIR/secret_scan.sh" --commits $_commits || return 1
   fi
   gg_preserve_log "hook=pre-push remote=$_remote refs=$_refs commits=$_n"
   return 0

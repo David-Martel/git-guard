@@ -72,6 +72,68 @@ t_case_preserve_exemption() {
   printf 'preserve: trailer uses revision syntax\n\nPreserve-Of: :/initial\n' > "$msg_revsyntax"
   log="$(gg_tmp_log)"
 
+  # Ordinary hooks must not accept ambient selectors as scan authority.
+  # Run real git commit with the repository's hooks, no failing downstream:
+  # the secret/JSON gate itself must block and HEAD/index must be preserved.
+  r="$(t_pres_repo)" || { t_fail "ambient secret fixture could not be created"; return 1; }
+  ( cd "$r" && git checkout -q -b feature/ambient-secret )
+  gg_fixture_fake_secret "$r"; ( cd "$r" && git add leak.js )
+  before="$(cd "$r" && git rev-parse HEAD)"
+  ( cd "$r" && GIT_GUARD_RULES_DIR="$GG_BUNDLED" git commit -m 'ordinary secret control' >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "ordinary staged secret blocks without ambient selector"
+  ( cd "$r" && GIT_GUARD_SECRET_SCAN_COMMITS=HEAD GIT_GUARD_RULES_DIR="$GG_BUNDLED" \
+      git commit -m 'ordinary ambient secret control' >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "ambient historical selector cannot replace ordinary staged secret scan"
+  grep -q 'possible secret' "$log"; t_assert $? "ambient selector refusal still names the staged secret"
+  t_pres_check "ambient secret attempt does not create a commit" [ "$(cd "$r" && git rev-parse HEAD)" = "$before" ]
+  ( cd "$r" && git ls-files --error-unmatch leak.js >/dev/null 2>&1 ); t_assert $? "blocked secret remains staged for correction"
+  gg_rmrepo "$r"
+
+  r="$(t_pres_repo)" || { t_fail "ambient QA fixture could not be created"; return 1; }
+  ( cd "$r" && git checkout -q -b feature/ambient-qa )
+  gg_fixture_bad_json "$r"; ( cd "$r" && git add broken.json )
+  before="$(cd "$r" && git rev-parse HEAD)"
+  ( cd "$r" && GIT_GUARD_RULES_DIR="$GG_BUNDLED" git commit -m 'ordinary JSON control' >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "ordinary invalid JSON blocks without ambient selector"
+  ( cd "$r" && QA_ONLY_CHECKS=largefile GIT_GUARD_RULES_DIR="$GG_BUNDLED" \
+      git commit -m 'ordinary ambient QA control' >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "ambient structural selector cannot replace ordinary full QA"
+  grep -q 'invalid JSON' "$log"; t_assert $? "ambient selector refusal still names invalid JSON"
+  t_pres_check "ambient QA attempt does not create a commit" [ "$(cd "$r" && git rev-parse HEAD)" = "$before" ]
+  ( cd "$r" && git ls-files --error-unmatch broken.json >/dev/null 2>&1 ); t_assert $? "blocked JSON remains staged for correction"
+  gg_rmrepo "$r"
+
+  # The explicit seam remains usable, with malformed authority refused.
+  r="$(t_pres_repo)" || { t_fail "explicit scan fixture could not be created"; return 1; }
+  head="$(cd "$r" && git rev-parse HEAD)"
+  blob="$(cd "$r" && git rev-parse HEAD:README.md)"
+  gg_fixture_fake_secret "$r"; ( cd "$r" && git add leak.js )
+  ( cd "$r" && GIT_GUARD_SECRET_SCAN_COMMITS=invalid sh "$GG_ROOT/hooks/common/secret_scan.sh" \
+      --commits "$head" >"$log" 2>&1 ); rc=$?
+  t_expect_rc 0 "$rc" "explicit clean historical commit scans independently of staged secret or ambient selector"
+  for invalid in HEAD "$blob" 0000000000000000000000000000000000000000; do
+    ( cd "$r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" --commits "$invalid" >"$log" 2>&1 ); rc=$?
+    t_expect_rc 1 "$rc" "historical authority rejects ref/blob/missing commit: $invalid"
+  done
+  ( cd "$r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" --commits "$head" invalid >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "historical scan validates every requested commit before scanning"
+  ( cd "$r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" --commits >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "historical scan requires at least one commit"
+  ( cd "$r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" --unknown >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "secret scanner rejects unknown arguments"
+  ( cd "$r" && git rm -q --cached leak.js && rm -f leak.js )
+  gg_fixture_bad_json "$r"; ( cd "$r" && git add broken.json )
+  ( cd "$r" && sh "$GG_ROOT/hooks/common/qa_gate.sh" --only largefile >"$log" 2>&1 ); rc=$?
+  t_expect_rc 0 "$rc" "explicit structural check skips language QA without granting a commit exemption"
+  ( cd "$r" && sh "$GG_ROOT/hooks/common/qa_gate.sh" --only >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "restricted QA requires at least one check"
+  ( cd "$r" && sh "$GG_ROOT/hooks/common/qa_gate.sh" --only largefile unknown >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "restricted QA validates every check before dispatch"
+  ( cd "$r" && sh "$GG_ROOT/hooks/common/qa_gate.sh" --unknown >"$log" 2>&1 ); rc=$?
+  t_expect_rc 1 "$rc" "QA gate rejects unknown arguments"
+  t_pres_check "explicit read-only scans never create a commit" [ "$(cd "$r" && git rev-parse HEAD)" = "$head" ]
+  gg_rmrepo "$r"
+
   # --- 1. NEGATIVE CONTROL: the trailer alone unlocks nothing off preserve/* --
   r="$(t_pres_repo)" || { t_fail "fixture repo could not be created"; return 1; }
   ( cd "$r" && git checkout -q -b feature/x && printf 'x\n' > a.txt && git add a.txt )

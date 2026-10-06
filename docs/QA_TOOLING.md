@@ -125,7 +125,7 @@ errors. The default blocking surface is deliberately NARROW.
 | Check | Trigger (staged files) | Tool | Default | Notes |
 |---|---|---|---|---|
 | secret-scan | added lines (any file) | `secret_scan.sh` | **BLOCK** | MVC; added-lines-only |
-| nul-cleanup | always | NukeNul.exe / shell | **BLOCK** | reserved-filename hygiene, PII-safe |
+| nul-cleanup | always | bundled Rust inventory / physical shell scan | **BLOCK** | owned regular single-link zero-byte removal only; directories, symlinks and nonempty/ambiguous matches are preserved, and block only when tracked or staged; untracked/ignored content, unreadable subtrees and toolchain failures warn; a crashed candidate worker blocks only when a reserved path is tracked or staged; audit-only under Git Bash/MSYS/Cygwin; skipped for a `/` or `$HOME` work tree |
 | ast-grep trio | `*.rs` | `sg` (batched) | **BLOCK** | avoid-static-mut, no-glob-reexport, unsafe-with-panic |
 | ast-grep panic-set | `*.rs` | `sg` | **WARN** | unwrap/panic/unchecked… never blocks |
 | ast-grep other | source files | `sg` | **WARN** | core/security/csharp/powershell rules |
@@ -174,7 +174,23 @@ no tool is required. The table shows where each reads its config.
 | shellcheck | `PATH` | none |
 | cargo | `PATH` | repo `rustfmt.toml` / `Cargo.toml` |
 | dotnet | `PATH` | repo `.editorconfig` |
-| NukeNul (optional NUL accelerator) | `$NUKENUL_BIN` (else POSIX-shell fallback) | n/a |
+| Reserved-path inventory | bundled Rust source + `rustc` on Linux x64/ARM64; physical POSIX scan otherwise | external `NUKENUL_BIN` is never executed |
+
+Reserved-path hygiene traverses the full eligible metadata tree, not only a
+staged-file delta. Its availability and cost therefore depend on that tree.
+Reserved-name directories/symlinks and nonempty matches are preserved. They
+block only when the path is tracked or staged (`git ls-files -z` over the
+index, which honours a partial commit's `GIT_INDEX_FILE`); untracked and
+ignored content and unreadable subtrees only warn. Inspect/rename a blocking
+path outside the hook, never bypass it with unsafe chmod or deletion. On Linux the
+bundled helper compiles from the neutral physical `/` cwd using absolute
+source/output paths and `RUSTUP_AUTO_INSTALL=0`. Repository-local toolchain
+files cannot select the compiler; trusted host/user Rustup defaults and explicit
+`RUSTUP_TOOLCHAIN` / `RUSTUP_HOME` remain authoritative, but are never
+auto-installed. The runtime build uses `--cap-lints warn` (the self-test
+compiles with `-D warnings`). A compiler or inventory failure warns
+(`WARN_INVENTORY_BUILD` / `WARN_INVENTORY_RUN`), discards any partial output
+and falls back to the physical scan; it never blocks the commit.
 
 Files OWNED by this subsystem (all under `~/.git-hooks/common/` unless noted):
 
@@ -184,7 +200,8 @@ Files OWNED by this subsystem (all under `~/.git-hooks/common/` unless noted):
 | `qa-gate.conf` | GLOBAL DEFAULT config (block/warn/off per check) |
 | `qa-sgconfig.yml` | ast-grep root config → points at the validated rule cache |
 | `qa-rules/` | VALIDATED rule cache (auto-rebuilt; see §4) |
-| `nul-cleanup.sh` | pre-existing reserved-filename cleanup (reused, not modified) |
+| `nul-cleanup.sh` | scope, owner, type, identity and zero-byte checks plus qualified removal |
+| `reserved_path_inventory.rs` | read-only NUL-delimited inventory with protected-scope pruning |
 | `~/.git-hooks/pre-commit` | git-guard sentinel block invokes the above |
 | `~/.config/codex-security/git-hooks/pre-commit` | override-repo entry → secret-scan + QA |
 
@@ -431,9 +448,13 @@ QA_DEBUG=1 ~/.git-hooks/common/qa_gate.sh   # with files staged
 4. **basedpyright** is not installed on this host → its check no-ops.
 5. **First commit after editing `~/.claude/rules`** pays a ~15s one-time cache
    rebuild.
-6. **NukeNul** targets genuine Windows reserved device-names; a normal file
-   literally named `nul.txt` on Git-Bash's POSIX FS is left alone (it is not a
-   reserved device there).
+6. Reserved-name normalization includes extensions and trailing spaces/dots.
+   Only owned regular single-link zero-byte matches can be removed; meaningful
+   or ambiguous matches are retained, and block only when tracked or staged.
+   On Windows the shell hook runs under Git Bash/MSYS/Cygwin and is audit-only
+   there until Windows qualification; `nul-cleanup.ps1` is not wired into any
+   hook. The POSIX stat-to-unlink race remains documented;
+   neither inventory nor repeated checks establish an atomic filesystem snapshot.
 
 ---
 
@@ -445,7 +466,7 @@ QA_DEBUG=1 ~/.git-hooks/common/qa_gate.sh   # with files staged
 | Blocked "ast-grep rule 'avoid-static-mut'" | `static mut` in staged rust | use atomics/OnceLock; or `astgrep=off` for the repo |
 | Every `.unwrap()` warns | panic-set rules (advisory) | informational only — never blocks |
 | Commit very slow (>10s) | cold ast-grep rule cache rebuild | one-time; subsequent commits fast |
-| Docs commit slow | NukeNul spawn + lefthook stub | expected ~2s; QA itself is ~200ms |
+| Docs commit slow | accumulated generated outputs, physical fallback scans or downstream gates | prune obsolete owned outputs; inspect inventory/gate timings. Native inventory still scans metadata and compiles per invocation. |
 | "shellcheck errors" on a fine script | real SC finding | fix, or `shell.shellcheck=warn` |
 | QA not running at all | `LEFTHOOK=0`, `--no-verify`, or `qa.enabled=off` | remove the bypass |
 | Commit blocked, "malformed config line FILE:N" | a `.qa-gate.conf` line has no `=`, an empty key, or a value with a disallowed character | fix that exact line (message quotes it); values limited to `[A-Za-z0-9_,.:/-]` |
@@ -581,7 +602,17 @@ git commit -m "preserve: WIP from the clarius lane" -m "Preserve-Of: $(git rev-p
 |---|---|---|
 | Secret scan (BLOCK) | `pre-commit` step 1, `common/secret_scan.sh` | runs before the exemption is consulted; at pre-push, every new commit being pushed is scanned too (`refs/preserve/*` written by `update-ref` never met a commit hook) |
 | NUL / reserved-path cleanup (BLOCK) | `pre-commit` step 2, `common/nul-cleanup.sh` | runs before the exemption is consulted |
-| Large-file guard (WARN) | `common/qa_gate.sh` | runs via `QA_ONLY_CHECKS` (listed in `GG_PRESERVE_QA_STRUCTURAL`, `common/preserve.sh`). It is warn-only, as everywhere |
+| Large-file guard (WARN) | `common/qa_gate.sh` | runs via explicit `qa_gate.sh --only largefile` (listed in `GG_PRESERVE_QA_STRUCTURAL`, `common/preserve.sh`). It is warn-only, as everywhere |
+
+**Scan authority.** Ordinary `pre-commit` invokes the secret scanner and QA gate
+without selectors: staged added lines and the full configured gate always run.
+Ambient `GIT_GUARD_SECRET_SCAN_COMMITS` and `QA_ONLY_CHECKS` are ignored.
+The preserve helper explicitly requests `secret_scan.sh --commits <full-sha> ...`
+for pushed history; every argument must name an existing commit using the
+repository's full hexadecimal object ID. Its structural-only QA call uses
+`qa_gate.sh --only largefile`. Missing or unknown arguments fail closed. These
+arguments select a scan, and do not grant a preservation exemption: branch,
+trailer and push-ref admission remain in `preserve.sh`.
 
 **What it skips:** the rest of `qa_gate.sh` (the language and lint checks) and
 the repo's downstream chain (`GIT_GUARD_DOWNSTREAM_HOOK` /

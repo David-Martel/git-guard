@@ -121,6 +121,7 @@ t_case_cache_staleness
 t_case_powershell
 t_case_python_scope
 t_case_downstream_chaining
+t_case_downstream_missing_provider
 t_case_postcommit_config
 t_case_config_malformed
 t_case_versioned_install
@@ -129,6 +130,8 @@ t_case_install_verify_before_flip
 t_case_doctor_hooks_resolution
 t_case_lfs_prepush
 t_case_fleet_versions
+t_case_reserved_path_safety
+t_case_reserved_path_inventory
 t_case_preserve_exemption
 "
 

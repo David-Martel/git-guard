@@ -226,6 +226,24 @@ if [ "${1:-}" = "--get" ]; then
   exit 0
 fi
 
+# Restricted structural checks require explicit caller authority; ambient
+# QA_ONLY_CHECKS never changes an ordinary hook's full gate.
+QA_SELECTED_CHECKS=""
+if [ "$#" -gt 0 ]; then
+  if [ "$1" != "--only" ] || [ "$#" -lt 2 ]; then
+    printf 'usage: qa_gate.sh [--only largefile] | --get KEY DEFAULT\n' >&2
+    exit 1
+  fi
+  shift
+  for qa_selected in "$@"; do
+    case "$qa_selected" in
+      largefile) : ;;
+      *) qa_block "unknown restricted check '$qa_selected'."; exit 1 ;;
+    esac
+  done
+  QA_SELECTED_CHECKS="$*"
+fi
+
 # Finalize the rules dir now that conf is loaded (env > conf `rules_dir` >
 # bundled default). Kept allocation-light: a single qa_cfg lookup.
 if [ -n "${GIT_GUARD_RULES_DIR:-}" ]; then
@@ -1098,11 +1116,11 @@ qa_main() {
   # Restricted run for sibling hooks: only the named STRUCTURAL checks
   # (hooks/common/preserve.sh, the preserve/* exemption). An unknown name
   # refuses rather than silently running nothing.
-  if [ -n "${QA_ONLY_CHECKS:-}" ]; then
-    for qa_only in $QA_ONLY_CHECKS; do
+  if [ -n "$QA_SELECTED_CHECKS" ]; then
+    for qa_only in $QA_SELECTED_CHECKS; do
       case "$qa_only" in
         largefile) qa_check_largefile ;;
-        *) qa_block "unknown QA_ONLY_CHECKS entry '$qa_only'." ;;
+        *) qa_block "unknown restricted check '$qa_only'." ;;
       esac
     done
     [ "$QA_FAILED" = "0" ] && exit 0 || exit 1
