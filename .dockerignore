@@ -1,0 +1,7 @@
+# Package source and tools; generated fixtures and linked checkouts are not inputs.
+/.git
+/worktrees
+/.worktrees
+/.tmp
+/target
+/.venv
