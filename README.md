@@ -50,6 +50,8 @@ can soften or disable any check with a per-repo `.qa-gate.conf`.
 | ast-grep (everything else), `ruff format`, `cargo fmt`, `clippy`, `mypy`, panic-set, large-file | **warn** / opt-in | never blocks WIP by default; Python type checks honor configured project scope |
 
 Full schema, precedence, and the rule catalog: [`docs/QA_TOOLING.md`](docs/QA_TOOLING.md).
+Every rule, its rationale and the tests that feed it a failing and a passing
+input: [`docs/RULES.md`](docs/RULES.md).
 
 ### Reserved-path hygiene
 
@@ -243,8 +245,8 @@ git-guard/
 ├── bin/git-guard          the CLI
 ├── install.sh             idempotent, reversible installer (symlinks + overlay)
 ├── branch-protection.sh   optional GitHub ruleset applier
-├── docs/                  QA_TOOLING.md, GIT_COMMIT_SAFETY.md, IDENTITY.md
-└── .github/workflows/qa.yml   Manual self-hosted QA: git-guard self-tests itself
+├── docs/                  RULES.md, QA_TOOLING.md, GIT_COMMIT_SAFETY.md, IDENTITY.md
+└── .github/workflows/qa.yml   self-hosted QA on every PR and push to main: git-guard self-tests itself
 ```
 
 ## Requirements

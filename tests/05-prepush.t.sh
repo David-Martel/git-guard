@@ -5,7 +5,10 @@
 # configured downstream gate (e.g. a heavy tests/clippy pusher) and refuses the
 # push when that gate fails. This case proves that block-wiring: a planted
 # failing `.git-guard/pre-push.local` refuses the push, and GIT_GUARD=0 bypasses.
-# A pre-push hook already exists, so we assert its refusal path (per the prompt).
+#
+# What a failure means: core.hooksPath makes git ignore a repo's own
+# .git/hooks/pre-push, so if git-guard's pre-push stops propagating the
+# downstream exit code, that repo's heavy push gate passes everything.
 # shellcheck shell=sh
 
 t_case_prepush() {

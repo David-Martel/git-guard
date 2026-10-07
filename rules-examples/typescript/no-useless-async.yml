@@ -8,3 +8,7 @@ rule:
   - not:
       has:
         pattern: "await $EXPR"
+note: |
+  An async function with no await still wraps its result in a Promise. Callers
+  must await it, its errors arrive as rejections instead of throws, and readers
+  assume I/O that is not there. Remove async, or add the missing await.

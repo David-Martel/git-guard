@@ -1,5 +1,19 @@
 #!/bin/sh
-# Reserved-path hygiene must never discard meaningful or foreign-workspace data.
+# Category 22 — reserved-path hygiene never discards meaningful or foreign data.
+#
+# Behaviour protected (hooks/common/nul-cleanup.sh): only owned, regular,
+# single-link, zero-byte reserved-name files in the active worktree are removed.
+# Nonempty files, directories, symlinks, hardlinks, foreign worktrees, Git
+# metadata and nested repositories are preserved and reported. A preserved path
+# blocks only when it is tracked or staged; untracked content, traversal errors,
+# a failed native inventory and a crashed worker only warn, except that a crashed
+# worker or a refused marker blocks when a reserved path is staged. Git Bash and
+# MSYS are audit-only, and a / or $HOME work tree is skipped.
+#
+# What a failure means: the hook runs on every commit in every repo on the host,
+# so a wrong deletion destroys user data with no prompt, and a wrong block stops
+# all commits in a repo for a file the commit does not contain. README.md
+# "Reserved-path hygiene" is the contract; #41 added the worker-marker cases.
 # shellcheck shell=sh
 
 t_case_reserved_path_safety() {

@@ -58,17 +58,24 @@ t_case_powershell() {
   # Not a hypothetical. If a future ast-grep gains a PowerShell grammar and this
   # starts finding something, that is worth knowing — hence an explicit case
   # rather than a silent assumption baked into the design.
+  # Both branches used to record [ok], so this could not fail, and `have sg`
+  # selected util-linux set-group on Linux, which made the 0 vacuous. Use the
+  # genuine CLI, and fail when ast-grep starts matching: the "inert" notes in
+  # qa-gate.conf and docs/RULES.md are then wrong and must be revisited.
   _rules="$GG_ROOT/rules-examples/powershell/no-invoke-expression.yml"
-  if [ -f "$_rules" ] && have sg; then
+  if [ -f "$_rules" ] && gg_has_astgrep; then
+    if have ast-grep && ast-grep --version 2>/dev/null | grep -qi 'ast-grep'; then _sg=ast-grep; else _sg=sg; fi
     _t="$(mktemp -d)"
     printf 'Invoke-Expression $payload\niex $payload\n' > "$_t/danger.ps1"
-    _n="$(sg scan --rule "$_rules" --json=compact "$_t/danger.ps1" 2>/dev/null | grep -o '"ruleId"' | wc -l | tr -d ' ')"
+    _n="$("$_sg" scan --rule "$_rules" --json=compact "$_t/danger.ps1" 2>/dev/null | grep -o '"ruleId"' | wc -l | tr -d ' ')"
     rm -rf "$_t"
     if [ "$_n" = "0" ]; then
       t_ok "context: ast-grep finds 0 in a .ps1 with IEX (why PSScriptAnalyzer is needed)"
     else
-      t_ok "context: ast-grep now reports $_n on .ps1 — grammar may exist; revisit the note in qa-gate.conf"
+      t_fail "context: ast-grep now reports $_n on .ps1; revisit the inert note in qa-gate.conf and docs/RULES.md"
     fi
+  else
+    t_skip "context: no genuine ast-grep CLI to show the .ps1 gap"
   fi
 
   # ---- POSITIVE control: the security subset must BLOCK ---------------------

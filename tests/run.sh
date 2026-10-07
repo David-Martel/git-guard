@@ -109,6 +109,7 @@ t_case_precommit
 t_case_prepush
 t_case_backends
 t_case_rule_integrity
+t_case_rule_behaviour
 t_case_panic_set
 t_case_silent_failures
 t_case_attribution
@@ -134,6 +135,7 @@ t_case_reserved_path_safety
 t_case_reserved_path_inventory
 t_case_reserved_path_nested_scope
 t_case_preserve_exemption
+t_case_gate_controls
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------

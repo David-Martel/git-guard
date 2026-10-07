@@ -1,5 +1,19 @@
 #!/bin/sh
-# Exercise the public adapter, without depending on a fleet checkout or network.
+# Category 21 — the `git-guard versions` adapter (hooks/common/fleet_versions.sh).
+#
+# Behaviour protected: the adapter runs the canonical checker only from the
+# pinned, tracked tree. It refuses staged, unstaged, hidden, untracked or
+# ignored inputs; checker symlinks that leave the tree, enter Git metadata,
+# point at a directory or are absolute; it cannot be redirected by PYTHONPATH or
+# GIT_WORK_TREE; checker and registry errors propagate; --json fails closed;
+# --enforce fails a downgrade that --report only exposes.
+#
+# What a failure means: the version check could execute code that is not the
+# reviewed, pinned checker, or report a fleet as compliant without checking it.
+# The contracts run as one Python unittest program; a run that collects no tests
+# fails (the "Ran N tests" control), so an empty program is not a pass.
+#
+# Exercises the public adapter, without depending on a fleet checkout or network.
 t_case_fleet_versions() {
   log="$(gg_tmp_log)"
   if python3 - "$GG_ROOT" "$GG_T_TMPROOT" >"$log" 2>&1 <<'PY'
@@ -305,6 +319,8 @@ PY
   then
     cat "$log"
     t_ok "fleet versions adapter contracts"
+    grep -Eq '^Ran [1-9][0-9]* tests? in ' "$log"
+    t_assert $? "fleet versions: the unittest program collected and ran at least one test"
   else
     cat "$log" >&2
     t_fail "fleet versions adapter contracts"

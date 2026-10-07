@@ -127,7 +127,7 @@ errors. The default blocking surface is deliberately NARROW.
 | secret-scan | added lines (any file) | `secret_scan.sh` | **BLOCK** | MVC; added-lines-only |
 | nul-cleanup | always | bundled Rust inventory / physical shell scan | **BLOCK** | owned regular single-link zero-byte removal only; directories, symlinks and nonempty/ambiguous matches are preserved, and block only when tracked or staged; untracked/ignored content, unreadable subtrees and toolchain failures warn; a crashed candidate worker blocks only when a reserved path is tracked or staged; audit-only under Git Bash/MSYS/Cygwin; skipped for a `/` or `$HOME` work tree |
 | ast-grep trio | `*.rs` | `sg` (batched) | **BLOCK** | avoid-static-mut, no-glob-reexport, unsafe-with-panic |
-| ast-grep panic-set | `*.rs` | `sg` | **WARN** | unwrap/panic/unchecked… never blocks |
+| ast-grep panic-set | `*.rs` | `sg` | **WARN** | unwrap/panic/unchecked…; `astgrep_panics=block` blocks unconditional panics, `strict` blocks the whole set |
 | ast-grep other | source files | `sg` | **WARN** | core/security/csharp/powershell rules |
 | ruff check | `*.py` | `ruff` | **BLOCK** | repo config if present, else `--select E,F --isolated` |
 | ruff format | `*.py` | `ruff` | **WARN** | warns if it would reformat staged files |

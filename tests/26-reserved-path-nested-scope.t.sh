@@ -1,6 +1,18 @@
 #!/bin/sh
-# The POSIX scan's batched nested-scope pre-pass must prune exactly what the
-# per-directory check prunes and dispatch exactly the same candidates.
+# Category 26 — the POSIX scan's batched nested-scope pre-pass must prune
+# exactly what the per-directory check prunes and dispatch exactly the same
+# candidates.
+#
+# Behaviour protected: one pre-pass `find` lists nested Git scopes (bare,
+# half-bare, worktree containers, glob-named) and the candidate
+# scan prunes them; output equals the per-directory scan on fixed and seeded
+# random trees; an over-limit prune list, a probe write failure or a
+# newline-bearing scope falls back with the same output; letter-case lookalikes
+# follow the filesystem's case sensitivity.
+#
+# What a failure means: the pre-pass (#43) exists only for speed. Any difference
+# from the per-directory scan means a reserved path inside another repository
+# is touched, or a candidate in this repository is missed.
 # shellcheck shell=sh
 
 # Run a hook copy against a fixture root. MSYSTEM forces audit-only mode on

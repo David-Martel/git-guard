@@ -1,5 +1,20 @@
 #!/bin/sh
-# Deterministic agent-attribution tests for prepare-commit-msg.
+# Deterministic agent-attribution tests for hooks/prepare-commit-msg.
+#
+# Behaviour protected: a commit made inside Codex gets exactly one
+# `Agent: codex` trailer and one canonical `Co-authored-by: Codex
+# <noreply@openai.com>`; a commit inside Claude Code gets exactly one
+# `Agent: claude` and no hook-written co-author; a human commit is
+# byte-identical. Legacy Codex co-author forms collapse to the canonical one;
+# body text, folded trailers and other contributors survive; repeat runs are
+# byte-idempotent; a conflicting Agent trailer refuses the commit; GIT_GUARD=0
+# bypasses.
+#
+# What a failure means: every agent on a host commits as the same author, so
+# the `Agent:` trailer is the attribution record that tooling parses
+# (docs/IDENTITY.md). A missing, duplicated or wrong trailer misattributes
+# history, and commit-msg / pre-push identity checks then report the wrong
+# principal.
 
 t_case_attribution() {
   t_begin "prepare-commit-msg attribution"

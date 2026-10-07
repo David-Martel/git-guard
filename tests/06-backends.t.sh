@@ -1,10 +1,19 @@
 #!/bin/sh
-# Category 6 — Docker / cross-platform backend selection + NUL cleanup.
-# Exercises bin/git-guard-run's backend forcing (native / wsl), the Docker path
-# (build OR skip-with-reason when the engine is down), the WSL fallback on
-# Windows, and reserved-filename (NUL) cleanup on a POSIX backend. Sourced by
-# run.sh. Uses GIT_GUARD_RULES_DIR (already exported by run.sh) so every backend
-# resolves the bundled rules, never the machine-local private overlay.
+# Category 6 — backend selection (bin/git-guard-run) + reserved-name cleanup.
+#
+# Behaviour protected: GIT_GUARD_BACKEND=native|wsl forces that backend and its
+# self-test runs clean; the Docker image builds from docker/Dockerfile (or the
+# case skips with the reason when the engine is down); on Windows the auto path
+# reaches WSL when Docker is down; nul-cleanup removes a zero-byte `nul` file on
+# a POSIX backend.
+#
+# What a failure means: `git-guard-run` hands the operator a backend that cannot
+# run the gate (CI's self-test-docker and self-test-native jobs use the same
+# paths), or a reserved-name file that breaks Windows checkouts survives.
+#
+# Sourced by run.sh. Uses GIT_GUARD_RULES_DIR (already exported by run.sh) so
+# every backend resolves the bundled rules, never the machine-local private
+# overlay.
 # shellcheck shell=sh
 
 GG_RUN="$GG_ROOT/bin/git-guard-run"
