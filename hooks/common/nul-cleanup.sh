@@ -31,6 +31,13 @@ capture_path() {
 '*) return 1 ;; esac
 }
 
+# Turn a file of newline-free find patterns into ONE string of shell words,
+# `-o -path 'pattern'` per line, each single-quoted (embedded ' becomes '\'').
+# The caller evals it once; that stays linear in the number of patterns.
+prune_words() {
+    sed -e "s/'/'\\\\''/g" -e "s/^/-o -path '/" -e "s/\$/'/" "$1" | tr '\n' ' '
+}
+
 reserved_leaf() {
     leaf=$1
     while :; do
@@ -124,6 +131,16 @@ if [ "${1:-}" = --index-reserved ]; then
             case "$rest" in */*) rest=${rest#*/} ;; *) rest= ;; esac
         done
     done
+    exit 0
+fi
+
+# Internal, read-only: print the argument vector prune_words builds for a
+# pattern file, one argument per line. Used only by tests (round trip/timing).
+if [ "${1:-}" = --prune-args ]; then
+    [ "$#" -eq 2 ] || exit 2
+    words=$(prune_words "$2") || exit 1
+    eval "set -- $words"
+    printf '%s\n' "$@"
     exit 0
 fi
 
@@ -284,55 +301,61 @@ else
     # every directory with its own `sh -c` costs one process per directory,
     # which under MSYS/Git Bash is minutes per commit on a large work tree.
     # Instead a pre-pass walks with the SAME metadata/worktree pruning, visits
-    # only entries named .git or HEAD (any type), and re-applies the identical
+    # only entries whose name is .git or HEAD in any letter case (the [ -e ]
+    # tests are case-insensitive on NTFS/APFS), and re-applies the identical
     # predicate to each one's parent in a batched shell. Every D the old test
-    # accepts holds a .git or HEAD entry, and the pre-pass descends wherever the
-    # scan does, so it lists every such D. The scan then prunes exactly that
-    # set by literal (glob-escaped) -path tests at the same position in the
-    # expression. Pre-pass trouble (an unreadable or vanished entry, a parent
-    # path containing a newline, or a prune list over nested_scope_limit bytes)
-    # selects the original per-directory test instead, never a partial list.
-    # The worker's owned_parent still rechecks every ancestor of a candidate.
+    # accepts holds such an entry, and the pre-pass descends wherever the scan
+    # does, so it lists every such D. The scan then prunes exactly that set by
+    # literal (glob-escaped) -path tests at the same position in the expression.
+    # A newline-bearing scope, a probe write failure, or a list over
+    # nested_scope_count_limit scopes / nested_scope_limit bytes selects the
+    # original per-directory test instead. An unreadable or vanished entry only
+    # makes the list partial; a partial list prunes LESS, never more (the worker's
+    # owned_parent still rechecks every ancestor), so it is used with a warning.
     nested_scope_limit=65536
+    nested_scope_count_limit=512
     nested_scope_mode=per-directory
-    # One batched shell per find batch: for each .git/HEAD entry, apply the old
-    # per-directory predicate verbatim to its parent (never the root itself) and
-    # emit that parent once. A newline-bearing parent aborts the pre-pass.
+    scope_abort=$scratch/scope-abort
+    # One batched shell per find batch: for each marker entry, apply the old
+    # per-directory predicate verbatim to its parent (never the root itself).
     # shellcheck disable=SC2016  # expanded by the batched sh, not here
-    scope_probe='root=$1; shift
+    scope_probe='root=$1; abort=$2; shift 2
 for marker do
     parent=${marker%/*}
     case "$parent" in "$root"/*) : ;; *) continue ;; esac
     if [ -e "$parent/.git" ] || [ -L "$parent/.git" ] || { [ -f "$parent/HEAD" ] && [ -d "$parent/objects" ] && [ -d "$parent/refs" ]; }; then
         case "$parent" in *"
-"*) exit 3 ;; esac
-        case "${marker##*/}" in
-            HEAD) [ ! -e "$parent/.git" ] && [ ! -L "$parent/.git" ] || continue ;;
-        esac
-        printf "%s\n" "$parent" || exit 1
+"*) : > "$abort"; exit 3 ;; esac
+        printf "%s\n" "$parent" || { : > "$abort"; exit 1; }
     fi
 done'
-    if /usr/bin/find "$root" \
-        \( -name .git -prune -exec sh -c "$scope_probe" sh "$root" {} + \) -o \
+    scope_walk=complete
+    /usr/bin/find "$root" \
+        \( -name .git -prune -exec sh -c "$scope_probe" sh "$root" "$scope_abort" {} + \) -o \
         \( \( -path "$git_dir_pattern" -o -path "$git_common_pattern" \) -prune \) -o \
         \( -type d \( -name worktrees -o -name .worktrees \) -prune \) -o \
-        \( -name HEAD -exec sh -c "$scope_probe" sh "$root" {} + \) \
-        > "$scratch/scopes" 2>/dev/null &&
-        sed 's/[][\\*?]/\\&/g' "$scratch/scopes" > "$scratch/scope-patterns" &&
+        \( \( -iname .git -o -iname HEAD \) -exec sh -c "$scope_probe" sh "$root" "$scope_abort" {} + \) \
+        > "$scratch/scopes" 2>/dev/null || scope_walk=partial
+    if [ ! -e "$scope_abort" ] &&
+        LC_ALL=C sort -u "$scratch/scopes" > "$scratch/scopes.unique" &&
+        sed 's/[][\\*?]/\\&/g' "$scratch/scopes.unique" > "$scratch/scope-patterns" &&
+        scope_count=$(wc -l < "$scratch/scope-patterns") &&
         scope_bytes=$(wc -c < "$scratch/scope-patterns") &&
-        scope_bytes=$((scope_bytes)) &&
-        [ "$scope_bytes" -le "$nested_scope_limit" ]; then
+        [ "$((scope_count))" -le "$nested_scope_count_limit" ] &&
+        [ "$((scope_bytes))" -le "$nested_scope_limit" ] &&
+        scope_words=$(prune_words "$scratch/scope-patterns"); then
         nested_scope_mode=listed
+        if [ "$scope_walk" = partial ]; then
+            printf '%s\n' 'WARN_SCOPE_PREPASS_INCOMPLETE: nested-repository pre-pass met unreadable or vanished entries; pruning the scopes it found (non-blocking)' >&2
+        fi
     else
         printf '%s\n' 'WARN_SCOPE_FALLBACK: nested-repository pre-pass unavailable; using per-directory checks (slower, non-blocking)' >&2
     fi
     if [ "$nested_scope_mode" = listed ]; then
-        # The git-dir pattern is a no-op seed (clause one already pruned it), so
-        # the list is never empty. Patterns are newline-free (checked above).
-        set -- -path "$git_dir_pattern"
-        while IFS= read -r scope_pattern; do
-            set -- "$@" -o -path "$scope_pattern"
-        done < "$scratch/scope-patterns"
+        # One eval builds the whole vector (a per-scope `set -- "$@" ...` loop is
+        # quadratic). The git-dir pattern is a no-op seed (clause one already
+        # pruned it), so the list is never empty.
+        eval "set -- -path \"\$git_dir_pattern\" $scope_words"
         if ! /usr/bin/find "$root" \
             \( \( -path "$git_dir_pattern" -o -path "$git_common_pattern" -o -name .git \) -prune \) -o \
             \( -type d \( -name worktrees -o -name .worktrees \) -prune \

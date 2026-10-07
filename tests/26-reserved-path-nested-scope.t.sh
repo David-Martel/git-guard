@@ -9,9 +9,42 @@ gg_scope_run() {
   (cd "$2" && MSYSTEM=MINGW64 NUKENUL_MANDATORY=1 sh "$1" >"$3" 2>&1)
 }
 
-# Sorted diagnostics, minus the fallback notice (the only intended difference).
+# Sorted diagnostics, minus the pre-pass notices (the only intended difference).
 gg_scope_norm() {
-  grep -v '^WARN_SCOPE_FALLBACK:' "$1" | LC_ALL=C sort
+  grep -v '^WARN_SCOPE_' "$1" | LC_ALL=C sort
+}
+
+# Seeded random tree: nested .git files/dirs, bare and half-bare lookalikes,
+# worktree containers, glob/space/reserved names, at random depths. awk's
+# generator is fixed per implementation, so a run is reproducible per host.
+gg_scope_random_tree() {
+  awk -v seed="$2" 'BEGIN {
+    srand(seed)
+    nd = split("a|b|sub dir|g[1]|g1|x*y|xay|q?z|nul.d|CON|aux|worktrees|.worktrees|objects|refs|lib|HEAD", d, "|")
+    nf = split("nul|NUL.txt|con|aux.md|PRN |COM1|lpt9.log|Nul .txt|$null|ordinary|nulordinary", f, "|")
+    for (i = 0; i < 90; i++) {
+      depth = 1 + int(rand() * 4); p = ""
+      for (j = 0; j < depth; j++) p = p (p == "" ? "" : "/") d[1 + int(rand() * nd)]
+      print "d " p
+      k = rand()
+      if (k < 0.12) print "g " p
+      else if (k < 0.20) print "G " p
+      else if (k < 0.27) print "b " p
+      else if (k < 0.32) print "h " p
+      for (j = int(rand() * 3); j > 0; j--) print "f " p "/" f[1 + int(rand() * nf)]
+    }
+  }' | while IFS= read -r gg_scope_op; do
+    gg_scope_path="$1/${gg_scope_op#? }"
+    case "$gg_scope_op" in
+      d\ *) mkdir -p "$gg_scope_path" ;;
+      g\ *) printf 'gitdir: elsewhere\n' > "$gg_scope_path/.git" ;;
+      G\ *) mkdir -p "$gg_scope_path/.git/objects" ;;
+      b\ *) mkdir -p "$gg_scope_path/objects" "$gg_scope_path/refs" && printf 'ref: refs/heads/main\n' > "$gg_scope_path/HEAD" ;;
+      h\ *) mkdir -p "$gg_scope_path/objects" && : > "$gg_scope_path/HEAD" ;;
+      f\ *) : > "$gg_scope_path" ;;
+    esac 2>/dev/null
+  done
+  return 0
 }
 
 t_case_reserved_path_nested_scope() {
@@ -83,6 +116,13 @@ t_case_reserved_path_nested_scope() {
   printf 'gitdir: elsewhere\n' > "$r/worktrees/one/.git"
   : > "$r/worktrees/one/nul"
   : > "$r/x/.worktrees/two/CON"
+  # Letter-case variants. NTFS/APFS resolve up/.git and low/HEAD
+  # case-insensitively, so the per-directory test prunes these there; a
+  # case-sensitive filesystem scans them. Either way both scans must agree.
+  mkdir -p "$r/up/.GIT" "$r/low/objects" "$r/low/refs"
+  : > "$r/low/head"
+  : > "$r/up/nul"
+  : > "$r/low/nul"
 
   gg_scope_new_log="$gg_scope_tmp/new.log"
   gg_scope_old_log="$gg_scope_tmp/old.log"
@@ -125,6 +165,16 @@ t_case_reserved_path_nested_scope() {
     grep -qE '/(g\[ab\]|star\*|sub/nested repo \[1\]|deep/a/b/inner\?|aux|bare \[x\]\.git|lib/mirror\*|worktrees|x/\.worktrees)/'; then
     t_fail "a path inside a preserved scope was dispatched as a candidate"
   else t_ok "nothing inside a preserved scope was dispatched"; fi
+  if [ -e "$r/up/.git" ] && [ -f "$r/low/HEAD" ]; then
+    if grep -qxF "PRESERVED_SCOPE: $r/up" "$gg_scope_new_log" && grep -qxF "PRESERVED_SCOPE: $r/low" "$gg_scope_new_log"; then
+      t_ok "case-insensitive filesystem: .GIT and lowercase head scopes pruned"
+    else t_fail "case-insensitive filesystem: .GIT or lowercase head scope missed"; fi
+  else
+    if grep -qxF "WOULD_REMOVE_ZERO_BYTE (audit-only on this platform): $r/up/nul" "$gg_scope_new_log" &&
+      grep -qxF "WOULD_REMOVE_ZERO_BYTE (audit-only on this platform): $r/low/nul" "$gg_scope_new_log"; then
+      t_ok "case-sensitive filesystem: .GIT and lowercase head are not scopes"
+    else t_fail "case-sensitive filesystem: letter-case lookalike pruned"; fi
+  fi
   if [ -f "$r/nul" ] && [ -f "$r/ga/nul" ] && [ -f "$r/g[ab]/nul" ] && [ -f "$r/build/out/x/PRN" ]; then
     t_ok "audit-only fixture runs removed nothing"
   else t_fail "an audit-only run removed a fixture file"; fi
@@ -137,20 +187,80 @@ t_case_reserved_path_nested_scope() {
     t_ok "default path selects the listed prune set, not per-directory checks"
   else t_fail "default path fell back to per-directory checks"; fi
 
-  # Over-limit prune list: fall back (loudly) to the per-directory test.
-  sed 's/^    nested_scope_limit=65536$/    nested_scope_limit=1/' "$gg_scope_new" > "$gg_scope_tools/limit.sh"
-  gg_scope_run "$gg_scope_tools/limit.sh" "$r" "$gg_scope_tmp/limit.log"
-  gg_scope_norm "$gg_scope_tmp/limit.log" > "$gg_scope_tmp/limit.sorted"
-  if grep -q '^WARN_SCOPE_FALLBACK:' "$gg_scope_tmp/limit.log" && cmp -s "$gg_scope_tmp/limit.sorted" "$gg_scope_tmp/old.sorted"; then
-    t_ok "over-limit prune list falls back with a warning and the same output"
-  else t_fail "over-limit prune list did not fall back cleanly"; fi
+  # Over-limit prune list (bytes, then scope count): fall back, loudly.
+  for gg_scope_seam in 's/^    nested_scope_limit=65536$/    nested_scope_limit=1/' \
+    's/^    nested_scope_count_limit=512$/    nested_scope_count_limit=2/'; do
+    sed "$gg_scope_seam" "$gg_scope_new" > "$gg_scope_tools/limit.sh"
+    if cmp -s "$gg_scope_new" "$gg_scope_tools/limit.sh"; then
+      t_fail "limit seam not found: $gg_scope_seam"
+      continue
+    fi
+    gg_scope_run "$gg_scope_tools/limit.sh" "$r" "$gg_scope_tmp/limit.log"
+    gg_scope_norm "$gg_scope_tmp/limit.log" > "$gg_scope_tmp/limit.sorted"
+    if grep -q '^WARN_SCOPE_FALLBACK:' "$gg_scope_tmp/limit.log" && cmp -s "$gg_scope_tmp/limit.sorted" "$gg_scope_tmp/old.sorted"; then
+      t_ok "over-limit prune list falls back with a warning and the same output ($gg_scope_seam)"
+    else t_fail "over-limit prune list did not fall back cleanly ($gg_scope_seam)"; fi
+  done
 
-  # A newline-bearing nested scope cannot be listed line-wise: fall back.
-  # NTFS has no newline names, and an unreadable directory needs a non-root
-  # POSIX user, so these two fallbacks run on Linux/WSL only.
-  if gg_is_windows; then
-    t_skip "newline and unreadable-directory pre-pass fallbacks need Linux/WSL"
+  # A probe that cannot write its scope list must not leave a silently short
+  # list behind it: the abort marker forces the per-directory test.
+  if (printf x > /dev/full) 2>/dev/null; then
+    t_skip "/dev/full accepts writes here; probe write-failure branch not exercised"
   else
+    sed 's|"\$parent" \|\| { : > "\$abort"; exit 1; }|"$parent" >/dev/full \|\| { : > "$abort"; exit 1; }|' \
+      "$gg_scope_new" > "$gg_scope_tools/full.sh"
+    if cmp -s "$gg_scope_new" "$gg_scope_tools/full.sh"; then
+      t_fail "probe write seam not found"
+    else
+      gg_scope_run "$gg_scope_tools/full.sh" "$r" "$gg_scope_tmp/full.log"
+      if grep -q '^WARN_SCOPE_FALLBACK:' "$gg_scope_tmp/full.log" &&
+        [ "$(gg_scope_norm "$gg_scope_tmp/full.log")" = "$(cat "$gg_scope_tmp/old.sorted")" ]; then
+        t_ok "probe write failure falls back to per-directory checks with the same output"
+      else t_fail "probe write failure left a short prune list in use"; fi
+    fi
+  fi
+
+  # Seeded random trees: batched and per-directory scans must agree exactly.
+  for gg_scope_seed in 7 2026; do
+    gg_scope_rand="$gg_scope_tmp/random $gg_scope_seed"
+    mkdir -p "$gg_scope_rand"
+    (cd "$gg_scope_rand" && git init -q) || { t_fail "cannot initialise random fixture"; continue; }
+    gg_scope_random_tree "$gg_scope_rand" "$gg_scope_seed"
+    gg_scope_run "$gg_scope_new" "$gg_scope_rand" "$gg_scope_new_log"; gg_scope_new_rc=$?
+    gg_scope_run "$gg_scope_old" "$gg_scope_rand" "$gg_scope_old_log"; gg_scope_old_rc=$?
+    gg_scope_scopes=$(grep -c '^PRESERVED_SCOPE:' "$gg_scope_new_log")
+    gg_scope_cands=$(grep -c '^WOULD_REMOVE_ZERO_BYTE' "$gg_scope_new_log")
+    if [ "$gg_scope_new_rc" = "$gg_scope_old_rc" ] && ! grep -q '^WARN_SCOPE_' "$gg_scope_new_log" &&
+      [ "$(gg_scope_norm "$gg_scope_new_log")" = "$(gg_scope_norm "$gg_scope_old_log")" ] &&
+      [ "$gg_scope_scopes" -gt 0 ] && [ "$gg_scope_cands" -gt 0 ]; then
+      t_ok "seed $gg_scope_seed random tree: identical output ($gg_scope_scopes scopes, $gg_scope_cands candidates)"
+    else
+      t_fail "seed $gg_scope_seed random tree: batched scan differs ($gg_scope_scopes scopes, $gg_scope_cands candidates)"
+      diff "$gg_scope_old_log" "$gg_scope_new_log" >&2
+    fi
+  done
+
+  # The prune vector is built in one step. A per-scope `set -- "$@"` loop is
+  # quadratic (tens of seconds for a few thousand scopes under Git Bash).
+  awk 'BEGIN { for (i = 0; i < 4000; i++) printf "/r/dir %d/it'"'"'s \\[x\\] $HOME `id` \"q\"\n", i }' > "$gg_scope_tmp/patterns"
+  gg_scope_start=$(date +%s)
+  sh "$gg_scope_new" --prune-args "$gg_scope_tmp/patterns" > "$gg_scope_tmp/args"; gg_scope_rc=$?
+  gg_scope_elapsed=$(( $(date +%s) - gg_scope_start ))
+  if [ "$gg_scope_rc" = 0 ] && [ "$(wc -l < "$gg_scope_tmp/args")" -eq 12000 ] &&
+    [ "$(sed -n '3p' "$gg_scope_tmp/args")" = "$(sed -n '1p' "$gg_scope_tmp/patterns")" ] &&
+    [ "$(sed -n '12000p' "$gg_scope_tmp/args")" = "$(sed -n '4000p' "$gg_scope_tmp/patterns")" ]; then
+    t_ok "4000 quoted patterns round-trip into one argument vector"
+  else t_fail "prune argument vector lost or altered patterns"; fi
+  if [ "$gg_scope_elapsed" -le 2 ]; then
+    t_ok "4000-pattern prune vector built in ${gg_scope_elapsed}s (<= 2s)"
+  else t_fail "4000-pattern prune vector took ${gg_scope_elapsed}s (quadratic build?)"; fi
+
+  # NTFS has no newline names, and an unreadable directory needs a non-root
+  # POSIX user, so these cases run on Linux/WSL only.
+  if gg_is_windows; then
+    t_skip "newline and unreadable-directory pre-pass cases need Linux/WSL"
+  else
+    # A newline-bearing nested scope cannot be listed line-wise: fall back.
     mkdir -p "$r/line
 break"
     printf 'gitdir: elsewhere\n' > "$r/line
@@ -167,17 +277,36 @@ break/nul"
     rm -rf "$r/line
 break"
     if [ "$(id -u)" != 0 ]; then
+      # Unreadable inside a nested repo: the pre-pass (which enters nested
+      # repos) is partial, but the scope it found is still pruned, so the scan
+      # never meets the locked directory and no slow fallback runs.
+      mkdir -p "$r/nest/deep/locked/inner"
+      printf 'gitdir: elsewhere\n' > "$r/nest/.git"
+      chmod 000 "$r/nest/deep/locked"
+      gg_scope_run "$gg_scope_new" "$r" "$gg_scope_new_log"
+      gg_scope_run "$gg_scope_old" "$r" "$gg_scope_old_log"
+      chmod 755 "$r/nest/deep/locked"
+      if grep -q '^WARN_SCOPE_PREPASS_INCOMPLETE:' "$gg_scope_new_log" &&
+        ! grep -q '^WARN_SCOPE_FALLBACK:' "$gg_scope_new_log" &&
+        ! grep -q '^WARN_TRAVERSAL:' "$gg_scope_new_log" &&
+        grep -qxF "PRESERVED_SCOPE: $r/nest" "$gg_scope_new_log" &&
+        [ "$(gg_scope_norm "$gg_scope_new_log")" = "$(gg_scope_norm "$gg_scope_old_log")" ]; then
+        t_ok "unreadable directory inside a nested repo keeps the listed scopes (no fallback)"
+      else t_fail "unreadable directory inside a nested repo forced a fallback or changed output"; fi
+      rm -rf "$r/nest"
+      # Unreadable in the scanned tree itself: both scans warn identically.
       mkdir -p "$r/locked/inner"
       chmod 000 "$r/locked"
       gg_scope_run "$gg_scope_new" "$r" "$gg_scope_new_log"
       gg_scope_run "$gg_scope_old" "$r" "$gg_scope_old_log"
       chmod 755 "$r/locked"
-      if grep -q '^WARN_SCOPE_FALLBACK:' "$gg_scope_new_log" &&
+      if grep -q '^WARN_SCOPE_PREPASS_INCOMPLETE:' "$gg_scope_new_log" &&
+        grep -q '^WARN_TRAVERSAL:' "$gg_scope_new_log" &&
         [ "$(gg_scope_norm "$gg_scope_new_log")" = "$(gg_scope_norm "$gg_scope_old_log")" ]; then
-        t_ok "incomplete pre-pass (unreadable directory) falls back, never a partial list"
-      else t_fail "incomplete pre-pass was trusted"; fi
+        t_ok "unreadable directory in the work tree: partial pre-pass, same output and warnings"
+      else t_fail "unreadable directory in the work tree changed the output"; fi
     else
-      t_skip "unreadable-directory fallback needs a non-root user"
+      t_skip "unreadable-directory cases need a non-root user"
     fi
   fi
   rm -rf "$gg_scope_tmp"
