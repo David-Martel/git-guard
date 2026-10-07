@@ -132,6 +132,7 @@ t_case_lfs_prepush
 t_case_fleet_versions
 t_case_reserved_path_safety
 t_case_reserved_path_inventory
+t_case_reserved_path_nested_scope
 t_case_preserve_exemption
 "
 
