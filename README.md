@@ -84,6 +84,20 @@ the hook that runs is this shell script under Git Bash, MSYS2 or Cygwin
 Windows qualification. `nul-cleanup.ps1` is not wired into any hook. External
 `NUKENUL_BIN` tools are never executed.
 
+The physical POSIX scan makes two walks and a constant number of processes,
+not one shell per directory. A pre-pass lists nested Git scopes (a non-root
+directory with a `.git` entry, or a `HEAD` file beside `objects/` and `refs/`;
+marker names are matched in any letter case, as NTFS/APFS resolve them). The
+candidate walk then prunes exactly those directories by glob-escaped literal
+path. If a scope path contains a newline, the probe cannot write its list, or
+the list exceeds 512 scopes or 64 KiB, the hook prints `WARN_SCOPE_FALLBACK`
+and checks each directory individually instead. An unreadable or vanished
+entry met by the pre-pass (which also enters nested repositories) only makes
+the list partial; a partial list prunes less, never more, so the hook keeps it
+and prints `WARN_SCOPE_PREPASS_INCOMPLETE`. Output is otherwise the same either
+way; only the cost differs (seconds rather than minutes on a large tree under
+Git Bash).
+
 ### Fleet version minimums
 
 `git-guard versions` delegates to the canonical `vigil-utils` checker and policy;

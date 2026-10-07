@@ -105,8 +105,12 @@ with newline/COM1.txt" ] && [ ! -e "$gg_safe_repo/\$null" ] && [ ! -e "$gg_safe_
   (cd "$gg_safe_repo" && NUKENUL_MANDATORY=1 sh -x "$gg_safe_hook" >"$gg_safe_log" 2>&1)
   gg_safe_walks="$(grep -cE '^\+ (/usr/bin/find|find) ' "$gg_safe_log" || true)"
   gg_safe_native="$(grep -c '^INVENTORY_OK:' "$gg_safe_log" || true)"
-  gg_safe_total=$((gg_safe_walks + gg_safe_native))
-  t_expect_rc 1 "$gg_safe_total" "exactly one native inventory or recursive find invocation"
+  # Native: one inventory, no find. POSIX: one nested-scope pre-pass plus one
+  # candidate scan (tests/26 proves the pair equals the per-directory scan).
+  if { [ "$gg_safe_native" = 1 ] && [ "$gg_safe_walks" = 0 ]; } ||
+    { [ "$gg_safe_native" = 0 ] && [ "$gg_safe_walks" = 2 ]; }; then
+    t_ok "one native inventory, or one scope pre-pass plus one find scan (native=$gg_safe_native finds=$gg_safe_walks)"
+  else t_fail "unexpected walk count (native=$gg_safe_native finds=$gg_safe_walks)"; fi
   gg_safe_ambiguous="$(mktemp -d "$GG_T_TMPROOT/ambiguous.XXXXXX")"
   git init -q "$gg_safe_ambiguous/tree"
   git init -q "$gg_safe_ambiguous/tree
