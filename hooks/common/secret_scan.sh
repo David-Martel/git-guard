@@ -306,8 +306,9 @@ scan_match() {
 # --- staged-diff walk --------------------------------------------------------
 
 # Collect added lines from the staged diff, tagged with their file path so we
-# can report file:line. -U0 keeps context to zero; --diff-filter=ACM ignores
-# deletions/renames-without-content. We parse the unified diff ourselves to
+# can report file:line. -U0 keeps context to zero; --diff-filter=ACMR ignores
+# deletions. Renamed files (R) are included so a line added while renaming is scanned;
+# a pure rename adds no lines, so it costs nothing. We parse the unified diff ourselves to
 # track the current file and the new-file line number of each '+' line.
 #
 # Explicit `--commits <full-sha> ...` scans those COMMITS instead (each
@@ -318,7 +319,7 @@ gg_scan_commits() {
   gg_empty_tree="$(git hash-object -t tree /dev/null)" || return 1
   for c in $gg_scan_targets; do
     if p="$(git rev-parse --verify --quiet "${c}^1")"; then :; else p="$gg_empty_tree"; fi
-    git diff -U0 --diff-filter=ACM --no-color "$p" "$c" -- || return 1
+    git diff -U0 --diff-filter=ACMR --no-color "$p" "$c" -- || return 1
   done
 }
 if [ "$gg_scan_history" = 1 ]; then
@@ -327,7 +328,7 @@ if [ "$gg_scan_history" = 1 ]; then
     exit 1
   }
 else
-  added="$(git diff --cached -U0 --diff-filter=ACM --no-color 2>/dev/null)"
+  added="$(git diff --cached -U0 --diff-filter=ACMR --no-color 2>/dev/null)"
 fi
 [ -z "$added" ] && exit 0
 
