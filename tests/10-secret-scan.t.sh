@@ -159,6 +159,37 @@ t_case_secret_scan() {
   _ss_allows "ordinary code with no credential keys" "main.rs" \
     'fn main() { println!("hello"); }'
 
+  # ---- RENAMED FILES: an added secret in a renamed file must be scanned ------
+  # --diff-filter=ACM dropped status R, so editing a file while renaming it hid
+  # the added line from both the staged scan and --commits mode. The planted
+  # value is assembled at runtime; the control renames with no added secret.
+  _rn_secret="AKIA""EXAMPLEFAKEKEY42"
+  _rn_repo() {  # $1 = line added during the rename; leaves the rename staged
+    _r="$(gg_mktemp_repo)" || return 1
+    i=1; : > "$_r/old.txt"
+    while [ "$i" -le 20 ]; do printf 'line %s of a stable file body\n' "$i" >> "$_r/old.txt"; i=$((i+1)); done
+    ( cd "$_r" && git add old.txt && git -c user.name=t -c user.email=t@t commit -qm base --no-gpg-sign ) >/dev/null 2>&1
+    ( cd "$_r" && git mv old.txt new.txt ) >/dev/null 2>&1
+    [ -n "$1" ] && printf '%s\n' "$1" >> "$_r/new.txt"
+    ( cd "$_r" && git add -A ) >/dev/null 2>&1
+    printf '%s' "$_r"
+  }
+  _r="$(_rn_repo "const K = \"${_rn_secret}\";")"
+  ( cd "$_r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" >/dev/null 2>&1 ); _got=$?
+  if [ "$_got" = "1" ]; then t_ok "blocks: secret added while renaming (staged)"
+  else t_fail "blocks: secret added while renaming (staged) (expected rc=1, got rc=$_got)"; fi
+  ( cd "$_r" && git -c user.name=t -c user.email=t@t commit -qm rename --no-gpg-sign ) >/dev/null 2>&1
+  _head="$(cd "$_r" && git rev-parse HEAD)"
+  ( cd "$_r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" --commits "$_head" >/dev/null 2>&1 ); _got=$?
+  if [ "$_got" = "1" ]; then t_ok "blocks: secret added while renaming (--commits)"
+  else t_fail "blocks: secret added while renaming (--commits) (expected rc=1, got rc=$_got)"; fi
+  gg_rmrepo "$_r"
+  _r="$(_rn_repo "a harmless added line")"
+  ( cd "$_r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" >/dev/null 2>&1 ); _got=$?
+  if [ "$_got" = "0" ]; then t_ok "allows: rename with a harmless edit (staged)"
+  else t_fail "allows: rename with a harmless edit (staged) (expected rc=0, got rc=$_got)"; fi
+  gg_rmrepo "$_r"
+
   # ---- portability: no `grep -e` anywhere in the scanner --------------------
   # The "PEM private key header" case above passed for months while the detector
   # was FAILING OPEN in the field: it used `grep -Eq -e PATTERN` (needed only
