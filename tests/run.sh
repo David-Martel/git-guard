@@ -103,6 +103,7 @@ printf '  caps:    ast-grep=%s shellcheck=%s ruff=%s python=%s pyyaml=%s docker=
 # --- the ordered case list ---
 GG_CASES="
 t_case_blockers
+t_case_structured_data_encoding
 t_case_warn
 t_case_autofix
 t_case_precommit

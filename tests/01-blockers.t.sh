@@ -103,3 +103,81 @@ t_case_blockers() {
     t_skip "invalid YAML: python+pyyaml required (pyyaml absent → YAML validation self-skips)"
   fi
 }
+
+# JSON/YAML are byte-encoded interchange formats. Valid UTF-8 and a UTF-8 BOM
+# must not be rejected because the user's default text encoding is ASCII/cp1252.
+# Malformed syntax and invalid bytes must still block under that same locale.
+# Run the real QA gate, with process-local Python locale controls only; neither
+# the installed hooks nor the machine/user environment is changed by this case.
+t_case_structured_data_encoding() {
+  t_begin "01 structured-data byte encodings (real gate, non-UTF-8 locale)"
+  if ! gg_has_python; then
+    t_skip "structured-data encoding: python absent"
+    return
+  fi
+  for data_kind in json yaml; do
+    if [ "$data_kind" = yaml ] && ! gg_has_pyyaml; then
+      t_skip "structured-data encoding YAML: pyyaml absent"
+      continue
+    fi
+    r="$(gg_mktemp_repo)"
+    printf 'validate.json=block\nvalidate.yaml=block\nastgrep=off\n' > "$r/.qa-gate.conf"
+    for data_variant in utf8 utf8-bom malformed-syntax malformed-bytes; do
+      # ASCII Python source writes exact fixture bytes, regardless of the
+      # interpreter's or shell's own encoding. U+201D includes 0x9D in UTF-8,
+      # which is undefined in cp1252 and cannot decode as ASCII.
+      if ! "$(gg_python)" - "$r/encoded.$data_kind" "$data_kind" "$data_variant" <<'PY'
+import pathlib
+import sys
+
+target, kind, variant = sys.argv[1:]
+if kind == "json":
+    data = '{"label":"right \u201d quote"}\n'.encode("utf-8")
+    broken_syntax = b'{"label": [1,}\n'
+    broken_bytes = b'{"label":"\xff"}\n'
+else:
+    data = 'label: "right \u201d quote"\n'.encode("utf-8")
+    broken_syntax = b'label: [unterminated\n'
+    broken_bytes = b'label: "\xff"\n'
+if variant == "utf8-bom":
+    data = b"\xef\xbb\xbf" + data
+elif variant == "malformed-syntax":
+    data = broken_syntax
+elif variant == "malformed-bytes":
+    data = broken_bytes
+pathlib.Path(target).write_bytes(data)
+PY
+      then
+        t_fail "$data_kind $data_variant: fixture generation failed"
+        continue
+      fi
+      ( cd "$r" && git add -A )
+      logf="$(gg_tmp_log)"
+      # Disables Python UTF-8/coercion overrides on Linux and Windows only for
+      # this gate invocation. Locale-dependent open() then fails the positives;
+      # byte readers let json/PyYAML perform their format-specific decoding.
+      PYTHONUTF8=0 PYTHONCOERCECLOCALE=0 LC_ALL=C gg_run_gate_log "$r" "$logf"; rc=$?
+      case "$data_variant" in
+        utf8|utf8-bom)
+          t_expect_rc 0 "$rc" "$data_kind $data_variant valid bytes pass in non-UTF-8 locale"
+          if grep -q 'invalid JSON\|invalid YAML' "$logf"; then
+            t_fail "$data_kind $data_variant: valid data reported invalid"
+          else
+            t_ok "$data_kind $data_variant: no invalid-data warning"
+          fi
+          ;;
+        *)
+          t_expect_rc 1 "$rc" "$data_kind $data_variant invalid data blocks"
+          case "$data_kind" in json) data_label=JSON ;; *) data_label=YAML ;; esac
+          if grep -q "invalid $data_label: encoded.$data_kind" "$logf"; then
+            t_ok "$data_kind $data_variant: diagnostic names the invalid file"
+          else
+            t_fail "$data_kind $data_variant: missing invalid-file diagnostic"
+          fi
+          ;;
+      esac
+      rm -f "$logf"
+    done
+    gg_rmrepo "$r"
+  done
+}

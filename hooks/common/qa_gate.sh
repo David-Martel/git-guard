@@ -1046,7 +1046,7 @@ qa_check_validate() {
     if [ -n "$jf" ]; then
       for f in $jf; do
         [ -f "$REPO_ROOT/$f" ] || continue
-        if ! "$QA_PY" -c "import json,sys; json.load(open(sys.argv[1]))" "$REPO_ROOT/$f" >/dev/null 2>&1; then
+        if ! "$QA_PY" -c "import json,sys; json.loads(open(sys.argv[1],'rb').read())" "$REPO_ROOT/$f" >/dev/null 2>&1; then
           if [ "$jmode" = "block" ]; then
             qa_block "invalid JSON: $f."
           else
@@ -1062,7 +1062,7 @@ qa_check_validate() {
     if [ -n "$yf" ] && "$QA_PY" -c "import yaml" >/dev/null 2>&1; then
       for f in $yf; do
         [ -f "$REPO_ROOT/$f" ] || continue
-        if ! "$QA_PY" -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" "$REPO_ROOT/$f" >/dev/null 2>&1; then
+        if ! "$QA_PY" -c "import yaml,sys; yaml.safe_load(open(sys.argv[1],'rb').read())" "$REPO_ROOT/$f" >/dev/null 2>&1; then
           if [ "$ymode" = "block" ]; then
             qa_block "invalid YAML: $f."
           else
