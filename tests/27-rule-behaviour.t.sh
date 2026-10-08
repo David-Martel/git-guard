@@ -22,6 +22,9 @@
 # they print a [skip] with the reason on every run and are listed as such in
 # docs/RULES.md. They are NOT asserted to stay quiet, because that would
 # enshrine the defect.
+# Rules with no sound failing/passing pair use _rb_known_gap instead. In
+# particular, safe code must not become a must-fire input just because an
+# existing rule overmatches it. Correcting that rule must remain possible.
 #
 # Requirement: dtm-claude docs/reference/DOCUMENTATION_AND_TEST_STANDARD.md §1
 # ("every rule and gate ships with at least one input that must fail and one
@@ -73,6 +76,12 @@ _rb_row() {
 _rb_inert() {
   _RB_SEEN="$_RB_SEEN $1"
   t_skip "$1 cannot fire: $2"
+}
+
+# _rb_known_gap RULE REASON — do not enforce a false positive as expected safety.
+_rb_known_gap() {
+  _RB_SEEN="$_RB_SEEN $1"
+  t_skip "$1 has no sound failing/passing pair: $2"
 }
 
 # _rb_fires_only RULE PATH FAILING REASON — the rule fires on its failing input
@@ -199,9 +208,9 @@ except OSError:
   _rb_row rust/avoid-static-mut.yml src/lib.rs \
     'static mut C: u32 = 0;' \
     'static C: AtomicU32 = AtomicU32::new(0);'
-  _rb_row rust/avoid-sync-mutex-in-async.yml src/lib.rs \
-    'fn f() { let m = std::sync::Mutex::new(0); }' \
-    'fn f() { let m = tokio::sync::Mutex::new(0); }'
+  _rb_fires_only rust/avoid-sync-mutex-in-async.yml src/lib.rs \
+    'async fn f() { let m = std::sync::Mutex::new(0); let guard = m.lock().unwrap(); task().await; drop(guard); }' \
+    "the rule also flags ordinary synchronous std::sync::Mutex use; no safe synchronous passing input is established"
   _rb_row rust/avoid-unwrap.yml src/lib.rs \
     'fn f(x: Option<u8>) -> u8 { x.unwrap() }' \
     'fn f(x: Option<u8>) -> u8 { x.unwrap_or(0) }'
@@ -241,9 +250,8 @@ fn f() {}'
   _rb_row rust/panics/expect-call.yml src/lib.rs \
     'fn f(x: Option<u8>) -> u8 { x.expect("present") }' \
     'fn f(x: Option<u8>) -> Option<u8> { Some(x?) }'
-  _rb_row rust/panics/fixed-size-init.yml src/lib.rs \
-    'fn f() { let a: [u8; 4] = [0; 4]; }' \
-    'fn f() { let a = vec![0u8; 4]; }'
+  _rb_known_gap rust/panics/fixed-size-init.yml \
+    "typed array initialization is compile-time size checked; matching a safe [0; 4] array is a false positive, not a panic hazard"
   _rb_row rust/panics/library-unwrap.yml src/lib.rs \
     'fn f(x: Option<u8>) -> u8 { x.unwrap() }' \
     'fn f(x: Option<u8>) -> u8 { x.unwrap_or(0) }'
