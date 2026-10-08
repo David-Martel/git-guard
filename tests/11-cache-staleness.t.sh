@@ -92,7 +92,10 @@ EOS
       t_fail "ordering: could not confirm the capability check precedes the '-newer' query (flag=$_flag_line newer=$_newer_line)"
     fi
   else
-    t_ok "ordering: no unguarded '-newer' freshness query present"
+    # No '-newer' query at all means the freshness mechanism changed. Passing
+    # here would let this case go green without checking anything; fail so the
+    # case is rewritten against the new mechanism.
+    t_fail "ordering: no '-newer' freshness query found in qa_gate.sh; update this case to the new staleness check"
   fi
 
   return 0

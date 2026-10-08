@@ -4,3 +4,7 @@ severity: warning
 message: "Use let/const instead of var"
 rule:
   pattern: "var $NAME = $VALUE"
+note: |
+  var is function-scoped and hoisted: the binding leaks out of the block that
+  declares it and reads as undefined before assignment. let and const are
+  block-scoped and throw on use before declaration.

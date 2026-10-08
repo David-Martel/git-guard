@@ -1,5 +1,16 @@
 #!/bin/sh
-# Category 14 — optional Git-config post-commit fallback and chain precedence.
+# Category 14 — post-commit downstream chaining: precedence and non-fatality.
+#
+# Behaviour protected: hooks/post-commit chains at most one downstream hook, in
+# the order GIT_GUARD_DOWNSTREAM_POST_COMMIT > repo .git-guard/post-commit.local
+# > git config gitGuard.downstreamPostCommit; argument boundaries survive; a
+# missing or non-executable configured path is ignored; a failing downstream
+# never fails the hook.
+#
+# What a failure means: post-commit runs AFTER the commit landed, so a non-zero
+# exit cannot undo it and only makes git report an error for a commit that
+# exists; a precedence change silently runs a different repo hook. Introduced
+# in #20. The landed-SHA message itself is covered in tests/28-gate-controls.t.sh.
 # shellcheck shell=sh
 
 gg_postcommit_fixture_run() {

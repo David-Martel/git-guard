@@ -4,3 +4,7 @@ severity: info
 message: "Review whether this let binding can be const"
 rule:
   pattern: "let $NAME = $VALUE"
+note: |
+  A const binding tells readers and the compiler that the name is never
+  reassigned. Severity is info because the rule cannot see whether the binding
+  is reassigned later; it asks for a review, not a change.

@@ -1,5 +1,17 @@
 #!/bin/sh
-# Category 2 (flag/warn) + Category 3 (auto-fix). Sourced by run.sh.
+# Category 2 (warn) + Category 3 (opt-in auto-fix).
+#
+# Behaviour protected: a warn-level ast-grep rule (avoid-println) prints its
+# finding and does NOT block; with astgrep_autofix=on a fixable rule rewrites the
+# staged file and re-stages it.
+#
+# What a failure means: a warn rule that blocks bricks work-in-progress commits
+# in every repo (the anti-brick policy, README.md); an auto-fix that rewrites
+# without re-staging commits the unfixed version while the working tree holds
+# the fixed one. Auto-fix stays opt-in because the println! -> tracing::info!
+# fix does not compile in a crate without `tracing` (hooks/common/qa-gate.conf).
+#
+# Sourced by run.sh.
 # shellcheck shell=sh
 
 # Category 2 — a warn-level rule warns WITHOUT blocking (exit 0 + message).

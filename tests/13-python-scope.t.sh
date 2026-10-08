@@ -1,5 +1,18 @@
 #!/bin/sh
 # Category 13 — staged-file type checks honor pyproject project scope.
+#
+# Behaviour protected: mypy and basedpyright receive only the staged files that
+# their own [tool.mypy].files / [tool.basedpyright].include / exclude admit; a
+# blocking checker's failure still blocks under comma-separated, exclude-only
+# and tomli-fallback scopes; a scope that cannot be read (no TOML parser,
+# malformed TOML) blocks a checker configured as `block` instead of skipping it.
+#
+# What a failure means: explicit paths override a checker's project scope, so a
+# leak type-checks files the repository excluded (the fixture's ROS node imports
+# a module that exists only on the robot) and blocks commits the repo's own CI
+# accepts; a silent skip turns a configured block into a check that cannot
+# fail. Introduced in #18; documented in docs/QA_TOOLING.md section 2.
+#
 # Sourced by run.sh; helpers from lib.sh.
 # shellcheck shell=sh
 

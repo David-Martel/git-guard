@@ -1,5 +1,17 @@
 #!/bin/sh
-# The optional native inventory must have executable filesystem qualification.
+# Category 23 — the optional native reserved-path inventory
+# (hooks/common/reserved_path_inventory.rs) is qualified before the hook uses it.
+#
+# Behaviour protected: the Rust source's own filesystem fixtures compile with
+# warnings denied and pass; formatting is clean; a repository cannot select the
+# compiler through rust-toolchain files or a repo-local PATH entry; an
+# unavailable or failing toolchain falls back to the POSIX scan without
+# downloading or blocking; the hook's runtime build caps lints at warn.
+#
+# What a failure means: the hook compiles and runs this helper inside every
+# repository on commit. A repo-selected compiler is code execution chosen by the
+# repository; a build that denies warnings turns a new compiler lint into a
+# blocked commit everywhere.
 # shellcheck shell=sh
 
 t_case_reserved_path_inventory() {

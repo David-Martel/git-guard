@@ -1,7 +1,19 @@
 #!/bin/sh
-# Category 1 — blockers fire (exit non-zero). Sourced by run.sh; helpers from
-# lib.sh. Each fixture is generated INSIDE a throwaway temp repo at run time so
-# no planted secret / invalid file is ever committed into git-guard itself.
+# Category 1 — the default BLOCK checks refuse their failing input (exit 1).
+#
+# Behaviour protected: qa_gate.sh blocks the ast-grep BLOCK trio
+# (avoid-static-mut, no-glob-reexport, unsafe-with-panic), invalid JSON and,
+# when validate.yaml=block, invalid YAML; secret_scan.sh blocks a provider-format
+# key. Each block message names its rule, because the operator acts on the name.
+#
+# What a failure means: a check that README.md ("The anti-brick policy") lists
+# as BLOCK lets its target into a commit in every repo that uses the installed
+# release. The passing inputs for these checks are in tests/28-gate-controls.t.sh
+# and tests/27-rule-behaviour.t.sh.
+#
+# Sourced by run.sh; helpers from lib.sh. Each fixture is generated INSIDE a
+# throwaway temp repo at run time so no planted secret / invalid file is ever
+# committed into git-guard itself.
 # shellcheck shell=sh
 
 t_case_blockers() {

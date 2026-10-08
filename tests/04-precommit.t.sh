@@ -1,5 +1,15 @@
 #!/bin/sh
 # Category 4 — pre-commit blocking, end-to-end through a REAL `git commit`.
+#
+# Behaviour protected: with hooks/ as core.hooksPath, a BLOCK-trio violation
+# leaves NO commit behind, and a clean docs change lands exactly one commit.
+# Categories 1 and 28 call qa_gate.sh directly; this case proves hooks/pre-commit
+# passes the gate's exit code through to git.
+#
+# What a failure means: the gate prints its BLOCKED message while the commit
+# lands anyway. IRON RULE 1 in docs/GIT_COMMIT_SAFETY.md depends on a refused
+# commit really being refused.
+#
 # Installs the hooks LOCALLY (per-repo core.hooksPath -> git-guard/hooks); never
 # touches the global hooks config. Sourced by run.sh.
 # shellcheck shell=sh
