@@ -471,6 +471,17 @@ hyg_delete_branch() {
     if [ -z "$_b" ]; then _b="$(hyg_preserve "$1" "$2")" || return 1; fi
   fi
   hyg_test_pause delete
+  # A same-tip checkout does not move the ref. Include the primary and every
+  # registered worktree (locked or offline too); failed inspection retains it.
+  _delete_worktrees="$(git worktree list --porcelain 2>/dev/null)" || return 1
+  [ -n "$_delete_worktrees" ] || return 1
+  if printf '%s\n' "$_delete_worktrees" | grep -Fqx "branch refs/heads/$1"; then
+    hyg_say "git-guard hygiene: branch $1 kept (checked out since inspection)"
+    return 1
+  else
+    _delete_scan_status=$?
+    [ "$_delete_scan_status" = "1" ] || return 1
+  fi
   git update-ref -d "refs/heads/$1" "$2" >/dev/null 2>&1 || return 1
   git config --remove-section "branch.$1" >/dev/null 2>&1 || :
   [ -z "$_b" ] || echo "      (bundle kept: $_b)"
@@ -546,8 +557,14 @@ hyg_drain() {
     hyg_test_pause remove
     _now_head="$(git -C "$_path" rev-parse -q --verify HEAD 2>/dev/null || true)"
     _now_br="$(git -C "$_path" symbolic-ref -q --short HEAD 2>/dev/null || true)"
+    _now_status="$(git -C "$_path" status --porcelain --ignored --untracked-files=all 2>/dev/null)" || {
+      echo "  keep   $_path  (cannot refresh worktree custody)"; continue
+    }
+    if [ "$_allow_ignored" = "1" ]; then
+      _now_status="$(printf '%s\n' "$_now_status" | sed '/^!!/d')"
+    fi
     if [ "$_now_head" != "$_head" ] || [ "$_now_br" != "$_br" ] ||
-       [ -n "$(git -C "$_path" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
+       [ -n "$_now_status" ] || hyg_op_in_progress "$_gd"; then
       echo "  keep   $_path  (changed since inspection; may be in use)"; continue
     fi
     if ! git worktree remove "$_path" >/dev/null 2>&1; then
