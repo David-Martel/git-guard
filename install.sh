@@ -41,6 +41,9 @@
 #   6. git config --global core.hooksPath ~/.git-hooks (account-wide).
 #   7. Symlink ~/.agents/QA_TOOLING.md, ~/.agents/GIT_COMMIT_SAFETY.md ->
 #      ~/.local/share/git-guard/current/docs/*  (originals backed up once).
+#   7b. Set recommended GLOBAL git config keys that are still unset
+#      (fetch.prune, fetch.pruneTags, worktree.guessRemote, rerere.enabled,
+#      hygiene.maxWorktrees, hygiene.maxStaleBranches); --no-git-defaults skips.
 #   8. With --rules-dir DIR: write `rules_dir=DIR` into the PERSISTENT overlay
 #      (~/.local/share/git-guard/qa-gate.conf.local) AND copy it into the
 #      just-materialized version dir immediately, so it takes effect now
@@ -52,7 +55,7 @@
 #
 # Usage:
 #   ./install.sh [--to <tag>] [--store <dir>] [--rules-dir <abs-path>]
-#                [--hooks-link <path>] [--dry-run]
+#                [--hooks-link <path>] [--no-git-defaults] [--dry-run]
 #   ./install.sh --dev-symlink [--rules-dir <abs-path>] [--hooks-link <path>] [--dry-run]
 #   ./install.sh --uninstall            # restore the pre-git-guard backup
 #   ./install.sh --status               # delegate to: bin/git-guard status
@@ -77,6 +80,7 @@ RULES_DIR=""
 TO_TAG=""
 WINDOWS_NATIVE_LINKS=0
 WINDOWS_LINK_TRANSACTION=""
+GIT_DEFAULTS=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -86,6 +90,7 @@ while [ $# -gt 0 ]; do
     --hooks-link) HOME_HOOKS="${2:-}"; shift 2 ;;
     --dev-symlink) DEV_SYMLINK=1; shift ;;
     --dry-run) DRY=1; shift ;;
+    --no-git-defaults) GIT_DEFAULTS=0; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     --status) exec sh "$GG_ROOT/bin/git-guard" status ;;
     -h|--help) sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -426,6 +431,18 @@ if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then
   run "git config --global core.hooksPath \"$HOME_HOOKS\"" || exit 2
   echo "  core.hooksPath = $HOME_HOOKS"
   finish_windows_link_transaction || exit 2
+fi
+
+# Recommended global git defaults (fetch pruning, rerere, hygiene.* limits).
+# Only keys that are UNSET are written, so an operator's choice always wins;
+# --no-git-defaults skips the step. See docs/QA_TOOLING.md §12.
+if [ "$GIT_DEFAULTS" = "1" ] && [ -f "$GG_HOOKS/common/hygiene.sh" ]; then
+  echo "  global git defaults (unset keys only):"
+  if [ "$DRY" = "1" ]; then
+    sh "$GG_HOOKS/common/hygiene.sh" defaults --dry-run
+  else
+    sh "$GG_HOOKS/common/hygiene.sh" defaults
+  fi
 fi
 
 # Optional private-rules overlay.

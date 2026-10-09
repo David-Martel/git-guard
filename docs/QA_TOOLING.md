@@ -95,6 +95,8 @@ branch. "Unset" means the default behaviour applies.
 | `GIT_GUARD_BACKEND`, `GIT_GUARD_IMAGE` | `bin/git-guard-run` | Force the `docker` / `wsl` / `native` backend, and set the Docker image tag (default `git-guard:local`). The README documents these. |
 | `GIT_GUARD_STORE` | `install.sh` | Version store root (default `~/.local/share/git-guard`). Same as `--store`. |
 | `GIT_GUARD_HOOKS_LINK` | `install.sh` | Path of the hooks symlink that `core.hooksPath` is set to (default `~/.git-hooks`). Same as `--hooks-link`. |
+| `GIT_GUARD_HYGIENE` | `hooks/common/hygiene.sh` (via `pre-push`, `post-checkout`) | Backlog-limit mode for this invocation: `off`, `warn` or `enforce`. Beats `git config hygiene.mode`; an unknown value means `warn`. See §12. |
+| `GIT_GUARD_HYGIENE_GH` | `hooks/common/hygiene.sh` | `gh` executable for the open-PR count (tests stub it). |
 | `GIT_GUARD_TEST_PAUSE_AFTER_RESOLVE` | `hooks/pre-commit` | **Test-only** seam (seconds to sleep after the version resolve). Never set it in real use. |
 
 `install.sh` flags (`./install.sh --help` prints the header). `git-guard install`
@@ -108,6 +110,7 @@ passes all of its arguments straight to `install.sh` (`bin/git-guard`
 | `--rules-dir <abs-path>` | Versioned install: writes `rules_dir=` into the persistent overlay `<store>/qa-gate.conf.local`, which is carried across updates, and copies it into the installed version. With `--dev-symlink` it writes only the live checkout's gitignored `hooks/common/qa-gate.conf.local` (`install.sh:314-320`): no persistent overlay is created, so a later switch to a versioned install does **not** keep it. |
 | `--hooks-link <path>` | Hooks symlink path (overrides `GIT_GUARD_HOOKS_LINK`). |
 | `--dev-symlink` | Legacy mode: links the hooks at this live checkout. Only for git-guard's own development. |
+| `--no-git-defaults` | Skips setting the recommended global git config (§12). By default the installer sets each listed key only when it is unset. |
 | `--dry-run` | Prints every mutation as `DRY: …` and changes nothing. |
 | `--status` | Runs `bin/git-guard status` (install state, version, resolved rules dir). |
 | `--uninstall` | Removes the `~/.git-hooks` symlink and restores its pre-git-guard backup, removes the `~/.agents/QA_TOOLING.md` and `GIT_COMMIT_SAFETY.md` symlinks and restores their backups. It leaves `core.hooksPath` and the materialized versions under the store in place (`install.sh:110-124`). |
@@ -640,3 +643,69 @@ values, and what was skipped.
 disable it. A malformed `.qa-gate.conf` also disables it (fail closed), and the
 normal gate then reports the error.
 
+## 12. Backlog hygiene limits
+
+Owner rule (2026-10-09): clear your merged worktrees, branches and PRs before
+starting new work. `hooks/common/hygiene.sh` enforces it per repository, on
+each host, at the one point where it cannot strand work: **a push that creates
+a NEW branch on the remote is refused while the repo is over a limit.**
+Commits, pushes of existing branches, deletes, tags and `preserve/*` pushes
+are never blocked. `post-checkout` prints a warning after `git worktree add`
+when the repo is over a limit, and never fails.
+
+| Key (`git config`) | Default | Counts |
+|---|---|---|
+| `hygiene.mode` | `enforce` | `enforce`, `warn` or `off` (`GIT_GUARD_HYGIENE` beats it) |
+| `hygiene.maxWorktrees` | 3 | linked worktrees, primary excluded; `0` turns the check off |
+| `hygiene.maxStaleBranches` | 5 | local branches whose upstream is gone or whose tip is merged into `<remote>/HEAD`; `main`, `master`, `preserve/*` and branches checked out in a worktree are excluded; `0` is off |
+| `hygiene.maxOpenPRs` | unset (off) | open non-bot PRs on the GitHub remote, through `gh api` REST; set it to enable |
+| `hygiene.exemptLockPrefix` | none | multi-valued; a worktree locked with a reason that starts with one of these is infrastructure (for example `vigil.operator-release/`, `vigil.fleet-build/`) and is never counted or drained |
+| `hygiene.baseRef` | `<remote>/HEAD` | integration ref when `refs/remotes/<remote>/HEAD` is not set |
+| `hygiene.preserveDir` | `${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve` | where `drain` writes bundles |
+
+Repo-local values beat global ones (git's own precedence), so a repo with a
+legitimate need sets `git config hygiene.maxWorktrees 6` locally. Anything
+that cannot be measured (no base ref, no `gh`, offline, not GitHub) is
+skipped, never blocked.
+
+**Escape hatches.** `GIT_GUARD_HYGIENE=warn git push …` for one push,
+`GIT_GUARD_HYGIENE=off` to skip, `GIT_GUARD=0` for all hooks. Never the
+hook-skip flag.
+
+**Draining.** `git-guard hygiene report` prints counts against limits;
+`check` exits 1 when over. `git-guard hygiene drain` is a dry run; `--apply`
+removes only what passes every check:
+
+- the worktree is not locked (or exempt), has no staged, unstaged or untracked
+  changes, and no merge, rebase, cherry-pick, revert or bisect in progress;
+- it has no ignored files, unless `--allow-ignored` (`git worktree remove`
+  deletes ignored files);
+- its tip is an ancestor of the base, or every commit is patch-equivalent, or
+  every file it touched has the same content on the base (squash merge);
+- no stash was made on the branch, and its upstream, if still present, did not
+  move after the merge (LEARNED_RULES 48).
+
+A tip that is not an ancestor is preserved before anything is removed: it is
+pinned to a temporary ref, bundled, verified with `git bundle verify`, a
+`.sha256` file is written beside the bundle, and only then is the temporary ref
+deleted. If any of those steps fails, nothing is removed. Branches are deleted
+with `git branch -d`, or for squash-merged work with a compare-and-delete of the
+exact tip that was checked. A branch whose upstream is gone but whose commits
+are not on the base is bundled and kept for its owner. Removal uses plain
+`git worktree remove`, never force. Remote branches are left to GitHub's
+`delete_branch_on_merge`. Missing worktree registrations (`prunable`) are only
+reported, because the drive may simply be offline.
+
+**Global defaults.** `install.sh` (and `git-guard hygiene defaults`) sets these
+global keys only when they are unset: `fetch.prune=true`,
+`fetch.pruneTags=true`, `worktree.guessRemote=true`, `rerere.enabled=true`,
+`hygiene.maxWorktrees=3`, `hygiene.maxStaleBranches=5`.
+`gc.worktreePruneExpire` is deliberately left alone: shortening it prunes the
+registration of a worktree whose drive is merely offline.
+
+**Relation to vigil-utils.** `tools/backlog_caps/report.py` with
+`policy/backlog-caps.toml` is the fleet-wide, lane-attributed GitHub report
+(per-lane PR and worktree caps, remote stale branches). git-guard is the
+local, per-host enforcement half. The units differ: `hygiene.maxWorktrees`
+counts every linked worktree of one repo on one host;
+`agent_worktrees_per_repo` and `active_worktrees_per_lane` are lane-attributed.

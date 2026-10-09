@@ -1,0 +1,513 @@
+#!/bin/sh
+#
+# git-guard hygiene — worktree / stale-branch / open-PR backlog limits.
+#
+# Owner rule (2026-10-09): clear the worktree, branch and PR backlog before
+# starting new work, with enforced limits. This file is the local, per-host,
+# per-repo half of that rule; vigil-utils `tools/backlog_caps/report.py` is the
+# fleet-wide, lane-attributed GitHub report (see docs/QA_TOOLING.md §12).
+#
+# Subcommands:
+#   pre-push REMOTE URL    called by hooks/pre-push with the ref list on stdin.
+#                          Blocks ONLY a push that creates a NEW branch on the
+#                          remote while the repo is over a limit. Commits,
+#                          existing-branch pushes, deletes and tags never block.
+#   post-checkout P N F    called by hooks/post-checkout; warns after
+#                          `git worktree add` when over a limit. Always exits 0.
+#   report                 print counts vs limits and what is drainable (exit 0).
+#   check                  same counts, exit 1 when any limit is exceeded.
+#   drain [--dry-run|--apply] [--allow-ignored]
+#                          list (default) or remove merged, clean, unlocked
+#                          worktrees and stale branches. Unique work is bundled,
+#                          never deleted.
+#   defaults [--dry-run]   set the recommended GLOBAL git config, only for keys
+#                          that are unset (install.sh calls this).
+#
+# Configuration (git config; repo-local beats global by git's own precedence):
+#   hygiene.mode               enforce (default) | warn | off
+#   hygiene.maxWorktrees       linked worktrees per repo, primary excluded (3; 0 = off)
+#   hygiene.maxStaleBranches   local branches gone upstream or merged (5; 0 = off)
+#   hygiene.maxOpenPRs         open non-bot PRs on the GitHub remote (unset = off)
+#   hygiene.exemptLockPrefix   multi-valued; worktrees locked with a reason that
+#                              starts with one of these are infrastructure and
+#                              are never counted or drained
+#   hygiene.baseRef            integration ref when <remote>/HEAD is unknown
+#   hygiene.preserveDir        where drain writes bundles of unique work
+#                              (default ${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve)
+# Environment:
+#   GIT_GUARD=0                skip all git-guard hooks (existing convention)
+#   GIT_GUARD_HYGIENE          off | warn | enforce, beats hygiene.mode
+#   GIT_GUARD_HYGIENE_GH       gh executable to use (tests stub it)
+#
+# POSIX sh, no dependencies beyond git; `gh` is optional and only consulted when
+# hygiene.maxOpenPRs is set. Any failure to measure a dimension skips it: this
+# gate must never block a push on missing data.
+
+set -u
+
+HYG_DEFAULT_MAX_WORKTREES=3
+HYG_DEFAULT_MAX_STALE=5
+
+hyg_say() { printf '%s\n' "$*" >&2; }
+
+# hyg_int KEY DEFAULT — an integer config value, or DEFAULT when unset/invalid.
+hyg_int() {
+  _raw="$(git config --get "$1" 2>/dev/null || true)"
+  if [ -z "$_raw" ]; then printf '%s' "$2"; return 0; fi
+  if _v="$(git config --int --get "$1" 2>/dev/null)"; then printf '%s' "$_v"; return 0; fi
+  hyg_say "git-guard hygiene: $1='$_raw' is not an integer; using $2"
+  printf '%s' "$2"
+}
+
+# hyg_mode — off | warn | enforce (env beats config; unknown -> warn, loudly).
+hyg_mode() {
+  _m="${GIT_GUARD_HYGIENE:-}"
+  [ -n "$_m" ] || _m="$(git config --get hygiene.mode 2>/dev/null || true)"
+  [ -n "$_m" ] || _m=enforce
+  case "$_m" in
+    off|warn|enforce) printf '%s' "$_m" ;;
+    *) hyg_say "git-guard hygiene: unknown mode '$_m' (want off|warn|enforce); using warn"
+       printf 'warn' ;;
+  esac
+}
+
+# hyg_remote — the remote to measure against: $1 if given, else origin, else
+# the first configured remote. Empty when the repo has none.
+hyg_remote() {
+  if [ -n "${1:-}" ] && git config --get "remote.$1.url" >/dev/null 2>&1; then printf '%s' "$1"; return; fi
+  if git config --get remote.origin.url >/dev/null 2>&1; then printf 'origin'; return; fi
+  git remote 2>/dev/null | head -n1
+}
+
+# hyg_base REMOTE — the integration ref (refs/remotes/<r>/HEAD target, else
+# hygiene.baseRef, else <r>/main or <r>/master). Empty = unknown (the merged
+# test is then skipped, never guessed).
+hyg_base() {
+  _b=""
+  if [ -n "${1:-}" ]; then
+    _b="$(git symbolic-ref -q "refs/remotes/$1/HEAD" 2>/dev/null || true)"
+  fi
+  if [ -z "$_b" ]; then
+    _b="$(git config --get hygiene.baseRef 2>/dev/null || true)"
+    [ -n "$_b" ] && ! git rev-parse -q --verify "$_b^{commit}" >/dev/null 2>&1 && _b=""
+  fi
+  if [ -z "$_b" ] && [ -n "${1:-}" ]; then
+    for _c in main master; do
+      if git rev-parse -q --verify "refs/remotes/$1/$_c" >/dev/null 2>&1; then _b="refs/remotes/$1/$_c"; break; fi
+    done
+  fi
+  printf '%s' "$_b"
+}
+
+# hyg_worktrees — one line per LINKED worktree (primary excluded):
+#   <state>\t<path>\t<branch-or-empty>\t<head>\t<lock-reason>
+# state: live | exempt | prunable. Exempt = locked with a reason starting with
+# one of hygiene.exemptLockPrefix.
+hyg_worktrees() {
+  _prefixes="$(git config --get-all hygiene.exemptLockPrefix 2>/dev/null || true)"
+  git worktree list --porcelain 2>/dev/null | awk -v prefixes="$_prefixes" '
+    function flush() {
+      if (path != "" && n > 1) {
+        state = "live"
+        if (prunable) state = "prunable"
+        else if (locked) {
+          np = split(prefixes, p, "\n")
+          for (i = 1; i <= np; i++) if (p[i] != "" && index(reason, p[i]) == 1) state = "exempt"
+        }
+        printf "%s\t%s\t%s\t%s\t%s\n", state, path, branch, head, reason
+      }
+      path = ""; branch = ""; head = ""; reason = ""; locked = 0; prunable = 0
+    }
+    /^worktree / { flush(); n++; path = substr($0, 10); next }
+    /^HEAD /     { head = substr($0, 6); next }
+    /^branch /   { branch = substr($0, 8); sub(/^refs\/heads\//, "", branch); next }
+    /^locked/    { locked = 1; reason = substr($0, 8); next }
+    /^prunable/  { prunable = 1; next }
+    END { flush() }
+  '
+}
+
+# hyg_checked_out — branch names checked out in ANY worktree (incl. primary).
+hyg_checked_out() {
+  git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p'
+}
+
+# hyg_stale BASE — local branches whose upstream is gone or whose tip is
+# merged into BASE, excluding main/master, preserve/*, and any branch checked
+# out in a worktree (those are drained as worktrees). One line each:
+#   <reason>\t<branch>
+hyg_stale() {
+  _base="${1:-}"
+  _co="$(hyg_checked_out)"
+  _merged=""
+  if [ -n "$_base" ]; then
+    _merged="$(git for-each-ref --merged "$_base" --format='%(refname:short)' refs/heads/ 2>/dev/null || true)"
+  fi
+  git for-each-ref --format='%(refname:short)	%(upstream:track)' refs/heads/ 2>/dev/null |
+  while IFS='	' read -r _br _track; do
+    case "$_br" in main|master|preserve/*) continue ;; esac
+    if printf '%s\n' "$_co" | grep -qxF -- "$_br"; then continue; fi
+    if printf '%s\n' "$_merged" | grep -qxF -- "$_br"; then printf 'merged\t%s\n' "$_br"
+    elif [ "$_track" = "[gone]" ]; then printf 'gone\t%s\n' "$_br"
+    fi
+  done
+}
+
+# hyg_gh_slug URL — owner/repo for a github.com URL, else empty.
+hyg_gh_slug() {
+  case "${1:-}" in
+    *github.com[:/]*) _s="${1#*github.com[:/]}"; _s="${_s%.git}"; _s="${_s%/}"; printf '%s' "$_s" ;;
+    *) : ;;
+  esac
+}
+
+# hyg_open_prs URL — count of open non-bot PRs, or empty when unmeasurable
+# (no gh, not GitHub, offline, auth failure, timeout). REST, not GraphQL: the
+# account's GraphQL budget is shared by every agent.
+hyg_open_prs() {
+  _slug="$(hyg_gh_slug "${1:-}")"
+  [ -n "$_slug" ] || return 0
+  _gh="${GIT_GUARD_HYGIENE_GH:-gh}"
+  command -v "$_gh" >/dev/null 2>&1 || return 0
+  _to=""
+  command -v timeout >/dev/null 2>&1 && _to="timeout 15"
+  # shellcheck disable=SC2086  # _to is intentionally word-split (empty or 2 words)
+  _n="$($_to "$_gh" api "repos/$_slug/pulls?state=open&per_page=100" \
+        --jq '[.[] | select(.user.type != "Bot")] | length' 2>/dev/null)" || return 0
+  case "$_n" in ''|*[!0-9]*) return 0 ;; esac
+  printf '%s' "$_n"
+}
+
+# hyg_measure REMOTE URL WITH_PRS — sets HYG_WT_N HYG_WT_LIST HYG_ST_N
+# HYG_ST_LIST HYG_PR_N HYG_OVER (space-separated list of exceeded keys).
+hyg_measure() {
+  _remote="$(hyg_remote "${1:-}")"
+  _url="${2:-}"
+  [ -n "$_url" ] || { [ -n "$_remote" ] && _url="$(git config --get "remote.$_remote.url" 2>/dev/null || true)"; }
+  HYG_MAX_WT="$(hyg_int hygiene.maxWorktrees "$HYG_DEFAULT_MAX_WORKTREES")"
+  HYG_MAX_ST="$(hyg_int hygiene.maxStaleBranches "$HYG_DEFAULT_MAX_STALE")"
+  HYG_MAX_PR="$(hyg_int hygiene.maxOpenPRs 0)"
+  HYG_BASE="$(hyg_base "$_remote")"
+  HYG_WT_LIST="$(hyg_worktrees | awk -F '\t' '$1 == "live"')"
+  HYG_WT_N="$(printf '%s' "$HYG_WT_LIST" | grep -c . || true)"
+  HYG_ST_LIST="$(hyg_stale "$HYG_BASE")"
+  HYG_ST_N="$(printf '%s' "$HYG_ST_LIST" | grep -c . || true)"
+  HYG_PR_N=""
+  if [ "${3:-0}" = "1" ] && [ "$HYG_MAX_PR" -gt 0 ]; then HYG_PR_N="$(hyg_open_prs "$_url")"; fi
+  HYG_OVER=""
+  [ "$HYG_MAX_WT" -gt 0 ] && [ "$HYG_WT_N" -gt "$HYG_MAX_WT" ] && HYG_OVER="$HYG_OVER hygiene.maxWorktrees"
+  [ "$HYG_MAX_ST" -gt 0 ] && [ "$HYG_ST_N" -gt "$HYG_MAX_ST" ] && HYG_OVER="$HYG_OVER hygiene.maxStaleBranches"
+  [ -n "$HYG_PR_N" ] && [ "$HYG_PR_N" -gt "$HYG_MAX_PR" ] && HYG_OVER="$HYG_OVER hygiene.maxOpenPRs"
+  return 0
+}
+
+# hyg_explain LEVEL — the human message for an over-limit state.
+hyg_explain() {
+  _lvl="$1"
+  for _k in $HYG_OVER; do
+    case "$_k" in
+      hygiene.maxWorktrees)
+        hyg_say "git-guard hygiene $_lvl: $HYG_WT_N linked worktrees > hygiene.maxWorktrees=$HYG_MAX_WT"
+        printf '%s\n' "$HYG_WT_LIST" | awk -F '\t' 'NF { printf "    worktree %s  (%s)\n", $2, ($3 == "" ? "detached" : $3) }' >&2 ;;
+      hygiene.maxStaleBranches)
+        hyg_say "git-guard hygiene $_lvl: $HYG_ST_N stale local branches > hygiene.maxStaleBranches=$HYG_MAX_ST"
+        printf '%s\n' "$HYG_ST_LIST" | awk -F '\t' 'NF { printf "    branch %s  (%s)\n", $2, $1 }' >&2 ;;
+      hygiene.maxOpenPRs)
+        hyg_say "git-guard hygiene $_lvl: $HYG_PR_N open PRs > hygiene.maxOpenPRs=$HYG_MAX_PR (review and merge or close them)" ;;
+    esac
+  done
+  hyg_say "  Drain first:  git-guard hygiene drain --dry-run   (then --apply; unique work is bundled, never deleted)"
+  hyg_say "  Policy: clear your merged worktrees, branches and PRs before starting new work."
+}
+
+hyg_pre_push() {
+  [ "${GIT_GUARD:-1}" = "0" ] && return 0
+  _mode="$(hyg_mode)"
+  [ "$_mode" = "off" ] && return 0
+  _remote="${1:-}"; _url="${2:-}"
+  _new=""
+  while read -r _lref _lsha _rref _rsha; do
+    [ -n "${_rref:-}" ] || continue
+    case "$_rref" in refs/heads/preserve/*) continue ;; refs/heads/*) : ;; *) continue ;; esac
+    case "$_lsha" in *[!0]*) : ;; *) continue ;; esac     # delete
+    case "$_rsha" in *[!0]*) continue ;; esac              # existing branch
+    _new="$_new ${_rref#refs/heads/}"
+  done
+  [ -n "$_new" ] || return 0
+  hyg_measure "$_remote" "$_url" 1
+  [ -n "$HYG_OVER" ] || return 0
+  if [ "$_mode" = "warn" ]; then
+    hyg_explain WARN
+    hyg_say "  (GIT_GUARD_HYGIENE=warn: pushing new branch(es)$_new anyway)"
+    return 0
+  fi
+  hyg_explain BLOCK
+  hyg_say "  Refused: new branch(es)$_new. Existing branches, deletes and commits are never blocked."
+  hyg_say "  One push only: GIT_GUARD_HYGIENE=warn git push ...   Per repo: git config hygiene.<key> <n>."
+  hyg_say "  Do NOT use --no-verify."
+  return 1
+}
+
+hyg_post_checkout() {
+  [ "${GIT_GUARD:-1}" = "0" ] && return 0
+  # Only `git worktree add` (and clone): previous HEAD is the null ref, a
+  # branch checkout, and we are in a linked worktree. Ordinary checkouts stay
+  # silent and cost nothing.
+  case "${1:-x}" in *[!0]*) return 0 ;; esac
+  [ "${3:-}" = "1" ] || return 0
+  _gd="$(git rev-parse --git-dir 2>/dev/null)" || return 0
+  _cd="$(git rev-parse --git-common-dir 2>/dev/null)" || return 0
+  [ "$_gd" != "$_cd" ] || return 0
+  [ "$(hyg_mode)" = "off" ] && return 0
+  hyg_measure "" "" 0
+  [ -n "$HYG_OVER" ] || return 0
+  hyg_explain WARN
+  hyg_say "  Pushing a NEW branch from this repo is refused until the backlog is under the limit."
+  return 0
+}
+
+hyg_report() {
+  hyg_measure "" "" 1
+  _pr_limit="$HYG_MAX_PR"; [ "$_pr_limit" -gt 0 ] || _pr_limit="off"
+  echo "git-guard hygiene report: $(git rev-parse --show-toplevel 2>/dev/null)"
+  echo "  mode:              $(hyg_mode)"
+  echo "  base ref:          ${HYG_BASE:-<unknown: merged test skipped>}"
+  echo "  linked worktrees:  $HYG_WT_N (limit hygiene.maxWorktrees=$HYG_MAX_WT)"
+  printf '%s\n' "$HYG_WT_LIST" | awk -F '\t' 'NF { printf "    %s  (%s)\n", $2, ($3 == "" ? "detached" : $3) }'
+  hyg_worktrees | awk -F '\t' '$1 == "exempt" { printf "    [exempt] %s  (locked: %s)\n", $2, $5 }
+                                $1 == "prunable" { printf "    [prunable] %s  (registration only; confirm the path is really gone, then: git worktree prune)\n", $2 }'
+  echo "  stale branches:    $HYG_ST_N (limit hygiene.maxStaleBranches=$HYG_MAX_ST)"
+  printf '%s\n' "$HYG_ST_LIST" | awk -F '\t' 'NF { printf "    %s  (%s)\n", $2, $1 }'
+  echo "  open PRs:          ${HYG_PR_N:-<not measured>} (limit hygiene.maxOpenPRs=$_pr_limit)"
+  if [ -n "$HYG_OVER" ]; then echo "  OVER LIMIT:       $HYG_OVER"; echo "  next: git-guard hygiene drain --dry-run"
+  else echo "  within limits"; fi
+}
+
+# --- drain -------------------------------------------------------------------
+
+# hyg_op_in_progress GITDIR — true when a merge/rebase/cherry-pick/revert/bisect
+# is in progress in that worktree's git dir.
+hyg_op_in_progress() {
+  for _f in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG; do
+    [ -e "$1/$_f" ] && return 0
+  done
+  return 1
+}
+
+# hyg_integrated TIP BASE — prints how TIP is integrated into BASE
+# (ancestor | patch-equivalent | content-equivalent), or nothing.
+hyg_integrated() {
+  _tip="$1"; _base="$2"
+  [ -n "$_base" ] || return 0
+  if git merge-base --is-ancestor "$_tip" "$_base" 2>/dev/null; then printf 'ancestor'; return 0; fi
+  _cherry="$(git cherry "$_base" "$_tip" 2>/dev/null)" || return 0
+  if [ -n "$_cherry" ] && ! printf '%s\n' "$_cherry" | grep -q '^+'; then printf 'patch-equivalent'; return 0; fi
+  # Squash merge: every file the branch touched has the same content on BASE.
+  _mb="$(git merge-base "$_tip" "$_base" 2>/dev/null)" || return 0
+  _files="$(git diff --name-only "$_mb" "$_tip" 2>/dev/null)" || return 0
+  [ -n "$_files" ] || return 0
+  # shellcheck disable=SC2086  # path list; names with spaces fall through to "not integrated"
+  if printf '%s\n' "$_files" | grep -q ' '; then return 0; fi
+  # shellcheck disable=SC2086
+  if git diff --quiet "$_tip" "$_base" -- $_files 2>/dev/null; then printf 'content-equivalent'; fi
+}
+
+# hyg_remote_moved BRANCH BASE — true when BRANCH's upstream still exists and
+# its tip is neither the local tip nor integrated into BASE (someone, often a
+# bot, pushed after the merge: LEARNED_RULES 48).
+hyg_remote_moved() {
+  _up="$(git rev-parse -q --verify "$1@{upstream}" 2>/dev/null)" || return 1
+  [ "$_up" = "$(git rev-parse -q --verify "refs/heads/$1")" ] && return 1
+  [ -n "$(hyg_integrated "$_up" "$2")" ] && return 1
+  return 0
+}
+
+# hyg_stashed BRANCH — true when a stash entry was made on BRANCH.
+hyg_stashed() {
+  git stash list --format='%gs' 2>/dev/null | grep -qE "^(WIP on|On) $1:"
+}
+
+# hyg_sha256 FILE — hex sha256 of FILE, or failure when no tool is present.
+hyg_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else return 1
+  fi
+}
+
+# hyg_preserve NAME TIP — preserve TIP as a verified bundle and print its path.
+# `git bundle create <file> <raw-sha>` refuses ("empty bundle"), so TIP is
+# pinned to a temporary ref, the ref is bundled (minus BASE when that leaves
+# something to bundle), the bundle is verified, its sha256 is written beside it
+# as <bundle>.sha256, and only then is the temporary ref deleted. ANY failure
+# removes the partial files and returns 1: callers must then remove nothing.
+# Date-free, sha-qualified file name.
+hyg_preserve() {
+  _dir="$(git config --get hygiene.preserveDir 2>/dev/null || true)"
+  [ -n "$_dir" ] || _dir="${XDG_STATE_HOME:-$HOME/.local/state}/git-guard/preserve"
+  _repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")"
+  _slug="$(printf '%s' "$1" | tr '/' '-')"
+  _short="$(git rev-parse --short "$2" 2>/dev/null)" || return 1
+  _out="$_dir/$_repo/$_slug-$_short.bundle"
+  if [ -f "$_out" ] && [ -f "$_out.sha256" ] && git bundle verify -q "$_out" >/dev/null 2>&1 &&
+     [ "$(hyg_sha256 "$_out")" = "$(awk '{print $1}' "$_out.sha256")" ]; then
+    printf '%s' "$_out"; return 0
+  fi
+  mkdir -p "$_dir/$_repo" 2>/dev/null || return 1
+  _tmpref="refs/git-guard-preserve/$_slug"
+  git update-ref "$_tmpref" "$2" 2>/dev/null || return 1
+  _ok=0
+  if { [ -n "$HYG_BASE" ] && git bundle create -q "$_out" "$_tmpref" "^$HYG_BASE" >/dev/null 2>&1; } ||
+     git bundle create -q "$_out" "$_tmpref" >/dev/null 2>&1; then
+    if git bundle verify -q "$_out" >/dev/null 2>&1 && _sum="$(hyg_sha256 "$_out")" && [ -n "$_sum" ] &&
+       printf '%s  %s\n' "$_sum" "$(basename "$_out")" > "$_out.sha256"; then
+      _ok=1
+    fi
+  fi
+  git update-ref -d "$_tmpref" "$2" >/dev/null 2>&1 || _ok=0
+  if [ "$_ok" != "1" ]; then rm -f "$_out" "$_out.sha256"; return 1; fi
+  printf '%s' "$_out"
+}
+
+# hyg_delete_branch BRANCH TIP HOW [BUNDLE] — delete BRANCH only if it still
+# points at TIP. A non-ancestor (squash/patch-equivalent) branch is deleted
+# only after a successful preservation (BUNDLE, or one made here).
+hyg_delete_branch() {
+  if [ "$3" = "ancestor" ]; then
+    git branch -q -d "$1" >/dev/null 2>&1 && return 0
+  fi
+  _b="${4:-}"
+  if [ -z "$_b" ]; then _b="$(hyg_preserve "$1" "$2")" || return 1; fi
+  git update-ref -d "refs/heads/$1" "$2" >/dev/null 2>&1 || return 1
+  echo "      (bundle kept: $_b)"
+}
+
+hyg_drain() {
+  _apply=0; _allow_ignored=0
+  for _a in "$@"; do
+    case "$_a" in
+      --apply) _apply=1 ;;
+      --dry-run) _apply=0 ;;
+      --allow-ignored) _allow_ignored=1 ;;
+      *) hyg_say "git-guard hygiene drain: unknown argument '$_a'"; return 2 ;;
+    esac
+  done
+  hyg_measure "" "" 0
+  _verb="would remove"; [ "$_apply" = "1" ] && _verb="removed"
+  echo "git-guard hygiene drain ($([ "$_apply" = "1" ] && echo apply || echo dry-run)): $(git rev-parse --show-toplevel 2>/dev/null)"
+  [ -n "$HYG_BASE" ] || echo "  base ref unknown (no <remote>/HEAD, no hygiene.baseRef): nothing is provably merged; skipping."
+
+  hyg_worktrees > "${TMPDIR:-/tmp}/gg-hyg-wt.$$" 2>/dev/null || true
+  while IFS='	' read -r _st _path _br _head _reason; do
+    case "$_st" in
+      exempt)   echo "  keep   $_path  (infrastructure lock: $_reason)"; continue ;;
+      prunable) echo "  keep   $_path  (registration only; confirm the path is gone, then: git worktree prune)"; continue ;;
+    esac
+    if [ -n "$_reason" ] || git worktree list --porcelain 2>/dev/null | awk -v p="$_path" '
+         /^worktree /{cur=substr($0,10)} /^locked/{ if (cur==p) f=1 } END{exit !f}'; then
+      echo "  keep   $_path  (locked${_reason:+: $_reason})"; continue
+    fi
+    [ -n "$HYG_BASE" ] || { echo "  keep   $_path  (base unknown)"; continue; }
+    _gd="$(git -C "$_path" rev-parse --absolute-git-dir 2>/dev/null)" || { echo "  keep   $_path  (cannot inspect)"; continue; }
+    if hyg_op_in_progress "$_gd"; then echo "  keep   $_path  (merge/rebase/cherry-pick in progress)"; continue; fi
+    if [ -n "$(git -C "$_path" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
+      echo "  keep   $_path  (uncommitted or untracked changes)"; continue
+    fi
+    _ign="$(git -C "$_path" status --porcelain --ignored --untracked-files=all 2>/dev/null | grep -c '^!!' || true)"
+    if [ "$_ign" -gt 0 ] && [ "$_allow_ignored" = "0" ]; then
+      echo "  keep   $_path  ($_ign ignored paths, e.g. build output; review, then rerun with --allow-ignored)"; continue
+    fi
+    _how="$(hyg_integrated "$_head" "$HYG_BASE")"
+    if [ -z "$_how" ]; then echo "  keep   $_path  (commits not on $HYG_BASE)"; continue; fi
+    if [ -n "$_br" ]; then
+      if hyg_stashed "$_br"; then echo "  keep   $_path  (a stash was made on $_br)"; continue; fi
+      if hyg_remote_moved "$_br" "$HYG_BASE"; then echo "  keep   $_path  (upstream of $_br moved after the merge)"; continue; fi
+    fi
+    echo "  $_verb $_path  (${_br:-detached}, $_how)"
+    if [ "$_apply" = "1" ]; then
+      # Not an ancestor of BASE: preserve BEFORE removing anything, and stop
+      # this item entirely if preservation fails.
+      _bundle=""
+      if [ "$_how" != "ancestor" ]; then
+        if ! _bundle="$(hyg_preserve "${_br:-detached-$(basename "$_path")}" "$_head")"; then
+          echo "      PRESERVE FAILED: bundle not written; nothing removed"; continue
+        fi
+        echo "      (bundle: $_bundle)"
+      fi
+      if ! git worktree remove "$_path" >/dev/null 2>&1; then echo "      FAILED: git worktree remove refused; left in place"; continue; fi
+      if [ -n "$_br" ]; then
+        hyg_delete_branch "$_br" "$_head" "$_how" "$_bundle" || echo "      branch $_br kept (delete refused)"
+      fi
+    fi
+  done < "${TMPDIR:-/tmp}/gg-hyg-wt.$$"
+  rm -f "${TMPDIR:-/tmp}/gg-hyg-wt.$$"
+
+  # Stale branches (re-measured: worktree removal above may have freed some).
+  hyg_stale "$HYG_BASE" > "${TMPDIR:-/tmp}/gg-hyg-st.$$" 2>/dev/null || true
+  while IFS='	' read -r _why _br; do
+    [ -n "$_br" ] || continue
+    _tip="$(git rev-parse -q --verify "refs/heads/$_br")" || continue
+    _how="$(hyg_integrated "$_tip" "$HYG_BASE")"
+    if [ -z "$_how" ]; then
+      # Upstream gone, commits unique: preserve, never delete.
+      if [ "$_apply" = "1" ]; then
+        if _b="$(hyg_preserve "$_br" "$_tip")"; then echo "  keep   branch $_br  (unique commits, upstream $_why; bundle: $_b; owner decides)"
+        else echo "  keep   branch $_br  (unique commits, upstream $_why; bundle FAILED)"; fi
+      else
+        echo "  keep   branch $_br  (unique commits, upstream $_why; --apply writes a bundle, never deletes)"
+      fi
+      continue
+    fi
+    if hyg_stashed "$_br"; then echo "  keep   branch $_br  (a stash was made on it)"; continue; fi
+    if hyg_remote_moved "$_br" "$HYG_BASE"; then echo "  keep   branch $_br  (upstream moved after the merge)"; continue; fi
+    if [ "$_apply" = "1" ]; then
+      if hyg_delete_branch "$_br" "$_tip" "$_how"; then echo "  removed branch $_br  ($_how)"
+      else echo "  keep   branch $_br  (PRESERVE FAILED or branch moved; nothing deleted)"; fi
+    else
+      echo "  would remove branch $_br  ($_how)"
+    fi
+  done < "${TMPDIR:-/tmp}/gg-hyg-st.$$"
+  rm -f "${TMPDIR:-/tmp}/gg-hyg-st.$$"
+  [ "$_apply" = "1" ] || echo "  (dry run: nothing changed; rerun with --apply)"
+  echo "  Remote branches are left to GitHub's delete_branch_on_merge; open PRs need review, merge or close."
+  return 0
+}
+
+# --- global defaults ---------------------------------------------------------
+
+hyg_defaults() {
+  _dry=0; [ "${1:-}" = "--dry-run" ] && _dry=1
+  # gc.worktreePruneExpire is deliberately NOT shortened: it would prune the
+  # registration of a worktree whose drive is merely offline (T:), which
+  # WORKTREE_LIFECYCLE.md forbids.
+  for _kv in \
+    "fetch.prune=true" \
+    "fetch.pruneTags=true" \
+    "worktree.guessRemote=true" \
+    "rerere.enabled=true" \
+    "hygiene.maxWorktrees=$HYG_DEFAULT_MAX_WORKTREES" \
+    "hygiene.maxStaleBranches=$HYG_DEFAULT_MAX_STALE"; do
+    _k="${_kv%%=*}"; _v="${_kv#*=}"
+    _cur="$(git config --global --get "$_k" 2>/dev/null || true)"
+    if [ -n "$_cur" ]; then
+      echo "  ok (kept): $_k=$_cur"
+    elif [ "$_dry" = "1" ]; then
+      echo "  DRY: git config --global $_k $_v"
+    elif git config --global "$_k" "$_v"; then
+      echo "  set: $_k=$_v"
+    else
+      echo "  FAILED to set $_k (continuing)" >&2
+    fi
+  done
+  return 0
+}
+
+case "${1:-report}" in
+  pre-push)      shift; hyg_pre_push "$@" ;;
+  post-checkout) shift; hyg_post_checkout "$@" ;;
+  report)        hyg_report ;;
+  check)         hyg_measure "" "" 1; [ -z "$HYG_OVER" ] || { hyg_explain OVER; exit 1; } ;;
+  drain)         shift; hyg_drain "$@" ;;
+  defaults)      shift; hyg_defaults "$@" ;;
+  *) hyg_say "usage: hygiene.sh pre-push|post-checkout|report|check|drain|defaults"; exit 2 ;;
+esac
