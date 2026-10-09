@@ -395,6 +395,52 @@ t_hyg_body() {
     || t_fail "changed worktree keep not explained"
   gg_rmrepo "$r6"
 
+  # --- custody can change without a tip movement --------------------------
+  r7="$(t_hyg_repo)" || { t_fail "fixture r7"; return 0; }
+  git -C "$r7" branch late-checkout
+  reviewed="$(git -C "$r7" rev-parse HEAD)"
+  ( cd "$r7" && GIT_GUARD_HYGIENE_TEST_PAUSE_AT=delete \
+      GIT_GUARD_HYGIENE_TEST_HOOK='git checkout -q late-checkout' \
+      sh "$hyg" drain --apply >"$log" 2>&1 )
+  [ "$(git -C "$r7" rev-parse -q --verify refs/heads/late-checkout)" = "$reviewed" ] \
+    && t_ok "same-tip branch checked out after inspection is retained" \
+    || t_fail "drain deleted the newly checked-out same-tip branch"
+  git -C "$r7" checkout -q main
+  git -C "$r7" branch late-linked
+  ( cd "$r7" && GIT_GUARD_HYGIENE_TEST_PAUSE_AT=delete \
+      GIT_GUARD_HYGIENE_TEST_HOOK="git worktree add -q '$wtp/late-linked' late-linked" \
+      sh "$hyg" drain --apply >"$log" 2>&1 )
+  [ "$(git -C "$r7" rev-parse -q --verify refs/heads/late-linked)" = "$reviewed" ] \
+    && t_ok "same-tip branch newly registered in another worktree is retained" \
+    || t_fail "drain deleted a branch newly registered in another worktree"
+  git -C "$r7" worktree lock --reason 'active custody' "$wtp/late-linked"
+  git -C "$r7" branch ignored-payload
+  git -C "$r7" worktree add -q "$wtp/late-ignored" ignored-payload
+  printf '*.cache\n' >> "$(git -C "$r7" rev-parse --absolute-git-dir)/info/exclude"
+  ( cd "$r7" && GIT_GUARD_HYGIENE_TEST_PAUSE_AT=remove \
+      GIT_GUARD_HYGIENE_TEST_HOOK="printf 'owned ignored bytes\\n' > '$wtp/late-ignored/new.cache'" \
+      sh "$hyg" drain --apply >"$log" 2>&1 )
+  [ -f "$wtp/late-ignored/new.cache" ] && \
+      [ "$(cat "$wtp/late-ignored/new.cache")" = 'owned ignored bytes' ] \
+    && t_ok "ignored work appearing after inspection retains the worktree and bytes" \
+    || t_fail "drain removed ignored work that appeared after inspection"
+  git -C "$r7" worktree unlock "$wtp/late-linked"
+  gg_rmrepo "$r7"
+
+  # An unavailable/erroring final registration scan must never permit deletion.
+  r8="$(t_hyg_repo)" || { t_fail "fixture r8"; return 0; }
+  git -C "$r8" branch scan-failure
+  reviewed="$(git -C "$r8" rev-parse HEAD)"
+  scanbin="$GG_T_TMPROOT/scan-error-bin"; mkdir -p "$scanbin"
+  realgrep="$(command -v grep)"
+  printf '#!/bin/sh\ncase "$1" in -Fqx) exit 2 ;; esac\nexec "%s" "$@"\n' "$realgrep" > "$scanbin/grep"
+  chmod +x "$scanbin/grep"
+  ( cd "$r8" && PATH="$scanbin:$PATH" sh "$hyg" drain --apply >"$log" 2>&1 )
+  [ "$(git -C "$r8" rev-parse -q --verify refs/heads/scan-failure)" = "$reviewed" ] \
+    && t_ok "failed final checkout scan retains the reviewed branch" \
+    || t_fail "final checkout scan failure allowed branch deletion"
+  gg_rmrepo "$r8"
+
   # --- stale-branch dimension --------------------------------------------
   r2="$(t_hyg_repo)" || { t_fail "fixture r2"; return 0; }
   git -C "$r2" config hygiene.maxWorktrees 0
