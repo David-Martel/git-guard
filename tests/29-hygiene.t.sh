@@ -226,6 +226,12 @@ t_hyg_body() {
   t_hyg_branch "$r3" pe-br
   (
     cd "$r3" || exit 1
+    # Advance main first: replaying onto the SAME parent within one second
+    # reproduces the identical commit (same tree, author, dates), which would
+    # make the branch a plain ancestor and the test vacuous on a fast host.
+    printf 'advance
+' > advance.txt
+    git add advance.txt && git commit -q -m "advance main" || exit 1
     git cherry-pick pe-wt pe-br >/dev/null 2>&1 || exit 1
     git push -q origin main pe-br 2>/dev/null || exit 1
     # Merged-and-deleted on GitHub: the upstream is gone after a prune.
@@ -236,6 +242,9 @@ t_hyg_body() {
   ) || t_fail "could not build the patch-equivalent fixture"
   printf 'not a dir\n' > "$GG_T_TMPROOT/hyg-blocker"
   git -C "$r3" config hygiene.preserveDir "$GG_T_TMPROOT/hyg-blocker/sub"
+  if git -C "$r3" merge-base --is-ancestor pe-wt main; then
+    t_fail "fixture: pe-wt is an ancestor of main, so the bundle path is not exercised"
+  else t_ok "fixture: pe-wt is patch-equivalent, not an ancestor"; fi
   ( cd "$r3" && sh "$hyg" drain --apply >"$log" 2>&1 )
   [ -d "$wtp/pe-wt" ] && t_ok "failed bundle: patch-equivalent worktree NOT removed" \
     || t_fail "worktree removed although its bundle could not be written"
