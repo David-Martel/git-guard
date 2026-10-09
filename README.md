@@ -100,6 +100,17 @@ and prints `WARN_SCOPE_PREPASS_INCOMPLETE`. Output is otherwise the same either
 way; only the cost differs (seconds rather than minutes on a large tree under
 Git Bash).
 
+### Backlog hygiene limits
+
+A push that creates a NEW branch is refused while the repo is over
+`hygiene.maxWorktrees` (default 3 linked worktrees), `hygiene.maxStaleBranches`
+(default 5 merged or upstream-gone local branches) or, when set,
+`hygiene.maxOpenPRs`. Commits and pushes of existing branches are never
+blocked. `git-guard hygiene report` shows the counts, and
+`git-guard hygiene drain [--apply]` removes only clean, merged, unlocked work,
+bundling anything unique first. `GIT_GUARD_HYGIENE=warn|off` softens it. See
+[`docs/QA_TOOLING.md` §12](docs/QA_TOOLING.md#12-backlog-hygiene-limits).
+
 ### Fleet version minimums
 
 `git-guard versions` delegates to the canonical `vigil-utils` checker and policy;
@@ -201,6 +212,7 @@ git-guard install    materialize + install a versioned release (delegates to ins
                       default --to v$(cat VERSION); accepts --to/--store/--rules-dir/--dev-symlink)
 git-guard update      --to <tag>  re-point the installed `current` release at another tag (atomic)
 git-guard uninstall   remove hooks (delegates to install.sh --uninstall)
+git-guard hygiene     backlog limits: report | check | drain [--dry-run|--apply] | defaults
 ```
 
 ## Per-repo overrides
@@ -231,7 +243,8 @@ git-guard/
 │   ├── prepare-commit-msg deterministic agent attribution trailers (Codex, Claude)
 │   ├── commit-msg         Agent trailer vs signing key (warn-only) + preserve/* Preserve-Of: check + downstream chaining
 │   ├── post-commit        landed-SHA feedback (verify before any reset)
-│   ├── pre-push           git-lfs upload + pushed-range attestation (warn-only) + downstream chaining
+│   ├── pre-push           git-lfs upload + pushed-range attestation (warn-only) + new-branch hygiene limit + downstream chaining
+│   ├── post-checkout      backlog hygiene warning after `git worktree add` (never fails)
 │   └── common/            the engine
 │       ├── qa_gate.sh         language-gated, configurable QA gate
 │       ├── secret_scan.sh     added-lines secret scanner

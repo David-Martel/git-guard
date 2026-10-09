@@ -138,6 +138,7 @@ t_case_reserved_path_inventory
 t_case_reserved_path_nested_scope
 t_case_preserve_exemption
 t_case_gate_controls
+t_case_hygiene
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------

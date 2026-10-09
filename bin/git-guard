@@ -18,6 +18,9 @@
 #   uninstall  remove the hooks (delegates to install.sh --uninstall)
 #   version    print the version of THIS checkout (not necessarily what's installed)
 #   versions   run the pinned canonical fleet minimum checker (explicit report/enforce)
+#   hygiene    backlog limits for the current repo: report | check |
+#              drain [--dry-run|--apply] [--allow-ignored] | defaults [--dry-run]
+#              (docs/QA_TOOLING.md §12; pre-push refuses NEW branches over limit)
 #   help       this message
 #
 # No machine-specific paths: everything resolves relative to this script.
@@ -241,5 +244,6 @@ case "${1:-help}" in
   uninstall)  shift; cmd_uninstall "$@" ;;
   version|--version|-v) gg_version ;;
   versions)   shift; sh "$GG_ENGINE/fleet_versions.sh" "$@" ;;
+  hygiene)    shift; sh "$GG_ENGINE/hygiene.sh" "${@:-report}" ;;
   help|--help|-h|*) cmd_help ;;
 esac

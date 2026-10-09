@@ -190,9 +190,9 @@ jobs:
       - name: shellcheck the engine + hooks + runner + tests
         run: |
           shellcheck -S warning \
-            hooks/pre-commit hooks/prepare-commit-msg hooks/commit-msg hooks/post-commit hooks/pre-push \
+            hooks/pre-commit hooks/prepare-commit-msg hooks/commit-msg hooks/post-commit hooks/pre-push hooks/post-checkout \
             hooks/common/qa_gate.sh hooks/common/secret_scan.sh hooks/common/identity.sh \
-            hooks/common/nul-cleanup.sh hooks/common/preserve.sh hooks/common/fleet_versions.sh \
+            hooks/common/nul-cleanup.sh hooks/common/preserve.sh hooks/common/fleet_versions.sh hooks/common/hygiene.sh \
             bin/git-guard bin/git-guard-run \
             install.sh branch-protection.sh \
             tests/run.sh tests/lib.sh tests/*.t.sh

@@ -121,6 +121,31 @@ if [ -x "$git_guard_hook_dir/common/preserve.sh" ] && [ ! -t 0 ]; then
   fi
 fi
 
+# Backlog hygiene (common/hygiene.sh, docs/QA_TOOLING.md §12): refuse a push
+# that creates a NEW branch while this repo is over hygiene.maxWorktrees,
+# hygiene.maxStaleBranches or hygiene.maxOpenPRs. Existing-branch pushes,
+# deletes and tags always pass; preserve/* pushes exited above. It reads the
+# ref list, so buffer stdin (unless an earlier step already did) and replay it.
+# GIT_GUARD_HYGIENE=warn|off softens it; a failure to measure never blocks.
+if [ -f "$git_guard_hook_dir/common/hygiene.sh" ] && [ ! -t 0 ]; then
+  if [ -z "$git_guard_stdin" ] &&
+     git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)"; then
+    trap 'rm -f "$git_guard_stdin"' EXIT
+    cat > "$git_guard_stdin"
+  fi
+  if [ -n "$git_guard_stdin" ]; then
+    # Exit 77 is the only policy refusal. Any other failure (a crash, a
+    # signal, an unusual sh) is a tool fault: warn and let the push proceed.
+    sh "$git_guard_hook_dir/common/hygiene.sh" pre-push "$@" < "$git_guard_stdin"
+    git_guard_hygiene_rc=$?
+    if [ "$git_guard_hygiene_rc" -eq 77 ]; then
+      exit 1
+    elif [ "$git_guard_hygiene_rc" -ne 0 ]; then
+      printf 'git-guard hygiene: check failed (exit %s); not blocking this push.\n' "$git_guard_hygiene_rc" >&2
+    fi
+  fi
+fi
+
 # Replay the buffered ref list to whichever downstream gate runs below.
 if [ -n "$git_guard_stdin" ]; then
   exec < "$git_guard_stdin"

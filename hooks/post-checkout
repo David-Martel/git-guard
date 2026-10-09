@@ -1,0 +1,28 @@
+#!/bin/sh
+#
+# git-guard post-checkout — backlog hygiene warning after `git worktree add`.
+#
+# Git runs post-checkout after every checkout, every `git clone` and every
+# `git worktree add`. Only the worktree-add case does any work (previous HEAD
+# is the null ref and we are inside a linked worktree); everything else returns
+# at once. It WARNS when the repo is over a hygiene limit and ALWAYS exits 0: a
+# post-checkout hook cannot undo the checkout, so failing it would only confuse.
+# The enforcement point is pre-push (a NEW branch is refused while over limit).
+# See hooks/common/hygiene.sh and docs/QA_TOOLING.md §12.
+#
+# Bypass: `GIT_GUARD=0` (all hooks) or `GIT_GUARD_HYGIENE=off` (this check).
+
+if [ "$GIT_GUARD" = "0" ] || [ "$LEFTHOOK" = "0" ]; then
+  exit 0
+fi
+
+# Cheap exits before any subprocess: not a fresh checkout, or a file checkout.
+case "${1:-x}" in *[!0]*) exit 0 ;; esac
+[ "${3:-}" = "1" ] || exit 0
+
+git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
+if [ -f "$git_guard_hook_dir/common/hygiene.sh" ]; then
+  sh "$git_guard_hook_dir/common/hygiene.sh" post-checkout "$@" || true
+fi
+
+exit 0

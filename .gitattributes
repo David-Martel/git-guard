@@ -9,5 +9,6 @@ hooks/commit-msg   text eol=lf
 hooks/prepare-commit-msg text eol=lf
 identity/allowed_signers text eol=lf
 hooks/pre-push     text eol=lf
+hooks/post-checkout text eol=lf
 bin/git-guard      text eol=lf
 bin/git-guard-run  text eol=lf
