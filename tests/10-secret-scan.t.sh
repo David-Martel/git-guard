@@ -312,5 +312,24 @@ t_case_secret_scan() {
   _ss_matcher_error_probe upper
   _ss_errexit_probe
 
+  # Protects: empty Python key markers in stderr redaction witnesses.
+  # Detects: closing-quote misclassification and a final empty marker hiding a
+  # real quoted assignment. Provider detection keeps its original input.
+  # Needs: canonical POSIX/Git helpers; no Python runtime dependency.
+  # Breadcrumb: vigil-utils test_vigil1_registrar_diagnostics.py lines 92/161.
+  _empty_marker="RAW_""PASSWORD="
+  _ss_allows "python native stderr empty-marker expression (registrar 92)" "fixture.py" \
+    "stderr = (\"${_empty_marker}\" + TOKEN).encode()"
+  _ss_allows "python cleanup stderr empty-marker expression (registrar 161)" "fixture.py" \
+    "stderr = (\"${_empty_marker}\" + TOKEN).encode()"
+  _ss_allows "python ordinary empty marker literal" "fixture.py" \
+    "message = \"${_empty_marker}\""
+  _ss_allows "python single-quoted empty marker expression" "fixture.py" \
+    "stderr = ('${_empty_marker}' + TOKEN).encode()"
+  _ss_blocks "python quoted assignment precedes final empty marker" "fixture.py" \
+    "password = \"${_v1}${_v2}\"; message = \"${_empty_marker}\""
+  _ss_blocks "python quoted assignment follows empty marker" "fixture.py" \
+    "message = \"${_empty_marker}\"; password = \"${_v1}${_v2}\""
+
   return 0
 }
