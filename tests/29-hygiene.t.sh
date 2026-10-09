@@ -25,6 +25,10 @@
 #     in any worktree, or under an in-progress rebase, bisect or
 #     rebase --update-refs (worktree list shows those as "detached"), also
 #     when that starts between inspection and the delete at the same tip.
+#   * drain refuses outright (exit non-zero, dry run too, nothing removed,
+#     the path named) when the in-use scan cannot read <common>/worktrees
+#     (a-r or a-x), a rebase state dir or file, or a linked worktree's HEAD;
+#     positive control: the same merged branch drains with normal modes.
 #   * `hygiene.sh defaults` sets global defaults only when unset.
 # shellcheck shell=sh
 
@@ -83,6 +87,81 @@ t_hyg_sha256() {
   if have sha256sum; then sha256sum "$1" | awk '{print $1}'
   else shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
   fi
+}
+
+# t_hyg_fc_repo — a hygiene repo with two commits on main and three branches
+# at its tip: rb, checked out in linked worktree $wtp/fc-rb and stopped
+# mid-rebase (so `worktree list` shows it detached); wh, checked out in
+# linked worktree $wtp/fc-wh; and bystander, used by no worktree. All three
+# are merged. Uses $wtp from t_hyg_body. Echoes the repo path.
+t_hyg_fc_repo() {
+  _fr="$(t_hyg_repo)" || return 1
+  (
+    cd "$_fr" || exit 1
+    printf 'c1\n' > c1.txt && git add c1.txt && git commit -q -m c1 || exit 1
+    git push -q origin main 2>/dev/null || exit 1
+    git branch rb && git branch wh && git branch bystander || exit 1
+    rm -rf "$wtp/fc-rb" "$wtp/fc-wh"
+    git worktree add -q "$wtp/fc-rb" rb || exit 1
+    git worktree add -q "$wtp/fc-wh" wh || exit 1
+    # `--exec false` stops the rebase after its first pick: no editor needed.
+    git -C "$wtp/fc-rb" rebase -q --exec false HEAD~1 >/dev/null 2>&1
+    [ -d "$(git -C "$wtp/fc-rb" rev-parse --absolute-git-dir)/rebase-merge" ] || exit 1
+  ) || return 1
+  printf '%s' "$_fr"
+}
+
+# t_hyg_fail_closed KIND — deny the in-use scan one path, then assert that
+# drain (dry run and --apply) exits non-zero, names that path and deletes
+# nothing. KIND: parent-a-r | parent-a-x (<common>/worktrees), state-dir
+# (a-x on the rebasing worktree's rebase-merge), head-name (a-r on its
+# rebase-merge/head-name), wt-head (a-r on fc-wh's HEAD file).
+t_hyg_fail_closed() {
+  _fk="$1"; _fprobe=""
+  _fcr="$(t_hyg_fc_repo)" || { t_fail "fixture fail-closed $_fk"; return 0; }
+  _fcd="$(git -C "$_fcr" rev-parse --absolute-git-dir)"
+  _fwd="$(git -C "$wtp/fc-wh" rev-parse --absolute-git-dir)"
+  _frd="$(git -C "$wtp/fc-rb" rev-parse --absolute-git-dir)"
+  case "$_fk" in
+    parent-a-r) _fp="$_fcd/worktrees"; _fm=a-r ;;
+    parent-a-x) _fp="$_fcd/worktrees"; _fm=a-x; _fprobe="fc-rb" ;;
+    state-dir)  _fp="$_frd/rebase-merge"; _fm=a-x; _fprobe="head-name" ;;
+    head-name)  _fp="$_frd/rebase-merge/head-name"; _fm=a-r ;;
+    wt-head)    _fp="$_fwd/HEAD"; _fm=a-r ;;
+  esac
+  _frefs="$(git -C "$_fcr" for-each-ref --format='%(refname) %(objectname)' refs/heads/)"
+  [ -e "$_fcd/worktrees/fc-rb" ] || { t_fail "fixture fail-closed $_fk: worktree id is not fc-rb"; gg_rmrepo "$_fcr"; return 0; }
+  chmod "$_fm" "$_fp"
+  # Confirm the denial took: this fixture must deny the scan, or it tests nothing.
+  _fdenied=0
+  case "$_fm" in
+    a-r) if [ -d "$_fp" ]; then ls "$_fp" >/dev/null 2>&1 || _fdenied=1
+         else cat "$_fp" >/dev/null 2>&1 || _fdenied=1; fi ;;
+    a-x) [ -e "$_fp/$_fprobe" ] || _fdenied=1 ;;
+  esac
+  if [ "$_fdenied" = "0" ]; then
+    chmod u+rwx "$_fp"
+    t_skip "fail-closed $_fk: chmod $_fm did not deny access to $_fp"
+    gg_rmrepo "$_fcr"; return 0
+  fi
+  for _fmode in --dry-run --apply; do
+    ( cd "$_fcr" && sh "$hyg" drain "$_fmode" >"$log" 2>&1 ); _frc=$?
+    if [ "$_frc" -ne 0 ]; then t_ok "fail-closed $_fk: drain $_fmode refuses (rc=$_frc)"
+    else t_fail "fail-closed $_fk: drain $_fmode exited 0 with $_fp unreadable"; fi
+    if grep -qF -- "$_fp" "$log"; then t_ok "fail-closed $_fk: drain $_fmode names the unreadable path"
+    else t_fail "fail-closed $_fk: drain $_fmode does not name $_fp"; fi
+  done
+  chmod u+rwx "$_fp"
+  if [ "$(git -C "$_fcr" for-each-ref --format='%(refname) %(objectname)' refs/heads/)" = "$_frefs" ]; then
+    t_ok "fail-closed $_fk: no branch deleted or moved (rb, wh, bystander kept)"
+  else
+    t_fail "fail-closed $_fk: drain changed branches: $(git -C "$_fcr" branch --format='%(refname:short)' | tr '\n' ' ')"
+  fi
+  if [ -d "$wtp/fc-rb" ] && [ -d "$wtp/fc-wh" ]; then t_ok "fail-closed $_fk: no worktree removed"
+  else t_fail "fail-closed $_fk: drain removed a worktree"; fi
+  git -C "$wtp/fc-rb" rebase --abort >/dev/null 2>&1
+  gg_rmrepo "$_fcr"
+  return 0
 }
 
 t_case_hygiene() {
@@ -547,6 +626,33 @@ t_hyg_body() {
     t_skip "this sed reads a directory without error; cannot fake an unreadable state file"
   fi
   gg_rmrepo "$r10"
+
+  # --- an in-use scan that cannot see everything refuses the whole drain ---
+  # When <common>/worktrees cannot be listed (a-r) or searched (a-x), or a
+  # linked worktree's HEAD or rebase state cannot be read or searched, the
+  # scan cannot know which branches are in use. drain must then treat every
+  # branch as in use: delete nothing, exit non-zero and name the path, in a
+  # dry run too (review of #60 at 322fa11).
+  # Each fixture has a linked worktree mid-rebase on rb (merged, so drainable
+  # by tip) and a merged bystander no worktree uses. Root ignores mode bits,
+  # so these fixtures cannot deny it a read.
+  if [ "$(id -u)" = "0" ]; then
+    t_skip "running as root: chmod cannot deny a read, so the unreadable-scan fixtures cannot be built"
+  else
+    for fc in parent-a-r parent-a-x state-dir head-name wt-head; do
+      t_hyg_fail_closed "$fc"
+    done
+    # Positive control: same fixture, normal modes, no worktree using rb.
+    r12="$(t_hyg_fc_repo)" || { t_fail "fixture r12"; return 0; }
+    git -C "$wtp/fc-rb" rebase --abort >/dev/null 2>&1
+    git -C "$r12" worktree remove "$wtp/fc-rb" >/dev/null 2>&1
+    ( cd "$r12" && sh "$hyg" drain --apply >"$log" 2>&1 ); rc=$?
+    t_expect_rc 0 "$rc" "positive control: drain --apply exits 0 with every git dir readable"
+    if git -C "$r12" rev-parse -q --verify refs/heads/rb >/dev/null; then
+      t_fail "positive control: merged rb kept although no worktree uses it"
+    else t_ok "positive control: merged rb is deleted once no worktree uses it"; fi
+    gg_rmrepo "$r12"
+  fi
 
   # --- stale-branch dimension --------------------------------------------
   r2="$(t_hyg_repo)" || { t_fail "fixture r2"; return 0; }
