@@ -728,6 +728,9 @@ qa_check_rust() {
 qa_python_scoped_files() {
   _qps_out="$(qa_python_scoped_files_raw "$@")"
   _qps_rc=$?
+  # Output is passed on even when rc != 0, as before the wrapper existed; on a
+  # failure the raw helper has written nothing to stdout (warnings go to
+  # stderr), and the callers act on the returned status alone.
   [ -n "$_qps_out" ] && printf '%s\n' "$_qps_out" | tr -d "$QA_CR"
   return "$_qps_rc"
 }
@@ -749,7 +752,12 @@ import sys
 
 # LF-only output: the shell word-splits this list into checker arguments, and
 # Windows text-mode stdout would otherwise end every line with "\r\n" (#52).
-sys.stdout.reconfigure(newline="\n")
+# A stdout that is not a TextIOWrapper (replaced stream) keeps its own line
+# endings; the shell-side `tr -d` in qa_python_scoped_files is the backstop.
+try:
+    sys.stdout.reconfigure(newline="\n")
+except (AttributeError, ValueError):
+    pass
 
 try:
     import tomllib
