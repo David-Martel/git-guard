@@ -697,6 +697,13 @@ Merge state is judged from your remote-tracking refs, so run
 read the dry-run list and use `--apply` only when every item is yours or is
 covered by an explicit custody transfer.
 
+Before anything else, drain reads which branches the worktrees are using:
+each git dir's HEAD and its rebase and bisect state. If it cannot list or
+search `.git/worktrees`, a worktree's git dir or rebase state directory, or
+cannot read a HEAD or state file that exists, it cannot tell which branches
+are in use, so it treats every branch as in use: the dry run and `--apply`
+both exit non-zero, remove nothing and name the path that could not be read.
+
 A tip that is not an ancestor is preserved before anything is removed: it is
 pinned to a temporary ref, bundled, verified with `git bundle verify`, a
 `.sha256` file is written beside the bundle, and only then is the temporary ref

@@ -172,7 +172,9 @@ hyg_worktrees() {
 
 # hyg_in_use — the local branches git itself refuses to delete because a
 # worktree uses them (branch.c branch_checked_out), one short name per line:
-#   * the branch checked out in any worktree, primary included, locked or not;
+#   * the branch checked out in any worktree, primary included, locked or not
+#     (from `worktree list` and from each git dir's own HEAD, which still
+#     counts when `worktree list` drops an entry it cannot read);
 #   * the branch an in-progress rebase returns to (rebase-merge/head-name,
 #     rebase-apply/head-name) and every branch a rebase --update-refs will
 #     rewrite (rebase-merge/update-refs);
@@ -180,35 +182,62 @@ hyg_worktrees() {
 # A rebasing or bisecting worktree is listed as "detached" by
 # `git worktree list`, so its `branch` lines alone miss the last two kinds.
 # The state files are read from every registered git dir (the common dir and
-# <common>/worktrees/*), so an offline worktree still counts. Returns 1 when
-# a git dir cannot be searched or a state file that exists cannot be read:
-# callers must then treat every branch as in use. A state file that does not
-# exist means that operation is not in progress.
+# <common>/worktrees/*), so an offline worktree still counts. Returns 1, with
+# the path on stderr, when <common>/worktrees, a git dir or a rebase state dir
+# cannot be listed or searched, or when a HEAD or state file that exists
+# cannot be read: callers must then treat every branch as in use. A state
+# file that does not exist means that operation is not in progress.
 hyg_in_use() {
-  _iu_wl="$(git worktree list --porcelain 2>/dev/null)" || return 1
-  [ -n "$_iu_wl" ] || return 1
+  _iu_wl="$(git worktree list --porcelain 2>/dev/null)" || { hyg_say "git-guard hygiene: git worktree list failed"; return 1; }
+  [ -n "$_iu_wl" ] || { hyg_say "git-guard hygiene: git worktree list printed nothing"; return 1; }
   printf '%s\n' "$_iu_wl" | sed -n 's|^branch refs/heads/||p'
-  _iu_cd="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
-  _iu_cd="$(cd "$_iu_cd" 2>/dev/null && pwd)" || return 1
+  _iu_cd="$(git rev-parse --git-common-dir 2>/dev/null)" || { hyg_say "git-guard hygiene: cannot find the common git dir"; return 1; }
+  _iu_cd="$(cd "$_iu_cd" 2>/dev/null && pwd -P)" || { hyg_say "git-guard hygiene: cannot enter the common git dir $_iu_cd"; return 1; }
+  # An unlistable (a-r) or unsearchable (a-x) worktrees dir would hide every
+  # linked worktree from the loop below, and from `worktree list` too.
+  if [ -e "$_iu_cd/worktrees" ]; then
+    hyg_iu_dir "$_iu_cd/worktrees" || return 1
+  fi
   for _iu_g in "$_iu_cd" "$_iu_cd"/worktrees/*; do
-    [ -d "$_iu_g" ] || continue
+    if [ ! -d "$_iu_g" ]; then
+      # The unexpanded glob (no linked worktrees) or a stray file is not a git
+      # dir; a listed name that cannot be stat'ed is.
+      [ "$_iu_g" = "$_iu_cd/worktrees/*" ] && [ ! -e "$_iu_g" ] && continue
+      [ -e "$_iu_g" ] && [ ! -L "$_iu_g" ] && continue
+      hyg_say "git-guard hygiene: cannot inspect worktree git dir $_iu_g"; return 1
+    fi
     # An unsearchable git dir would make every state file look absent.
-    { [ -r "$_iu_g" ] && [ -x "$_iu_g" ]; } || return 1
+    hyg_iu_dir "$_iu_g" || return 1
+    if [ -e "$_iu_g/HEAD" ]; then
+      _iu_h="$(cat "$_iu_g/HEAD" 2>/dev/null)" || { hyg_say "git-guard hygiene: cannot read $_iu_g/HEAD"; return 1; }
+      case "$_iu_h" in "ref: refs/heads/"*) printf '%s\n' "${_iu_h#ref: refs/heads/}" ;; esac
+    fi
+    for _iu_d in rebase-merge rebase-apply; do
+      if [ -e "$_iu_g/$_iu_d" ]; then hyg_iu_dir "$_iu_g/$_iu_d" || return 1; fi
+    done
     for _iu_f in rebase-merge/head-name rebase-apply/head-name rebase-merge/update-refs; do
       [ -e "$_iu_g/$_iu_f" ] || continue
       # update-refs holds <ref>, <old oid>, <new oid> per entry; only the ref
       # lines start with refs/heads/.
-      sed -n 's|^refs/heads/||p' "$_iu_g/$_iu_f" 2>/dev/null || return 1
+      sed -n 's|^refs/heads/||p' "$_iu_g/$_iu_f" 2>/dev/null || { hyg_say "git-guard hygiene: cannot read $_iu_g/$_iu_f"; return 1; }
     done
     if [ -e "$_iu_g/BISECT_START" ]; then
       # The short branch name, or an object id when bisect began detached.
       # git strips a refs/heads/ prefix (read_and_strip_branch); so does this.
-      _iu_n="$(cat "$_iu_g/BISECT_START" 2>/dev/null)" || return 1
+      _iu_n="$(cat "$_iu_g/BISECT_START" 2>/dev/null)" || { hyg_say "git-guard hygiene: cannot read $_iu_g/BISECT_START"; return 1; }
       _iu_n="${_iu_n#refs/heads/}"
       [ -z "$_iu_n" ] || printf '%s\n' "$_iu_n"
     fi
   done
   return 0
+}
+
+# hyg_iu_dir DIR — true when DIR is a directory this process can list and
+# search; otherwise names it on stderr.
+hyg_iu_dir() {
+  [ -d "$1" ] && [ -r "$1" ] && [ -x "$1" ] && return 0
+  hyg_say "git-guard hygiene: cannot list or search $1"
+  return 1
 }
 
 # hyg_stale BASE — local branches whose upstream is gone or whose tip is
@@ -545,6 +574,15 @@ hyg_drain() {
   done
   hyg_measure "" "" 0
   [ -n "$HYG_TMP" ] || { hyg_say "git-guard hygiene drain: cannot create a temp dir; nothing done"; return 1; }
+  # A scan that cannot see every worktree's HEAD and rebase/bisect state
+  # cannot say which branches are in use, so every branch is: refuse the whole
+  # drain, dry run included, and name what could not be read.
+  if ! hyg_in_use > "$HYG_TMP/in-use" 2> "$HYG_TMP/in-use-err"; then
+    cat "$HYG_TMP/in-use-err" >&2
+    hyg_say "git-guard hygiene drain: refused: cannot tell which branches worktrees are using, so every branch is treated as in use; nothing removed."
+    hyg_say "  Restore read and search permission on the path above (or finish that worktree's operation), then rerun."
+    return 1
+  fi
   _min_age="$(hyg_int hygiene.drainMinAgeMinutes "$HYG_DEFAULT_MIN_AGE")"
   hyg_test_pause start
   echo "git-guard hygiene drain ($([ "$_apply" = "1" ] && echo apply || echo dry-run)): $(git rev-parse --show-toplevel 2>/dev/null)"
