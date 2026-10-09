@@ -310,6 +310,15 @@ scan_match() {
     *) return 2 ;;
   esac
 
+  # An empty quoted Python key marker has no credential value. Normalize only
+  # that marker before the unchanged contextual assignment scan; real quoted
+  # assignments and the original Tier1 input remain intact.
+  case "$sfile" in
+    *.py)
+      line="$(printf '%s' "$line" | sed -E "s/([\"'])[A-Za-z0-9_-]*${_GG_KEYRE}[[:space:]]*[:=][[:space:]]*\\1/\\1\\1/g")" || return 2
+      ;;
+  esac
+
   # ---- TIER 2: contextual key = value literals ------------------------------
   # Require an assignment to a credential-ish key. Comparisons are not
   # assignments: `if password == expected` assigns nothing.
