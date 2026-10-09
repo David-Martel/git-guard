@@ -9,12 +9,13 @@
 #
 # Subcommands:
 #   pre-push REMOTE URL    called by hooks/pre-push with the ref list on stdin.
-#                          Blocks ONLY a push that creates a NEW branch on the
-#                          remote while the repo is over a limit. Commits,
-#                          existing-branch pushes, deletes and tags never block.
+#                          Exits 1 ONLY for a push that creates a NEW branch on
+#                          the remote while the repo is over a limit. Commits,
+#                          existing-branch pushes, deletes, tags, preserve/* and
+#                          the first publish of the default branch never block.
 #   post-checkout P N F    called by hooks/post-checkout; warns after
 #                          `git worktree add` when over a limit. Always exits 0.
-#   report                 print counts vs limits and what is drainable (exit 0).
+#   report                 print counts vs limits (exit 0).
 #   check                  same counts, exit 1 when any limit is exceeded.
 #   drain [--dry-run|--apply] [--allow-ignored]
 #                          list (default) or remove merged, clean, unlocked
@@ -47,8 +48,20 @@ set -u
 
 HYG_DEFAULT_MAX_WORKTREES=3
 HYG_DEFAULT_MAX_STALE=5
+HYG_TMP=""
 
 hyg_say() { printf '%s\n' "$*" >&2; }
+
+# hyg_tmpdir — create one private temp dir for this invocation (main shell
+# only, so the cleanup trap belongs to the script). Empty on failure; callers
+# then skip whatever needed it.
+hyg_tmpdir() {
+  [ -n "$HYG_TMP" ] && return 0
+  HYG_TMP="$(mktemp -d "${TMPDIR:-/tmp}/git-guard-hygiene.XXXXXX" 2>/dev/null)" || HYG_TMP=""
+  # shellcheck disable=SC2064  # expand HYG_TMP now
+  [ -n "$HYG_TMP" ] && trap "rm -rf \"$HYG_TMP\"" EXIT INT TERM
+  return 0
+}
 
 # hyg_int KEY DEFAULT — an integer config value, or DEFAULT when unset/invalid.
 hyg_int() {
@@ -79,9 +92,9 @@ hyg_remote() {
   git remote 2>/dev/null | head -n1
 }
 
-# hyg_base REMOTE — the integration ref (refs/remotes/<r>/HEAD target, else
-# hygiene.baseRef, else <r>/main or <r>/master). Empty = unknown (the merged
-# test is then skipped, never guessed).
+# hyg_base REMOTE — the integration ref: refs/remotes/<r>/HEAD's target, else
+# hygiene.baseRef, else refs/remotes/<r>/main or /master. Empty = unknown (the
+# merged test is then skipped, never guessed).
 hyg_base() {
   _b=""
   if [ -n "${1:-}" ]; then
@@ -99,13 +112,26 @@ hyg_base() {
   printf '%s' "$_b"
 }
 
+# hyg_base_name BASE — the short branch name of the base (refs/remotes/o/main
+# -> main), used to exempt the default branch itself.
+hyg_base_name() {
+  case "${1:-}" in
+    refs/remotes/*/*) _n="${1#refs/remotes/}"; printf '%s' "${_n#*/}" ;;
+    refs/heads/*) printf '%s' "${1#refs/heads/}" ;;
+    *) printf '%s' "${1:-}" ;;
+  esac
+}
+
 # hyg_worktrees — one line per LINKED worktree (primary excluded):
-#   <state>\t<path>\t<branch-or-empty>\t<head>\t<lock-reason>
-# state: live | exempt | prunable. Exempt = locked with a reason starting with
-# one of hygiene.exemptLockPrefix.
+#   <state>\t<path>\t<branch>\t<head>\t<lock-reason>
+# Empty fields are written as "-" (a tab is IFS whitespace, so `read` would
+# otherwise collapse an empty field and shift the rest; "-" is not a valid
+# branch name). state: live | exempt | prunable. Exempt = locked with a reason
+# starting with one of hygiene.exemptLockPrefix.
 hyg_worktrees() {
   _prefixes="$(git config --get-all hygiene.exemptLockPrefix 2>/dev/null || true)"
   git worktree list --porcelain 2>/dev/null | awk -v prefixes="$_prefixes" '
+    function dash(s) { return (s == "" ? "-" : s) }
     function flush() {
       if (path != "" && n > 1) {
         state = "live"
@@ -114,7 +140,8 @@ hyg_worktrees() {
           np = split(prefixes, p, "\n")
           for (i = 1; i <= np; i++) if (p[i] != "" && index(reason, p[i]) == 1) state = "exempt"
         }
-        printf "%s\t%s\t%s\t%s\t%s\n", state, path, branch, head, reason
+        if (locked && reason == "") reason = "locked"
+        printf "%s\t%s\t%s\t%s\t%s\n", state, path, dash(branch), dash(head), dash(reason)
       }
       path = ""; branch = ""; head = ""; reason = ""; locked = 0; prunable = 0
     }
@@ -127,30 +154,31 @@ hyg_worktrees() {
   '
 }
 
-# hyg_checked_out — branch names checked out in ANY worktree (incl. primary).
-hyg_checked_out() {
-  git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p'
-}
-
 # hyg_stale BASE — local branches whose upstream is gone or whose tip is
-# merged into BASE, excluding main/master, preserve/*, and any branch checked
-# out in a worktree (those are drained as worktrees). One line each:
-#   <reason>\t<branch>
+# merged into BASE, excluding main, master, the base's own branch name,
+# preserve/*, and any branch checked out in a worktree (those are drained as
+# worktrees). One line each: <reason>\t<branch>. One awk pass: a fork per
+# branch made this minutes long on a repo with hundreds of branches.
 hyg_stale() {
   _base="${1:-}"
-  _co="$(hyg_checked_out)"
-  _merged=""
+  [ -n "$HYG_TMP" ] || return 0
+  git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p' > "$HYG_TMP/checked-out"
+  : > "$HYG_TMP/merged"
   if [ -n "$_base" ]; then
-    _merged="$(git for-each-ref --merged "$_base" --format='%(refname:short)' refs/heads/ 2>/dev/null || true)"
+    git for-each-ref --merged "$_base" --format='%(refname:short)' refs/heads/ > "$HYG_TMP/merged" 2>/dev/null || :
   fi
   git for-each-ref --format='%(refname:short)	%(upstream:track)' refs/heads/ 2>/dev/null |
-  while IFS='	' read -r _br _track; do
-    case "$_br" in main|master|preserve/*) continue ;; esac
-    if printf '%s\n' "$_co" | grep -qxF -- "$_br"; then continue; fi
-    if printf '%s\n' "$_merged" | grep -qxF -- "$_br"; then printf 'merged\t%s\n' "$_br"
-    elif [ "$_track" = "[gone]" ]; then printf 'gone\t%s\n' "$_br"
-    fi
-  done
+    awk -F '\t' -v co="$HYG_TMP/checked-out" -v mf="$HYG_TMP/merged" -v bname="$(hyg_base_name "$_base")" '
+      BEGIN {
+        while ((getline l < co) > 0) skip[l] = 1
+        while ((getline l < mf) > 0) merged[l] = 1
+      }
+      {
+        b = $1
+        if (b == "main" || b == "master" || b == bname || index(b, "preserve/") == 1 || (b in skip)) next
+        if (b in merged) printf "merged\t%s\n", b
+        else if ($2 == "[gone]") printf "gone\t%s\n", b
+      }'
 }
 
 # hyg_gh_slug URL — owner/repo for a github.com URL, else empty.
@@ -170,7 +198,9 @@ hyg_open_prs() {
   _gh="${GIT_GUARD_HYGIENE_GH:-gh}"
   command -v "$_gh" >/dev/null 2>&1 || return 0
   _to=""
-  command -v timeout >/dev/null 2>&1 && _to="timeout 15"
+  if command -v timeout >/dev/null 2>&1; then _to="timeout 15"
+  elif command -v gtimeout >/dev/null 2>&1; then _to="gtimeout 15"
+  fi
   # shellcheck disable=SC2086  # _to is intentionally word-split (empty or 2 words)
   _n="$($_to "$_gh" api "repos/$_slug/pulls?state=open&per_page=100" \
         --jq '[.[] | select(.user.type != "Bot")] | length' 2>/dev/null)" || return 0
@@ -179,8 +209,9 @@ hyg_open_prs() {
 }
 
 # hyg_measure REMOTE URL WITH_PRS — sets HYG_WT_N HYG_WT_LIST HYG_ST_N
-# HYG_ST_LIST HYG_PR_N HYG_OVER (space-separated list of exceeded keys).
+# HYG_ST_LIST HYG_PR_N HYG_BASE HYG_OVER (space-separated exceeded keys).
 hyg_measure() {
+  hyg_tmpdir
   _remote="$(hyg_remote "${1:-}")"
   _url="${2:-}"
   [ -n "$_url" ] || { [ -n "$_remote" ] && _url="$(git config --get "remote.$_remote.url" 2>/dev/null || true)"; }
@@ -208,7 +239,7 @@ hyg_explain() {
     case "$_k" in
       hygiene.maxWorktrees)
         hyg_say "git-guard hygiene $_lvl: $HYG_WT_N linked worktrees > hygiene.maxWorktrees=$HYG_MAX_WT"
-        printf '%s\n' "$HYG_WT_LIST" | awk -F '\t' 'NF { printf "    worktree %s  (%s)\n", $2, ($3 == "" ? "detached" : $3) }' >&2 ;;
+        printf '%s\n' "$HYG_WT_LIST" | awk -F '\t' 'NF { printf "    worktree %s  (%s%s)\n", $2, ($3 == "-" ? "detached" : $3), ($5 == "-" ? "" : ", locked: " $5) }' >&2 ;;
       hygiene.maxStaleBranches)
         hyg_say "git-guard hygiene $_lvl: $HYG_ST_N stale local branches > hygiene.maxStaleBranches=$HYG_MAX_ST"
         printf '%s\n' "$HYG_ST_LIST" | awk -F '\t' 'NF { printf "    branch %s  (%s)\n", $2, $1 }' >&2 ;;
@@ -216,8 +247,10 @@ hyg_explain() {
         hyg_say "git-guard hygiene $_lvl: $HYG_PR_N open PRs > hygiene.maxOpenPRs=$HYG_MAX_PR (review and merge or close them)" ;;
     esac
   done
-  hyg_say "  Drain first:  git-guard hygiene drain --dry-run   (then --apply; unique work is bundled, never deleted)"
-  hyg_say "  Policy: clear your merged worktrees, branches and PRs before starting new work."
+  hyg_say "  Drain first:  git fetch --prune && git-guard hygiene drain --dry-run   (then --apply)"
+  hyg_say "  drain removes only clean, unlocked, merged work and bundles any unique tip first."
+  hyg_say "  What it keeps (locked, dirty, unique commits) needs its owner: finish, merge or hand it off,"
+  hyg_say "  or raise this repo's limit deliberately: git config hygiene.<key> <n>."
 }
 
 hyg_pre_push() {
@@ -228,23 +261,34 @@ hyg_pre_push() {
   _new=""
   while read -r _lref _lsha _rref _rsha; do
     [ -n "${_rref:-}" ] || continue
-    case "$_rref" in refs/heads/preserve/*) continue ;; refs/heads/*) : ;; *) continue ;; esac
+    case "$_rref" in
+      refs/heads/preserve/*|refs/heads/main|refs/heads/master) continue ;;
+      refs/heads/*) : ;;
+      *) continue ;;
+    esac
     case "$_lsha" in *[!0]*) : ;; *) continue ;; esac     # delete
     case "$_rsha" in *[!0]*) continue ;; esac              # existing branch
     _new="$_new ${_rref#refs/heads/}"
   done
   [ -n "$_new" ] || return 0
   hyg_measure "$_remote" "$_url" 1
+  # The first publish of the default branch itself is not new work.
+  _bn="$(hyg_base_name "$HYG_BASE")"
+  if [ -n "$_bn" ]; then
+    _kept=""
+    for _b in $_new; do [ "$_b" = "$_bn" ] || _kept="$_kept $_b"; done
+    _new="$_kept"
+    [ -n "$_new" ] || return 0
+  fi
   [ -n "$HYG_OVER" ] || return 0
   if [ "$_mode" = "warn" ]; then
     hyg_explain WARN
-    hyg_say "  (GIT_GUARD_HYGIENE=warn: pushing new branch(es)$_new anyway)"
+    hyg_say "  (hygiene mode warn: pushing new branch(es)$_new anyway)"
     return 0
   fi
   hyg_explain BLOCK
   hyg_say "  Refused: new branch(es)$_new. Existing branches, deletes and commits are never blocked."
-  hyg_say "  One push only: GIT_GUARD_HYGIENE=warn git push ...   Per repo: git config hygiene.<key> <n>."
-  hyg_say "  Do NOT use --no-verify."
+  hyg_say "  One push only: GIT_GUARD_HYGIENE=warn git push ...   Do NOT use --no-verify."
   return 1
 }
 
@@ -258,11 +302,14 @@ hyg_post_checkout() {
   _gd="$(git rev-parse --git-dir 2>/dev/null)" || return 0
   _cd="$(git rev-parse --git-common-dir 2>/dev/null)" || return 0
   [ "$_gd" != "$_cd" ] || return 0
-  [ "$(hyg_mode)" = "off" ] && return 0
+  _mode="$(hyg_mode)"
+  [ "$_mode" = "off" ] && return 0
   hyg_measure "" "" 0
   [ -n "$HYG_OVER" ] || return 0
   hyg_explain WARN
-  hyg_say "  Pushing a NEW branch from this repo is refused until the backlog is under the limit."
+  if [ "$_mode" = "enforce" ]; then
+    hyg_say "  Pushing a NEW branch from this repo is refused until the backlog is under the limit."
+  fi
   return 0
 }
 
@@ -271,15 +318,15 @@ hyg_report() {
   _pr_limit="$HYG_MAX_PR"; [ "$_pr_limit" -gt 0 ] || _pr_limit="off"
   echo "git-guard hygiene report: $(git rev-parse --show-toplevel 2>/dev/null)"
   echo "  mode:              $(hyg_mode)"
-  echo "  base ref:          ${HYG_BASE:-<unknown: merged test skipped>}"
+  echo "  base ref:          ${HYG_BASE:-<unknown: merged test skipped>} (as of the last fetch)"
   echo "  linked worktrees:  $HYG_WT_N (limit hygiene.maxWorktrees=$HYG_MAX_WT)"
-  printf '%s\n' "$HYG_WT_LIST" | awk -F '\t' 'NF { printf "    %s  (%s)\n", $2, ($3 == "" ? "detached" : $3) }'
+  printf '%s\n' "$HYG_WT_LIST" | awk -F '\t' 'NF { printf "    %s  (%s%s)\n", $2, ($3 == "-" ? "detached" : $3), ($5 == "-" ? "" : ", locked: " $5) }'
   hyg_worktrees | awk -F '\t' '$1 == "exempt" { printf "    [exempt] %s  (locked: %s)\n", $2, $5 }
                                 $1 == "prunable" { printf "    [prunable] %s  (registration only; confirm the path is really gone, then: git worktree prune)\n", $2 }'
   echo "  stale branches:    $HYG_ST_N (limit hygiene.maxStaleBranches=$HYG_MAX_ST)"
   printf '%s\n' "$HYG_ST_LIST" | awk -F '\t' 'NF { printf "    %s  (%s)\n", $2, $1 }'
   echo "  open PRs:          ${HYG_PR_N:-<not measured>} (limit hygiene.maxOpenPRs=$_pr_limit)"
-  if [ -n "$HYG_OVER" ]; then echo "  OVER LIMIT:       $HYG_OVER"; echo "  next: git-guard hygiene drain --dry-run"
+  if [ -n "$HYG_OVER" ]; then echo "  OVER LIMIT:       $HYG_OVER"; echo "  next: git fetch --prune && git-guard hygiene drain --dry-run"
   else echo "  within limits"; fi
 }
 
@@ -302,19 +349,29 @@ hyg_integrated() {
   if git merge-base --is-ancestor "$_tip" "$_base" 2>/dev/null; then printf 'ancestor'; return 0; fi
   _cherry="$(git cherry "$_base" "$_tip" 2>/dev/null)" || return 0
   if [ -n "$_cherry" ] && ! printf '%s\n' "$_cherry" | grep -q '^+'; then printf 'patch-equivalent'; return 0; fi
-  # Squash merge: every file the branch touched has the same content on BASE.
+  # Squash merge: every path the branch touched has the same blob on BASE as
+  # on TIP (both absent = deleted on both). Compared per path by object id, so
+  # globs and spaces are inert; a C-quoted name (control characters, quotes,
+  # backslashes) cannot be compared safely and means "not integrated".
+  [ -n "$HYG_TMP" ] || return 0
   _mb="$(git merge-base "$_tip" "$_base" 2>/dev/null)" || return 0
-  _files="$(git diff --name-only "$_mb" "$_tip" 2>/dev/null)" || return 0
-  [ -n "$_files" ] || return 0
-  # shellcheck disable=SC2086  # path list; names with spaces fall through to "not integrated"
-  if printf '%s\n' "$_files" | grep -q ' '; then return 0; fi
-  # shellcheck disable=SC2086
-  if git diff --quiet "$_tip" "$_base" -- $_files 2>/dev/null; then printf 'content-equivalent'; fi
+  git -c core.quotePath=false diff --name-only "$_mb" "$_tip" > "$HYG_TMP/touched" 2>/dev/null || return 0
+  [ -s "$HYG_TMP/touched" ] || return 0
+  _eq=1
+  while IFS= read -r _f; do
+    case "$_f" in \"*) _eq=0; break ;; esac
+    _a="$(git rev-parse -q --verify "$_tip:$_f" 2>/dev/null || true)"
+    _c="$(git rev-parse -q --verify "$_base:$_f" 2>/dev/null || true)"
+    [ "$_a" = "$_c" ] || { _eq=0; break; }
+  done < "$HYG_TMP/touched"
+  [ "$_eq" = "1" ] && printf 'content-equivalent'
+  return 0
 }
 
 # hyg_remote_moved BRANCH BASE — true when BRANCH's upstream still exists and
 # its tip is neither the local tip nor integrated into BASE (someone, often a
-# bot, pushed after the merge: LEARNED_RULES 48).
+# bot, pushed after the merge: LEARNED_RULES 48). Only as fresh as the last
+# fetch.
 hyg_remote_moved() {
   _up="$(git rev-parse -q --verify "$1@{upstream}" 2>/dev/null)" || return 1
   [ "$_up" = "$(git rev-parse -q --verify "refs/heads/$1")" ] && return 1
@@ -322,9 +379,11 @@ hyg_remote_moved() {
   return 0
 }
 
-# hyg_stashed BRANCH — true when a stash entry was made on BRANCH.
+# hyg_stashed BRANCH — true when a stash entry was made on BRANCH (fixed-string
+# match: branch names may contain regex metacharacters).
 hyg_stashed() {
-  git stash list --format='%gs' 2>/dev/null | grep -qE "^(WIP on|On) $1:"
+  git stash list --format='%gs' 2>/dev/null |
+    awk -v a="WIP on $1:" -v b="On $1:" 'index($0, a) == 1 || index($0, b) == 1 { f = 1 } END { exit !f }'
 }
 
 # hyg_sha256 FILE — hex sha256 of FILE, or failure when no tool is present.
@@ -370,11 +429,16 @@ hyg_preserve() {
 }
 
 # hyg_delete_branch BRANCH TIP HOW [BUNDLE] — delete BRANCH only if it still
-# points at TIP. A non-ancestor (squash/patch-equivalent) branch is deleted
-# only after a successful preservation (BUNDLE, or one made here).
+# points at TIP. An ancestor of BASE is reachable from BASE, so it needs no
+# bundle: `branch -d` first, and when that refuses (merged into the remote base
+# but not into a local HEAD that is behind) a compare-and-delete of TIP. A
+# non-ancestor (squash/patch-equivalent) is deleted only after a successful
+# preservation (BUNDLE, or one made here).
 hyg_delete_branch() {
   if [ "$3" = "ancestor" ]; then
     git branch -q -d "$1" >/dev/null 2>&1 && return 0
+    git update-ref -d "refs/heads/$1" "$2" >/dev/null 2>&1
+    return
   fi
   _b="${4:-}"
   if [ -z "$_b" ]; then _b="$(hyg_preserve "$1" "$2")" || return 1; fi
@@ -393,21 +457,22 @@ hyg_drain() {
     esac
   done
   hyg_measure "" "" 0
-  _verb="would remove"; [ "$_apply" = "1" ] && _verb="removed"
+  [ -n "$HYG_TMP" ] || { hyg_say "git-guard hygiene drain: cannot create a temp dir; nothing done"; return 1; }
   echo "git-guard hygiene drain ($([ "$_apply" = "1" ] && echo apply || echo dry-run)): $(git rev-parse --show-toplevel 2>/dev/null)"
+  echo "  (merge state is judged from refs as of the last fetch; run git fetch --prune first)"
   [ -n "$HYG_BASE" ] || echo "  base ref unknown (no <remote>/HEAD, no hygiene.baseRef): nothing is provably merged; skipping."
 
-  hyg_worktrees > "${TMPDIR:-/tmp}/gg-hyg-wt.$$" 2>/dev/null || true
+  hyg_worktrees > "$HYG_TMP/worktrees" 2>/dev/null || :
   while IFS='	' read -r _st _path _br _head _reason; do
+    [ "$_br" = "-" ] && _br=""
+    [ "$_head" = "-" ] && _head=""
+    [ "$_reason" = "-" ] && _reason=""
     case "$_st" in
       exempt)   echo "  keep   $_path  (infrastructure lock: $_reason)"; continue ;;
       prunable) echo "  keep   $_path  (registration only; confirm the path is gone, then: git worktree prune)"; continue ;;
     esac
-    if [ -n "$_reason" ] || git worktree list --porcelain 2>/dev/null | awk -v p="$_path" '
-         /^worktree /{cur=substr($0,10)} /^locked/{ if (cur==p) f=1 } END{exit !f}'; then
-      echo "  keep   $_path  (locked${_reason:+: $_reason})"; continue
-    fi
-    [ -n "$HYG_BASE" ] || { echo "  keep   $_path  (base unknown)"; continue; }
+    if [ -n "$_reason" ]; then echo "  keep   $_path  (locked: $_reason)"; continue; fi
+    [ -n "$HYG_BASE" ] && [ -n "$_head" ] || { echo "  keep   $_path  (base or HEAD unknown)"; continue; }
     _gd="$(git -C "$_path" rev-parse --absolute-git-dir 2>/dev/null)" || { echo "  keep   $_path  (cannot inspect)"; continue; }
     if hyg_op_in_progress "$_gd"; then echo "  keep   $_path  (merge/rebase/cherry-pick in progress)"; continue; fi
     if [ -n "$(git -C "$_path" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
@@ -423,27 +488,26 @@ hyg_drain() {
       if hyg_stashed "$_br"; then echo "  keep   $_path  (a stash was made on $_br)"; continue; fi
       if hyg_remote_moved "$_br" "$HYG_BASE"; then echo "  keep   $_path  (upstream of $_br moved after the merge)"; continue; fi
     fi
-    echo "  $_verb $_path  (${_br:-detached}, $_how)"
-    if [ "$_apply" = "1" ]; then
-      # Not an ancestor of BASE: preserve BEFORE removing anything, and stop
-      # this item entirely if preservation fails.
-      _bundle=""
-      if [ "$_how" != "ancestor" ]; then
-        if ! _bundle="$(hyg_preserve "${_br:-detached-$(basename "$_path")}" "$_head")"; then
-          echo "      PRESERVE FAILED: bundle not written; nothing removed"; continue
-        fi
-        echo "      (bundle: $_bundle)"
-      fi
-      if ! git worktree remove "$_path" >/dev/null 2>&1; then echo "      FAILED: git worktree remove refused; left in place"; continue; fi
-      if [ -n "$_br" ]; then
-        hyg_delete_branch "$_br" "$_head" "$_how" "$_bundle" || echo "      branch $_br kept (delete refused)"
+    if [ "$_apply" != "1" ]; then echo "  would remove $_path  (${_br:-detached}, $_how)"; continue; fi
+    # Not an ancestor of BASE: preserve BEFORE removing anything, and stop
+    # this item entirely if preservation fails.
+    _bundle=""
+    if [ "$_how" != "ancestor" ]; then
+      if ! _bundle="$(hyg_preserve "${_br:-detached-$(basename "$_path")}" "$_head")"; then
+        echo "  keep   $_path  (PRESERVE FAILED: bundle not written; nothing removed)"; continue
       fi
     fi
-  done < "${TMPDIR:-/tmp}/gg-hyg-wt.$$"
-  rm -f "${TMPDIR:-/tmp}/gg-hyg-wt.$$"
+    if ! git worktree remove "$_path" >/dev/null 2>&1; then
+      echo "  keep   $_path  (git worktree remove refused)"; continue
+    fi
+    echo "  removed $_path  (${_br:-detached}, $_how)${_bundle:+; bundle: $_bundle}"
+    if [ -n "$_br" ]; then
+      hyg_delete_branch "$_br" "$_head" "$_how" "$_bundle" || echo "      branch $_br kept (delete refused)"
+    fi
+  done < "$HYG_TMP/worktrees"
 
   # Stale branches (re-measured: worktree removal above may have freed some).
-  hyg_stale "$HYG_BASE" > "${TMPDIR:-/tmp}/gg-hyg-st.$$" 2>/dev/null || true
+  hyg_stale "$HYG_BASE" > "$HYG_TMP/stale" 2>/dev/null || :
   while IFS='	' read -r _why _br; do
     [ -n "$_br" ] || continue
     _tip="$(git rev-parse -q --verify "refs/heads/$_br")" || continue
@@ -452,7 +516,7 @@ hyg_drain() {
       # Upstream gone, commits unique: preserve, never delete.
       if [ "$_apply" = "1" ]; then
         if _b="$(hyg_preserve "$_br" "$_tip")"; then echo "  keep   branch $_br  (unique commits, upstream $_why; bundle: $_b; owner decides)"
-        else echo "  keep   branch $_br  (unique commits, upstream $_why; bundle FAILED)"; fi
+        else echo "  keep   branch $_br  (unique commits, upstream $_why; PRESERVE FAILED)"; fi
       else
         echo "  keep   branch $_br  (unique commits, upstream $_why; --apply writes a bundle, never deletes)"
       fi
@@ -466,8 +530,7 @@ hyg_drain() {
     else
       echo "  would remove branch $_br  ($_how)"
     fi
-  done < "${TMPDIR:-/tmp}/gg-hyg-st.$$"
-  rm -f "${TMPDIR:-/tmp}/gg-hyg-st.$$"
+  done < "$HYG_TMP/stale"
   [ "$_apply" = "1" ] || echo "  (dry run: nothing changed; rerun with --apply)"
   echo "  Remote branches are left to GitHub's delete_branch_on_merge; open PRs need review, merge or close."
   return 0
@@ -477,12 +540,14 @@ hyg_drain() {
 
 hyg_defaults() {
   _dry=0; [ "${1:-}" = "--dry-run" ] && _dry=1
-  # gc.worktreePruneExpire is deliberately NOT shortened: it would prune the
-  # registration of a worktree whose drive is merely offline (T:), which
-  # WORKTREE_LIFECYCLE.md forbids.
+  # Deliberately NOT set:
+  #  * gc.worktreePruneExpire: shortening it prunes the registration of a
+  #    worktree whose drive is merely offline (T:), which WORKTREE_LIFECYCLE.md
+  #    forbids.
+  #  * fetch.pruneTags: with fetch.prune it deletes local-only tags (release or
+  #    backup tags never pushed) on every fetch.
   for _kv in \
     "fetch.prune=true" \
-    "fetch.pruneTags=true" \
     "worktree.guessRemote=true" \
     "rerere.enabled=true" \
     "hygiene.maxWorktrees=$HYG_DEFAULT_MAX_WORKTREES" \
@@ -499,6 +564,18 @@ hyg_defaults() {
       echo "  FAILED to set $_k (continuing)" >&2
     fi
   done
+  # Fleet infrastructure lock namespaces (release trees, fleet-build pins),
+  # the same ones vigil-utils policy/backlog-caps.toml treats as infrastructure.
+  if [ -n "$(git config --global --get-all hygiene.exemptLockPrefix 2>/dev/null || true)" ]; then
+    echo "  ok (kept): hygiene.exemptLockPrefix (already set)"
+  else
+    for _p in "vigil.operator-release/" "vigil.fleet-build/"; do
+      if [ "$_dry" = "1" ]; then echo "  DRY: git config --global --add hygiene.exemptLockPrefix $_p"
+      elif git config --global --add hygiene.exemptLockPrefix "$_p"; then echo "  set: hygiene.exemptLockPrefix += $_p"
+      else echo "  FAILED to add hygiene.exemptLockPrefix $_p (continuing)" >&2
+      fi
+    done
+  fi
   return 0
 }
 

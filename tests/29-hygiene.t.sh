@@ -73,6 +73,13 @@ t_hyg_remote_has() {
 # The machine's GLOBAL git config must not decide the outcome: once install.sh
 # rolls hygiene.* keys out globally they would leak into every fixture. Pin an
 # empty global config for the case and restore the caller's afterwards.
+# t_hyg_sha256 FILE — portable sha256 (stock macOS has shasum, not sha256sum).
+t_hyg_sha256() {
+  if have sha256sum; then sha256sum "$1" | awk '{print $1}'
+  else shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
+  fi
+}
+
 t_case_hygiene() {
   t_begin "29 backlog hygiene limits (new-branch push gate, warn, drain)"
   hyg_had_gcg="${GIT_CONFIG_GLOBAL+x}"
@@ -121,8 +128,29 @@ t_hyg_body() {
   git -C "$r" add README.md
   t_hyg_gg "$r" "$log" commit -q -m "existing-branch commit"; rc=$?
   t_expect_rc 0 "$rc" "commit on an existing branch is never blocked over the limit"
+  grep -q "git-guard hygiene" "$log" && t_fail "commit printed a hygiene message" \
+    || t_ok "commit is silent about hygiene"
   t_hyg_gg "$r" "$log" push origin main; rc=$?
   t_expect_rc 0 "$rc" "push of an existing branch is never blocked over the limit"
+  grep -q "git-guard hygiene" "$log" && t_fail "existing-branch push printed a hygiene message" \
+    || t_ok "existing-branch push is silent about hygiene"
+
+  # The ref list still reaches the downstream pre-push gate after hygiene
+  # buffered it.
+  ds="$GG_T_TMPROOT/hyg-downstream"
+  printf '#!/bin/sh\ncat > "%s.refs"\n' "$ds" > "$ds"; chmod +x "$ds"
+  printf 'again\n' >> "$r/README.md"; git -C "$r" add README.md
+  git -C "$r" commit -q -m "second existing-branch commit"
+  ( cd "$r" && GIT_GUARD_DOWNSTREAM_PRE_PUSH="$ds" git -c core.hooksPath="$GG_ROOT/hooks" push origin main >"$log" 2>&1 ); rc=$?
+  t_expect_rc 0 "$rc" "push with a downstream pre-push gate succeeds"
+  grep -q "refs/heads/main" "$ds.refs" 2>/dev/null && t_ok "downstream gate received the replayed ref list" \
+    || t_fail "downstream gate did not receive the ref list"
+
+  # First publish of the default branch to a new remote is not new work.
+  o2="$(mktemp -d "$GG_T_TMPROOT/origin2.XXXXXX")"; git init -q --bare "$o2"
+  git -C "$r" remote add second "$o2"
+  t_hyg_gg "$r" "$log" push second main; rc=$?
+  t_expect_rc 0 "$rc" "first publish of main to a new remote is never blocked"
 
   # Tags are not branches.
   git -C "$r" tag -a -m t v-hyg-1 >/dev/null 2>&1 || git -C "$r" tag v-hyg-1
@@ -177,6 +205,7 @@ t_hyg_body() {
   git -C "$r" worktree lock --reason "agent busy" "$wtp/w3"
   ( cd "$r" && sh "$hyg" drain --dry-run >"$log" 2>&1 ); rc=$?
   t_expect_rc 0 "$rc" "drain --dry-run exits 0"
+  git -C "$r" rev-parse -q --verify refs/heads/w1 >/dev/null || t_fail "drain --dry-run deleted branch w1"
   [ -d "$wtp/w1" ] && [ -d "$wtp/w4" ] && t_ok "drain --dry-run removed nothing" \
     || t_fail "drain --dry-run removed a worktree"
   grep -q "w1" "$log" && t_ok "dry run lists the drainable worktree" || t_fail "dry run did not list w1"
@@ -190,6 +219,8 @@ t_hyg_body() {
     || t_ok "drain --apply deleted the merged branch w1"
   [ -f "$wtp/w2/wip.txt" ] && t_ok "drain --apply refused the dirty worktree" \
     || t_fail "drain --apply removed a DIRTY worktree"
+  [ ! -d "$wtp/w4" ] && t_ok "drain --apply removed the second clean merged worktree (w4)" \
+    || t_fail "drain --apply kept the clean merged worktree w4"
   [ -d "$wtp/w3" ] && t_ok "drain --apply refused the locked worktree" \
     || t_fail "drain --apply removed a LOCKED worktree"
   git -C "$r" worktree unlock "$wtp/w3"
@@ -210,7 +241,7 @@ t_hyg_body() {
     && t_ok "unique branch preserved as a bundle" || t_fail "no bundle written for the unique branch"
   bfile="$(ls "$pres"/*/gone-unique*.bundle 2>/dev/null | head -n1)"
   if [ -n "$bfile" ] && [ -f "$bfile.sha256" ] &&
-     [ "$(awk '{print $1}' "$bfile.sha256")" = "$(sha256sum "$bfile" 2>/dev/null | awk '{print $1}')" ]; then
+     [ "$(awk '{print $1}' "$bfile.sha256")" = "$(t_hyg_sha256 "$bfile")" ]; then
     t_ok "bundle has a matching .sha256 sidecar"
   else t_fail "bundle .sha256 sidecar missing or wrong"; fi
   [ -z "$(git -C "$r" for-each-ref refs/git-guard-preserve)" ] \
@@ -264,6 +295,49 @@ t_hyg_body() {
     || t_fail "expected 2 bundles for pe-wt and pe-br"
   gg_rmrepo "$r3"
 
+  # --- review findings: detached worktrees, quoted names, ancestor -d ------
+  r4="$(t_hyg_repo)" || { t_fail "fixture r4"; return 0; }
+  git -C "$r4" config hygiene.preserveDir "$GG_T_TMPROOT/hyg-preserve4"
+  # A clean detached worktree at an ancestor of the base drains (an empty
+  # branch field used to shift the record and keep it forever).
+  git -C "$r4" worktree add -q --detach "$wtp/det" main >/dev/null 2>&1
+  # A branch whose only change is a non-ASCII, glob-like file name is NOT on
+  # main: it must never be judged content-equivalent (quoted pathspec).
+  (
+    cd "$r4" || exit 1
+    git checkout -q -b sq || exit 1
+    printf 'cv\n' > "$(printf 'r\303\251sum\303\251[1].md')"
+    git add -A && git commit -q -m "non-ascii file" || exit 1
+    git checkout -q main
+    git push -q origin sq 2>/dev/null || exit 1
+    git branch -q --set-upstream-to=origin/sq sq || exit 1
+    git push -q origin --delete sq 2>/dev/null || exit 1
+    git fetch -q --prune origin || exit 1
+  ) || t_fail "could not build the r4 fixture"
+  # An ancestor of origin/main that is NOT merged into the (behind) local HEAD:
+  # `branch -d` refuses, and the exact-tip delete must succeed with no bundle.
+  (
+    cd "$r4" || exit 1
+    git checkout -q -b anc || exit 1
+    printf 'a\n' > anc.txt && git add anc.txt && git commit -q -m "anc" || exit 1
+    git checkout -q main
+    git push -q origin anc:main 2>/dev/null || exit 1
+    git fetch -q origin || exit 1
+  ) || t_fail "could not build the ancestor fixture"
+  ( cd "$r4" && sh "$hyg" drain --apply >"$log" 2>&1 )
+  [ ! -d "$wtp/det" ] && t_ok "clean detached worktree at an ancestor is drained" \
+    || t_fail "detached worktree was not drained"
+  git -C "$r4" rev-parse -q --verify refs/heads/sq >/dev/null \
+    && t_ok "unmerged non-ASCII/glob-named change is kept" || t_fail "unmerged non-ASCII branch was DELETED"
+  if grep "content-equivalent" "$log" | grep -q "branch sq "; then
+    t_fail "non-ASCII change judged content-equivalent"
+  else t_ok "non-ASCII change not judged content-equivalent"; fi
+  git -C "$r4" rev-parse -q --verify refs/heads/anc >/dev/null \
+    && t_fail "ancestor branch kept although merged into origin/main" || t_ok "ancestor branch deleted although -d refused"
+  ls "$GG_T_TMPROOT/hyg-preserve4"/*/anc-*.bundle >/dev/null 2>&1 \
+    && t_fail "ancestor branch got a (full-history) bundle" || t_ok "ancestor branch needed no bundle"
+  gg_rmrepo "$r4"
+
   # --- stale-branch dimension --------------------------------------------
   r2="$(t_hyg_repo)" || { t_fail "fixture r2"; return 0; }
   git -C "$r2" config hygiene.maxWorktrees 0
@@ -309,6 +383,11 @@ t_hyg_body() {
   [ "$(gget hygiene.maxStaleBranches)" = "5" ] && t_ok "defaults sets hygiene.maxStaleBranches=5" \
     || t_fail "hygiene.maxStaleBranches not defaulted (got $(gget hygiene.maxStaleBranches))"
   [ "$(gget fetch.prune)" = "true" ] && t_ok "defaults sets fetch.prune=true" || t_fail "fetch.prune not set"
+  [ -z "$(gget fetch.pruneTags)" ] && t_ok "defaults leaves fetch.pruneTags alone (local-only tags survive)" \
+    || t_fail "defaults set fetch.pruneTags"
+  HOME="$fh" GIT_CONFIG_GLOBAL="$fh/.gitconfig" git config --global --get-all hygiene.exemptLockPrefix \
+    | grep -qx "vigil.fleet-build/" && t_ok "defaults seeds the infrastructure lock prefixes" \
+    || t_fail "defaults did not seed hygiene.exemptLockPrefix"
   [ -z "$(gget gc.worktreePruneExpire)" ] && t_ok "defaults leaves gc.worktreePruneExpire alone" \
     || t_fail "defaults changed gc.worktreePruneExpire"
 

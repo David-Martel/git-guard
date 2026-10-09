@@ -649,8 +649,10 @@ Owner rule (2026-10-09): clear your merged worktrees, branches and PRs before
 starting new work. `hooks/common/hygiene.sh` enforces it per repository, on
 each host, at the one point where it cannot strand work: **a push that creates
 a NEW branch on the remote is refused while the repo is over a limit.**
-Commits, pushes of existing branches, deletes, tags and `preserve/*` pushes
-are never blocked. `post-checkout` prints a warning after `git worktree add`
+Commits, pushes of existing branches, deletes, tags, `preserve/*` pushes and
+the first publish of the default branch (`main`, `master` or the base's own
+name) are never blocked. Only exit status 1 from the check refuses a push; any
+other failure of the check prints a warning and the push proceeds. `post-checkout` prints a warning after `git worktree add`
 when the repo is over a limit, and never fails.
 
 | Key (`git config`) | Default | Counts |
@@ -659,8 +661,8 @@ when the repo is over a limit, and never fails.
 | `hygiene.maxWorktrees` | 3 | linked worktrees, primary excluded; `0` turns the check off |
 | `hygiene.maxStaleBranches` | 5 | local branches whose upstream is gone or whose tip is merged into `<remote>/HEAD`; `main`, `master`, `preserve/*` and branches checked out in a worktree are excluded; `0` is off |
 | `hygiene.maxOpenPRs` | unset (off) | open non-bot PRs on the GitHub remote, through `gh api` REST; set it to enable |
-| `hygiene.exemptLockPrefix` | none | multi-valued; a worktree locked with a reason that starts with one of these is infrastructure (for example `vigil.operator-release/`, `vigil.fleet-build/`) and is never counted or drained |
-| `hygiene.baseRef` | `<remote>/HEAD` | integration ref when `refs/remotes/<remote>/HEAD` is not set |
+| `hygiene.exemptLockPrefix` | `vigil.operator-release/`, `vigil.fleet-build/` (set by `defaults` when none is configured) | multi-valued; a worktree locked with a reason that starts with one of these is infrastructure (for example `vigil.operator-release/`, `vigil.fleet-build/`) and is never counted or drained |
+| `hygiene.baseRef` | unset | integration ref used when `refs/remotes/<remote>/HEAD` is not set; without either, `refs/remotes/<remote>/main` or `/master` is tried, and if none exists the merged test is skipped |
 | `hygiene.preserveDir` | `${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve` | where `drain` writes bundles |
 
 Repo-local values beat global ones (git's own precedence), so a repo with a
@@ -685,12 +687,17 @@ removes only what passes every check:
 - no stash was made on the branch, and its upstream, if still present, did not
   move after the merge (LEARNED_RULES 48).
 
+Merge state is judged from your remote-tracking refs, so run
+`git fetch --prune` first; drain does not fetch.
+
 A tip that is not an ancestor is preserved before anything is removed: it is
 pinned to a temporary ref, bundled, verified with `git bundle verify`, a
 `.sha256` file is written beside the bundle, and only then is the temporary ref
-deleted. If any of those steps fails, nothing is removed. Branches are deleted
-with `git branch -d`, or for squash-merged work with a compare-and-delete of the
-exact tip that was checked. A branch whose upstream is gone but whose commits
+deleted. If any of those steps fails, nothing is removed. An ancestor of the
+base needs no bundle: it is deleted with `git branch -d`, or, when `-d` refuses
+because the local HEAD is behind the remote base, with a compare-and-delete of
+the exact tip that was checked. Squash-merged work is deleted the same way,
+after its bundle exists. A branch whose upstream is gone but whose commits
 are not on the base is bundled and kept for its owner. Removal uses plain
 `git worktree remove`, never force. Remote branches are left to GitHub's
 `delete_branch_on_merge`. Missing worktree registrations (`prunable`) are only
@@ -698,10 +705,12 @@ reported, because the drive may simply be offline.
 
 **Global defaults.** `install.sh` (and `git-guard hygiene defaults`) sets these
 global keys only when they are unset: `fetch.prune=true`,
-`fetch.pruneTags=true`, `worktree.guessRemote=true`, `rerere.enabled=true`,
-`hygiene.maxWorktrees=3`, `hygiene.maxStaleBranches=5`.
-`gc.worktreePruneExpire` is deliberately left alone: shortening it prunes the
-registration of a worktree whose drive is merely offline.
+`worktree.guessRemote=true`, `rerere.enabled=true`, `hygiene.maxWorktrees=3`,
+`hygiene.maxStaleBranches=5`, and the two infrastructure lock prefixes above.
+Two keys are deliberately left alone. Shortening `gc.worktreePruneExpire` would
+prune the registration of a worktree whose drive is merely offline.
+`fetch.pruneTags` would delete local-only tags on every fetch.
+`install.sh --uninstall` does not remove these keys.
 
 **Relation to vigil-utils.** `tools/backlog_caps/report.py` with
 `policy/backlog-caps.toml` is the fleet-wide, lane-attributed GitHub report

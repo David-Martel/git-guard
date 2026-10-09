@@ -134,7 +134,15 @@ if [ -f "$git_guard_hook_dir/common/hygiene.sh" ] && [ ! -t 0 ]; then
     cat > "$git_guard_stdin"
   fi
   if [ -n "$git_guard_stdin" ]; then
-    sh "$git_guard_hook_dir/common/hygiene.sh" pre-push "$@" < "$git_guard_stdin" || exit 1
+    # Exit 1 is the only policy refusal. Any other failure (a crash, a signal,
+    # an unusual sh) is a tool fault: warn and let the push proceed.
+    sh "$git_guard_hook_dir/common/hygiene.sh" pre-push "$@" < "$git_guard_stdin"
+    git_guard_hygiene_rc=$?
+    if [ "$git_guard_hygiene_rc" -eq 1 ]; then
+      exit 1
+    elif [ "$git_guard_hygiene_rc" -ne 0 ]; then
+      printf 'git-guard hygiene: check failed (exit %s); not blocking this push.\n' "$git_guard_hygiene_rc" >&2
+    fi
   fi
 fi
 

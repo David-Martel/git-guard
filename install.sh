@@ -42,8 +42,9 @@
 #   7. Symlink ~/.agents/QA_TOOLING.md, ~/.agents/GIT_COMMIT_SAFETY.md ->
 #      ~/.local/share/git-guard/current/docs/*  (originals backed up once).
 #   7b. Set recommended GLOBAL git config keys that are still unset
-#      (fetch.prune, fetch.pruneTags, worktree.guessRemote, rerere.enabled,
-#      hygiene.maxWorktrees, hygiene.maxStaleBranches); --no-git-defaults skips.
+#      (fetch.prune, worktree.guessRemote, rerere.enabled, hygiene.maxWorktrees,
+#      hygiene.maxStaleBranches, hygiene.exemptLockPrefix); --no-git-defaults
+#      skips. --uninstall leaves these keys in place.
 #   8. With --rules-dir DIR: write `rules_dir=DIR` into the PERSISTENT overlay
 #      (~/.local/share/git-guard/qa-gate.conf.local) AND copy it into the
 #      just-materialized version dir immediately, so it takes effect now
