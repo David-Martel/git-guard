@@ -42,6 +42,7 @@ t_hyg_repo() {
     git remote add origin "$_o"
     git push -q origin main 2>/dev/null || exit 1
     git remote set-head origin main >/dev/null 2>&1 || exit 1
+    git config hygiene.drainMinAgeMinutes 0
   ) || return 1
   printf '%s' "$_r"
 }
@@ -111,6 +112,9 @@ t_hyg_body() {
 
   t_hyg_branch "$r" feat-new
   t_hyg_gg "$r" "$log" push origin feat-new; rc=$?
+  ( cd "$r" && printf 'refs/heads/x %s refs/heads/x 0000000000000000000000000000000000000000\n' \
+      "$(git rev-parse HEAD)" | sh "$hyg" pre-push origin "$(git remote get-url origin)" >/dev/null 2>&1 ); hrc=$?
+  t_expect_rc 77 "$hrc" "hygiene.sh pre-push refuses with the distinct code 77"
   if [ "$rc" -ne 0 ]; then t_ok "new-branch push refused over hygiene.maxWorktrees (rc=$rc)"
   else t_fail "new-branch push was NOT refused over the worktree limit"; fi
   t_hyg_remote_has "$r" feat-new \
@@ -201,6 +205,14 @@ t_hyg_body() {
   # --- drain --------------------------------------------------------------
   # w1: clean + merged (tip == main's ancestor) -> removable.
   # w2: dirty -> refused.   w3: locked -> refused.   w4: clean + merged.
+  # Age guard: with the default (1440 min) a worktree whose HEAD just moved is
+  # kept, because it may be another agent's live checkout.
+  git -C "$r" config --unset hygiene.drainMinAgeMinutes
+  ( cd "$r" && sh "$hyg" drain --apply >"$log" 2>&1 )
+  [ -d "$wtp/w1" ] && [ -d "$wtp/w4" ] && t_ok "drain keeps worktrees whose HEAD moved recently (default age guard)" \
+    || t_fail "drain removed a freshly created worktree despite the age guard"
+  grep -q "drainMinAgeMinutes" "$log" && t_ok "age-guard keep is explained" || t_fail "age-guard keep not explained"
+  git -C "$r" config hygiene.drainMinAgeMinutes 0
   printf 'wip\n' > "$wtp/w2/wip.txt"
   git -C "$r" worktree lock --reason "agent busy" "$wtp/w3"
   ( cd "$r" && sh "$hyg" drain --dry-run >"$log" 2>&1 ); rc=$?
@@ -337,6 +349,21 @@ t_hyg_body() {
   ls "$GG_T_TMPROOT/hyg-preserve4"/*/anc-*.bundle >/dev/null 2>&1 \
     && t_fail "ancestor branch got a (full-history) bundle" || t_ok "ancestor branch needed no bundle"
   gg_rmrepo "$r4"
+
+  # --- a signal ends drain: no removals after TERM, temp dir cleaned -------
+  # (TERM, not INT: a background job in a non-interactive shell ignores INT.)
+  r5="$(t_hyg_repo)" || { t_fail "fixture r5"; return 0; }
+  git -C "$r5" worktree add -q --detach "$wtp/sig" main >/dev/null 2>&1
+  tdir="$GG_T_TMPROOT/hyg-tmp5"; mkdir -p "$tdir"
+  ( cd "$r5" && TMPDIR="$tdir" GIT_GUARD_HYGIENE_TEST_PAUSE=3 exec sh "$hyg" drain --apply >"$log" 2>&1 ) &
+  dpid=$!
+  sleep 1
+  kill -TERM "$dpid" 2>/dev/null
+  wait "$dpid"; rc=$?
+  [ "$rc" -ne 0 ] && t_ok "TERM during drain exits non-zero (rc=$rc)" || t_fail "TERM during drain exited 0"
+  [ -d "$wtp/sig" ] && t_ok "nothing removed after TERM" || t_fail "drain kept removing after TERM"
+  [ -z "$(ls -A "$tdir" 2>/dev/null)" ] && t_ok "temp dir removed on TERM" || t_fail "temp dir left behind after TERM"
+  gg_rmrepo "$r5"
 
   # --- stale-branch dimension --------------------------------------------
   r2="$(t_hyg_repo)" || { t_fail "fixture r2"; return 0; }

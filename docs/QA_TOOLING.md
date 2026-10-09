@@ -651,8 +651,9 @@ each host, at the one point where it cannot strand work: **a push that creates
 a NEW branch on the remote is refused while the repo is over a limit.**
 Commits, pushes of existing branches, deletes, tags, `preserve/*` pushes and
 the first publish of the default branch (`main`, `master` or the base's own
-name) are never blocked. Only exit status 1 from the check refuses a push; any
-other failure of the check prints a warning and the push proceeds. `post-checkout` prints a warning after `git worktree add`
+name) are never blocked. Only the check's refusal code refuses a push; any
+other failure of the check prints a warning and the push proceeds. (The check
+signals a refusal with exit 77, so a crash is never mistaken for one.) `post-checkout` prints a warning after `git worktree add`
 when the repo is over a limit, and never fails.
 
 | Key (`git config`) | Default | Counts |
@@ -663,6 +664,7 @@ when the repo is over a limit, and never fails.
 | `hygiene.maxOpenPRs` | unset (off) | open non-bot PRs on the GitHub remote, through `gh api` REST; set it to enable |
 | `hygiene.exemptLockPrefix` | `vigil.operator-release/`, `vigil.fleet-build/` (set by `defaults` when none is configured) | multi-valued; a worktree locked with a reason that starts with one of these is infrastructure (for example `vigil.operator-release/`, `vigil.fleet-build/`) and is never counted or drained |
 | `hygiene.baseRef` | unset | integration ref used when `refs/remotes/<remote>/HEAD` is not set; without either, `refs/remotes/<remote>/main` or `/master` is tried, and if none exists the merged test is skipped |
+| `hygiene.drainMinAgeMinutes` | 1440 | `drain` keeps a worktree whose HEAD moved (worktree add, checkout, commit) within this many minutes, because a fresh worktree is clean and "merged" but may be another agent's live checkout; `0` disables |
 | `hygiene.preserveDir` | `${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve` | where `drain` writes bundles |
 
 Repo-local values beat global ones (git's own precedence), so a repo with a
@@ -674,10 +676,13 @@ skipped, never blocked.
 `GIT_GUARD_HYGIENE=off` to skip, `GIT_GUARD=0` for all hooks. Never the
 hook-skip flag.
 
-**Draining.** `git-guard hygiene report` prints counts against limits;
+**Draining.** The CLI is not on PATH by default; run it as
+`sh ~/.local/share/git-guard/current/bin/git-guard hygiene …` (hook messages
+print the exact path). `git-guard hygiene report` prints counts against limits;
 `check` exits 1 when over. `git-guard hygiene drain` is a dry run; `--apply`
 removes only what passes every check:
 
+- its HEAD has not moved within `hygiene.drainMinAgeMinutes` (default a day);
 - the worktree is not locked (or exempt), has no staged, unstaged or untracked
   changes, and no merge, rebase, cherry-pick, revert or bisect in progress;
 - it has no ignored files, unless `--allow-ignored` (`git worktree remove`
@@ -688,7 +693,9 @@ removes only what passes every check:
   move after the merge (LEARNED_RULES 48).
 
 Merge state is judged from your remote-tracking refs, so run
-`git fetch --prune` first; drain does not fetch.
+`git fetch --prune` first; drain does not fetch. drain is not owner-aware:
+read the dry-run list and use `--apply` only when every item is yours or is
+covered by an explicit custody transfer.
 
 A tip that is not an ancestor is preserved before anything is removed: it is
 pinned to a temporary ref, bundled, verified with `git bundle verify`, a
@@ -706,7 +713,9 @@ reported, because the drive may simply be offline.
 **Global defaults.** `install.sh` (and `git-guard hygiene defaults`) sets these
 global keys only when they are unset: `fetch.prune=true`,
 `worktree.guessRemote=true`, `rerere.enabled=true`, `hygiene.maxWorktrees=3`,
-`hygiene.maxStaleBranches=5`, and the two infrastructure lock prefixes above.
+`hygiene.maxStaleBranches=5`, and the two infrastructure lock prefixes above
+(seeded only when no `hygiene.exemptLockPrefix` is set globally, so removing
+one of them is respected).
 Two keys are deliberately left alone. Shortening `gc.worktreePruneExpire` would
 prune the registration of a worktree whose drive is merely offline.
 `fetch.pruneTags` would delete local-only tags on every fetch.

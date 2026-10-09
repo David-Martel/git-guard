@@ -9,7 +9,7 @@
 #
 # Subcommands:
 #   pre-push REMOTE URL    called by hooks/pre-push with the ref list on stdin.
-#                          Exits 1 ONLY for a push that creates a NEW branch on
+#                          Exits 77 (HYG_REFUSE) ONLY for a push that creates a NEW branch on
 #                          the remote while the repo is over a limit. Commits,
 #                          existing-branch pushes, deletes, tags, preserve/* and
 #                          the first publish of the default branch never block.
@@ -33,6 +33,10 @@
 #                              starts with one of these are infrastructure and
 #                              are never counted or drained
 #   hygiene.baseRef            integration ref when <remote>/HEAD is unknown
+#   hygiene.drainMinAgeMinutes drain never removes a worktree whose HEAD moved
+#                              within this many minutes (1440; 0 = no guard):
+#                              a fresh `worktree add` is clean and "merged"
+#                              but may be another agent's live checkout
 #   hygiene.preserveDir        where drain writes bundles of unique work
 #                              (default ${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve)
 # Environment:
@@ -48,7 +52,14 @@ set -u
 
 HYG_DEFAULT_MAX_WORKTREES=3
 HYG_DEFAULT_MAX_STALE=5
+HYG_DEFAULT_MIN_AGE=1440
+# The CLI that ships beside this file (<release>/bin/git-guard). It is not on
+# PATH by default, so messages print the full path.
+HYG_CLI="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)/bin/git-guard"
 HYG_TMP=""
+# Policy refusal from pre-push. Distinct from 1/2 so that a crash (bash-as-sh
+# exits 1 on a `set -u` abort, dash exits 2) can never look like a refusal.
+HYG_REFUSE=77
 
 hyg_say() { printf '%s\n' "$*" >&2; }
 
@@ -58,8 +69,13 @@ hyg_say() { printf '%s\n' "$*" >&2; }
 hyg_tmpdir() {
   [ -n "$HYG_TMP" ] && return 0
   HYG_TMP="$(mktemp -d "${TMPDIR:-/tmp}/git-guard-hygiene.XXXXXX" 2>/dev/null)" || HYG_TMP=""
-  # shellcheck disable=SC2064  # expand HYG_TMP now
-  [ -n "$HYG_TMP" ] && trap "rm -rf \"$HYG_TMP\"" EXIT INT TERM
+  [ -n "$HYG_TMP" ] || return 0
+  # EXIT cleans up. INT/TERM must END the script (exit runs the EXIT trap): a
+  # cleanup-only signal trap would let an interrupted `drain --apply` keep
+  # removing worktrees and branches.
+  trap 'rm -rf "$HYG_TMP"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   return 0
 }
 
@@ -247,7 +263,7 @@ hyg_explain() {
         hyg_say "git-guard hygiene $_lvl: $HYG_PR_N open PRs > hygiene.maxOpenPRs=$HYG_MAX_PR (review and merge or close them)" ;;
     esac
   done
-  hyg_say "  Drain first:  git fetch --prune && git-guard hygiene drain --dry-run   (then --apply)"
+  hyg_say "  Drain first:  git fetch --prune && sh $HYG_CLI hygiene drain --dry-run   (then --apply)"
   hyg_say "  drain removes only clean, unlocked, merged work and bundles any unique tip first."
   hyg_say "  What it keeps (locked, dirty, unique commits) needs its owner: finish, merge or hand it off,"
   hyg_say "  or raise this repo's limit deliberately: git config hygiene.<key> <n>."
@@ -289,7 +305,7 @@ hyg_pre_push() {
   hyg_explain BLOCK
   hyg_say "  Refused: new branch(es)$_new. Existing branches, deletes and commits are never blocked."
   hyg_say "  One push only: GIT_GUARD_HYGIENE=warn git push ...   Do NOT use --no-verify."
-  return 1
+  return "$HYG_REFUSE"
 }
 
 hyg_post_checkout() {
@@ -326,7 +342,7 @@ hyg_report() {
   echo "  stale branches:    $HYG_ST_N (limit hygiene.maxStaleBranches=$HYG_MAX_ST)"
   printf '%s\n' "$HYG_ST_LIST" | awk -F '\t' 'NF { printf "    %s  (%s)\n", $2, $1 }'
   echo "  open PRs:          ${HYG_PR_N:-<not measured>} (limit hygiene.maxOpenPRs=$_pr_limit)"
-  if [ -n "$HYG_OVER" ]; then echo "  OVER LIMIT:       $HYG_OVER"; echo "  next: git fetch --prune && git-guard hygiene drain --dry-run"
+  if [ -n "$HYG_OVER" ]; then echo "  OVER LIMIT:       $HYG_OVER"; echo "  next: git fetch --prune && sh $HYG_CLI hygiene drain --dry-run"
   else echo "  within limits"; fi
 }
 
@@ -458,6 +474,10 @@ hyg_drain() {
   done
   hyg_measure "" "" 0
   [ -n "$HYG_TMP" ] || { hyg_say "git-guard hygiene drain: cannot create a temp dir; nothing done"; return 1; }
+  _min_age="$(hyg_int hygiene.drainMinAgeMinutes "$HYG_DEFAULT_MIN_AGE")"
+  # TEST-ONLY seam (default off): pause before any removal so a test can
+  # signal the run. Never set it in real use.
+  if [ -n "${GIT_GUARD_HYGIENE_TEST_PAUSE:-}" ]; then sleep "$GIT_GUARD_HYGIENE_TEST_PAUSE"; fi
   echo "git-guard hygiene drain ($([ "$_apply" = "1" ] && echo apply || echo dry-run)): $(git rev-parse --show-toplevel 2>/dev/null)"
   echo "  (merge state is judged from refs as of the last fetch; run git fetch --prune first)"
   [ -n "$HYG_BASE" ] || echo "  base ref unknown (no <remote>/HEAD, no hygiene.baseRef): nothing is provably merged; skipping."
@@ -474,6 +494,17 @@ hyg_drain() {
     if [ -n "$_reason" ]; then echo "  keep   $_path  (locked: $_reason)"; continue; fi
     [ -n "$HYG_BASE" ] && [ -n "$_head" ] || { echo "  keep   $_path  (base or HEAD unknown)"; continue; }
     _gd="$(git -C "$_path" rev-parse --absolute-git-dir 2>/dev/null)" || { echo "  keep   $_path  (cannot inspect)"; continue; }
+    # Recent HEAD movement (worktree add, checkout, commit) means it may be a
+    # live checkout: never pull it out from under its agent. logs/HEAD is used
+    # because `git status` (below) can rewrite the index but not the reflog.
+    # This check runs before anything here touches the worktree.
+    if [ "$_min_age" -gt 0 ]; then
+      _hf="$_gd/logs/HEAD"; [ -f "$_hf" ] || _hf="$_gd/HEAD"
+      _recent="$(find "$_hf" -mmin -"$_min_age" 2>/dev/null)" || _recent="unknown"
+      if [ -n "$_recent" ]; then
+        echo "  keep   $_path  (HEAD moved within hygiene.drainMinAgeMinutes=$_min_age; may be in use)"; continue
+      fi
+    fi
     if hyg_op_in_progress "$_gd"; then echo "  keep   $_path  (merge/rebase/cherry-pick in progress)"; continue; fi
     if [ -n "$(git -C "$_path" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
       echo "  keep   $_path  (uncommitted or untracked changes)"; continue
