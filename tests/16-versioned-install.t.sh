@@ -57,7 +57,11 @@ t_case_versioned_install() {
     || t_fail "current does not point at $store/$tag_a (got $(readlink "$store/current" 2>/dev/null))"
 
   ghp_installed="$(GIT_CONFIG_GLOBAL="$fake_home/.gitconfig" HOME="$fake_home" git config --global core.hooksPath 2>/dev/null)"
-  [ "$ghp_installed" = "$hookslink" ] \
+  # Git for Windows stores a native path when MSYS converts the installer argv.
+  # Resolve both real directories instead of comparing POSIX/native spellings.
+  ghp_physical="$(cd "$ghp_installed" 2>/dev/null && pwd -P)"
+  hookslink_physical="$(cd "$hookslink" 2>/dev/null && pwd -P)"
+  [ -n "$ghp_physical" ] && [ "$ghp_physical" = "$hookslink_physical" ] \
     && t_ok "core.hooksPath (in the isolated HOME) points at the hooks-link" \
     || t_fail "core.hooksPath was not set to $hookslink (got '$ghp_installed')"
 

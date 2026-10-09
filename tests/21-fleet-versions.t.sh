@@ -28,6 +28,10 @@ import unittest
 ROOT, TMP = Path(sys.argv[1]), Path(sys.argv[2])
 
 
+def symlink(link, destination):
+    link.symlink_to(str(Path(destination)))
+
+
 def git(root, *args):
     return subprocess.check_output(
         ["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
@@ -214,7 +218,7 @@ class AdapterTests(unittest.TestCase):
         for root in [self.target, self.checker]:
             with self.subTest(root=root.name):
                 link = root / "escape.py"
-                link.symlink_to("../outside.py")
+                symlink(link, "../outside.py")
                 if root == self.target:
                     self.target_sha = commit(root)
                 else:
@@ -227,7 +231,7 @@ class AdapterTests(unittest.TestCase):
                     self.checker_sha = commit(root)
 
     def test_internal_symlink_is_allowed(self):
-        (self.target / "version-alias.txt").symlink_to("version.txt")
+        symlink((self.target / "version-alias.txt"), "version.txt")
         self.target_sha = commit(self.target)
         self.assert_result(0)
 
@@ -241,7 +245,7 @@ class AdapterTests(unittest.TestCase):
     def replace_checker_with_link(self, destination):
         script = self.checker / "tools/fleet_versions/check.py"
         script.unlink()
-        script.symlink_to(destination)
+        symlink(script, destination)
         self.checker_sha = commit(self.checker)
 
     def test_symlink_into_git_metadata_refused_before_execution(self):
@@ -254,7 +258,7 @@ class AdapterTests(unittest.TestCase):
 
     def test_target_symlink_into_git_metadata_refused(self):
         (self.target / ".git" / "version-shadow.txt").write_text("99\n")
-        (self.target / "version-alias.txt").symlink_to(".git/version-shadow.txt")
+        symlink((self.target / "version-alias.txt"), ".git/version-shadow.txt")
         self.target_sha = commit(self.target)
         self.assert_result(2)
 
@@ -271,7 +275,7 @@ class AdapterTests(unittest.TestCase):
         impl.write_text(CHECKER)
         script = self.checker / "tools/fleet_versions/check.py"
         script.unlink()
-        script.symlink_to(str(impl))
+        symlink(script, str(impl))
         self.checker_sha = commit(self.checker)
         self.assertIn("absolute", self.assert_result(2).stderr)
 
@@ -279,7 +283,7 @@ class AdapterTests(unittest.TestCase):
         marker = Path(self.temp.name) / "chain-ran"
         self.plant_metadata_checker(marker)
         # check.py -> alias.py (tracked symlink) -> ../../.git/evil.py
-        (self.checker / "tools/fleet_versions/alias.py").symlink_to("../../.git/evil.py")
+        symlink((self.checker / "tools/fleet_versions/alias.py"), "../../.git/evil.py")
         self.replace_checker_with_link("alias.py")
         self.assert_result(2)
         self.assertFalse(marker.exists(), "chained metadata code executed")
@@ -287,7 +291,7 @@ class AdapterTests(unittest.TestCase):
     def test_symlink_hop_through_metadata_to_tracked_file_refused(self):
         # The final file is tracked, but WHICH file runs is chosen by an
         # untracked link inside .git, so the hop itself is refused.
-        (self.checker / ".git" / "hop.py").symlink_to("../tools/fleet_versions/impl.py")
+        symlink((self.checker / ".git" / "hop.py"), "../tools/fleet_versions/impl.py")
         (self.checker / "tools/fleet_versions/impl.py").write_text(CHECKER)
         self.replace_checker_with_link("../../.git/hop.py")
         self.assert_result(2)
@@ -295,14 +299,14 @@ class AdapterTests(unittest.TestCase):
     def test_symlink_to_directory_refused(self):
         (self.target / "sub").mkdir()
         (self.target / "sub/data.txt").write_text("data\n")
-        (self.target / "sub-link").symlink_to("sub")
+        symlink((self.target / "sub-link"), "sub")
         self.target_sha = commit(self.target)
         self.assertIn("tracked regular file", self.assert_result(2).stderr)
 
     def test_tracked_symlink_chain_to_tracked_checker_runs(self):
         # Positive control: check.py -> alias.py -> impl.py, all tracked.
         (self.checker / "tools/fleet_versions/impl.py").write_text(CHECKER)
-        (self.checker / "tools/fleet_versions/alias.py").symlink_to("impl.py")
+        symlink((self.checker / "tools/fleet_versions/alias.py"), "impl.py")
         self.replace_checker_with_link("alias.py")
         self.assertIn('"fixture_checker": true', self.assert_result(0).stdout)
 

@@ -51,7 +51,21 @@ t_case_install_verify_before_flip() {
   # git preserves the exec bit through the tree, so `git archive` faithfully
   # reproduces a non-executable pre-commit -- this is what a corrupted/
   # mis-authored release looks like from install.sh's point of view.
-  chmod -x "$src/hooks/pre-commit"
+  # MSYS treats a shebang script as executable independently of chmod on NTFS.
+  # Exercise a genuinely absent required hook there, retaining Linux mode coverage.
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      corruption_description="missing pre-commit"
+      windows_mode=true
+      t_skip "Windows executable-bit corruption is NOT_TESTED; missing-hook rejection is exercised"
+      rm "$src/hooks/pre-commit"
+      ;;
+    *)
+      corruption_description="non-executable pre-commit"
+      windows_mode=false
+      chmod -x "$src/hooks/pre-commit"
+      ;;
+  esac
   git -C "$src" add hooks/pre-commit
   # --no-verify: this is a test-harness-internal commit into a THROWAWAY
   # git-guard source worktree, not a real change to be judged by git-guard's
@@ -70,7 +84,7 @@ t_case_install_verify_before_flip() {
     >"$GG_T_TMPROOT/install-noexec.out" 2>&1
   noexec_rc=$?
   [ "$noexec_rc" != 0 ] \
-    && t_ok "install --to $tag_noexec (non-executable pre-commit) is REFUSED (rc=$noexec_rc)" \
+    && t_ok "install --to $tag_noexec ($corruption_description) is REFUSED (rc=$noexec_rc)" \
     || t_fail "install --to $tag_noexec should have failed verification but exited 0"
 
   grep -q "VERIFY FAILED" "$GG_T_TMPROOT/install-noexec.out" \
@@ -85,7 +99,8 @@ t_case_install_verify_before_flip() {
     && t_ok "current is UNTOUCHED after a failed verification (still the last-good version)" \
     || t_fail "current changed after a failed verification: $(readlink "$store/current" 2>/dev/null)"
 
-  # Restore the exec bit for the next case (working tree is reused).
+  # Restore the actual original bytes and mode for the next case.
+  git -C "$src" show "$tag_good:hooks/pre-commit" > "$src/hooks/pre-commit"
   chmod +x "$src/hooks/pre-commit"
 
   # --- Case C: a tag whose committed hooks/common/qa_gate.sh has bad sh syntax ---
@@ -115,13 +130,18 @@ t_case_install_verify_before_flip() {
   # after materialization (disk error / manual tampering), commit marker
   # still matches -- the idempotent fast path must re-verify, not just trust
   # the marker forever.
-  chmod -x "$store/$tag_good/hooks/pre-commit"
+  if [ "$windows_mode" = true ]; then
+    rm "$store/$tag_good/hooks/pre-commit"
+  else
+    chmod -x "$store/$tag_good/hooks/pre-commit"
+  fi
   ( HOME="$fake_home" sh "$src/install.sh" --to "$tag_good" --store "$store" --hooks-link "$hookslink" ) \
     >"$GG_T_TMPROOT/install-fastpath-corrupt.out" 2>&1
   fastpath_rc=$?
   [ "$fastpath_rc" != 0 ] \
     && t_ok "re-running install --to $tag_good after on-disk corruption is REFUSED (rc=$fastpath_rc), not silently accepted via the commit-marker fast path" \
     || t_fail "install --to $tag_good should have re-verified and failed, but exited 0"
+  git -C "$src" show "$tag_good:hooks/pre-commit" > "$store/$tag_good/hooks/pre-commit"
   chmod +x "$store/$tag_good/hooks/pre-commit"  # restore for cleanup hygiene
 
   git -C "$GG_ROOT" worktree remove --force "$src" >/dev/null 2>&1

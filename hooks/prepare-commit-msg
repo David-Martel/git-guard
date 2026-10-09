@@ -82,6 +82,38 @@ fi
 # trailer. Let Git find the final trailer block; retain that earlier text.
 # `--if-exists replace` canonicalizes Agent's spelling and keeps repeated hook
 # invocations byte-identical.
+# Comment lines use core.commentString / core.commentChar (default "#").
+# With "auto", git picks the first of `#;@!$%^&|:` that starts no line of
+# the message and appends its comment block. A verbose diff follows a
+# scissors marker in that character; take the last exact marker so a literal
+# earlier body marker cannot select the wrong character. Without a verbose
+# diff, use the last nonblank comment line. Apply it to both agents.
+git_guard_comment="$(git config --get core.commentString 2>/dev/null ||
+  git config --get core.commentChar 2>/dev/null || echo '#')"
+git_guard_comment_override=""
+if [ "$git_guard_comment" = "auto" ]; then
+  git_guard_last_char="$(awk '
+    NF { l = $0 }
+    substr($0, 2) == " ------------------------ >8 ------------------------" &&
+      substr($0, 1, 1) ~ /^[#;@!$%^&|:]$/ {
+        scissors = substr($0, 1, 1)
+      }
+    END { print scissors == "" ? substr(l, 1, 1) : scissors }
+  ' "$message_file")"
+  case "$git_guard_last_char" in
+    '#'|';'|'@'|'!'|'$'|'%'|'^'|'&'|'|'|':') git_guard_comment="$git_guard_last_char" ;;
+    *) git_guard_comment='#' ;;
+  esac
+  git_guard_comment_override="$git_guard_comment"
+fi
+[ -n "$git_guard_comment" ] || git_guard_comment='#'
+git_guard_trailers() {
+  if [ -n "$git_guard_comment_override" ]; then
+    git -c core.commentChar="$git_guard_comment_override" interpret-trailers "$@"
+  else
+    git interpret-trailers "$@"
+  fi
+}
 case "$agent" in
   codex)
     # Codex co-author: `Codex <noreply@openai.com>`, the address the Codex CLI
@@ -100,31 +132,6 @@ case "$agent" in
     # Co-authored-by lines are untouched. Published history is not rewritten.
     git_guard_coauthor_legacy='Co-authored-by: Codex <codex@users.noreply.github.com>'
     git_guard_coauthor_draft='Co-authored-by: Codex <codex@agents.invalid>'
-    # Comment lines use core.commentString / core.commentChar (default "#").
-    # With "auto", git picks the first of `#;@!$%^&|:` that starts no line of
-    # the message and APPENDS its comment block, so the last non-blank line's
-    # first character is the one it chose. Use that, and hand the same
-    # character to every interpret-trailers call below, so the trailer block
-    # above those comments is found.
-    git_guard_comment="$(git config --get core.commentString 2>/dev/null ||
-      git config --get core.commentChar 2>/dev/null || echo '#')"
-    git_guard_comment_override=""
-    if [ "$git_guard_comment" = "auto" ]; then
-      git_guard_last_char="$(awk 'NF { l = $0 } END { print substr(l, 1, 1) }' "$message_file")"
-      case "$git_guard_last_char" in
-        '#'|';'|'@'|'!'|'$'|'%'|'^'|'&'|'|'|':') git_guard_comment="$git_guard_last_char" ;;
-        *) git_guard_comment='#' ;;
-      esac
-      git_guard_comment_override="$git_guard_comment"
-    fi
-    [ -n "$git_guard_comment" ] || git_guard_comment='#'
-    git_guard_trailers() {
-      if [ -n "$git_guard_comment_override" ]; then
-        git -c core.commentChar="$git_guard_comment_override" interpret-trailers "$@"
-      else
-        git interpret-trailers "$@"
-      fi
-    }
     if git_guard_trailers --parse "$message_file" 2>/dev/null |
        grep -qxF -e "$git_guard_coauthor_legacy" -e "$git_guard_coauthor_draft"; then
       git_guard_msg_tmp="${message_file}.git-guard.$$"
@@ -132,8 +139,17 @@ case "$agent" in
         function is_comment(s) { return substr(s, 1, length(cc)) == cc }
         { line[NR] = $0 }
         END {
+          # Git excludes the verbose diff below its scissors marker from
+          # the commit message. It must not hide the real trailer paragraph.
+          limit = NR
+          for (i = 1; i <= NR; i++) {
+            if (line[i] == cc " ------------------------ >8 ------------------------") {
+              limit = i - 1
+              break
+            }
+          }
           last = 0
-          for (i = NR; i >= 1; i--) {
+          for (i = limit; i >= 1; i--) {
             if (!is_comment(line[i]) && line[i] !~ /^[[:space:]]*$/) { last = i; break }
           }
           start = last
@@ -167,7 +183,7 @@ case "$agent" in
       "$message_file"
     ;;
   claude)
-    git interpret-trailers --in-place \
+    git_guard_trailers --in-place \
       --if-exists replace \
       --if-missing add \
       --trailer 'Agent: claude' \

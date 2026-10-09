@@ -152,7 +152,7 @@ jobs:
           shellcheck --version | head -3
 
       - name: Set up pinned Rust for native inventory qualification
-        uses: dtolnay/rust-toolchain@1.96.0
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt
 

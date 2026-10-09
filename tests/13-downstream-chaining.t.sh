@@ -150,10 +150,14 @@ t_case_downstream_chaining() {
   grep -q 'git-guard BLOCK' "$log"; t_assert $? "commit-msg: the missing-downstream refusal is LOUD"
   grep -q 'no-such-hook' "$log"; t_assert $? "commit-msg: the refusal names the configured path"
 
-  printf '#!/bin/sh\nexit 0\n' > "$r/downstream-noexec"; chmod -x "$r/downstream-noexec"
-  cm GIT_GUARD_DOWNSTREAM_COMMIT_MSG="$r/downstream-noexec"; rc=$?
-  t_expect_rc 1 "$rc" "commit-msg: a configured but NON-EXECUTABLE downstream refuses"
-  grep -q 'git-guard BLOCK' "$log"; t_assert $? "commit-msg: the non-executable refusal is LOUD"
+  if gg_is_windows; then
+    t_skip "commit-msg: Unix non-executable mode NOT_TESTED on Windows; missing and executable providers are tested"
+  else
+    printf '#!/bin/sh\nexit 0\n' > "$r/downstream-noexec"; chmod -x "$r/downstream-noexec"
+    cm GIT_GUARD_DOWNSTREAM_COMMIT_MSG="$r/downstream-noexec"; rc=$?
+    t_expect_rc 1 "$rc" "commit-msg: a configured but NON-EXECUTABLE downstream refuses"
+    grep -q 'git-guard BLOCK' "$log"; t_assert $? "commit-msg: the non-executable refusal is LOUD"
+  fi
 
   cm GIT_GUARD_DOWNSTREAM_COMMIT_MSG=""; rc=$?
   t_expect_rc 0 "$rc" "commit-msg: an EMPTY downstream variable means not configured"

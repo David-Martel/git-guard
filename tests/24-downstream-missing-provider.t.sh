@@ -59,10 +59,14 @@ t_case_downstream_missing_provider() {
     grep -q 'no-such-hook' "$log"; t_assert $? "$hook: the refusal names the configured path"
 
     # Configured but NOT EXECUTABLE: same refusal.
-    printf '#!/bin/sh\nexit 0\n' > "$r/downstream-noexec"; chmod -x "$r/downstream-noexec"
-    gg_t24_run "$hook" "$r" "$log" "$var=$r/downstream-noexec"; rc=$?
-    t_expect_rc 1 "$rc" "$hook: a configured but NON-EXECUTABLE downstream refuses"
-    grep -q 'git-guard BLOCK' "$log"; t_assert $? "$hook: the non-executable refusal is LOUD"
+    if gg_is_windows; then
+      t_skip "$hook: Unix non-executable mode NOT_TESTED on Windows; missing and executable providers are tested"
+    else
+      printf '#!/bin/sh\nexit 0\n' > "$r/downstream-noexec"; chmod -x "$r/downstream-noexec"
+      gg_t24_run "$hook" "$r" "$log" "$var=$r/downstream-noexec"; rc=$?
+      t_expect_rc 1 "$rc" "$hook: a configured but NON-EXECUTABLE downstream refuses"
+      grep -q 'git-guard BLOCK' "$log"; t_assert $? "$hook: the non-executable refusal is LOUD"
+    fi
 
     # Configured but MISSING while a repo .local provider exists: refuse, and do
     # NOT silently substitute the .local provider for the configured one.

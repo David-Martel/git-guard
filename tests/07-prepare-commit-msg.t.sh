@@ -224,6 +224,72 @@ Agent: codex")
   printf '%s\n' "$auto_message" | grep -qx '# a markdown heading in the body'
   t_assert "$?" "commentChar=auto amend keeps the '#' body line"
 
+  # Real auto+verbose amends must place attribution above Git's scissors.
+  # Inject a literal body marker only after Git selects its comment character;
+  # Git 2.55 otherwise consumes seeded scissors while preparing the template.
+  for probe_agent in codex claude; do
+    for probe_marker in 0 1; do
+      probe="$(gg_mktemp_repo)" || { t_fail "create verbose attribution fixture"; return; }
+      mkdir "$probe/test-hooks"
+      cp "$GG_ROOT/hooks/prepare-commit-msg" "$probe/test-hooks/production"
+      cat > "$probe/test-hooks/prepare-commit-msg" <<'GG_VERBOSE_HOOK'
+#!/bin/sh
+set -eu
+if [ "$GG_ATTR_MARKER" = 1 ]; then
+  awk '{print; if ($0 == "# a markdown heading in the body") {
+    print ""; print "# ------------------------ >8 ------------------------"
+  }}' "$1" > "$1.injected"
+  cat "$1.injected" > "$1"
+  rm "$1.injected"
+fi
+cp "$1" "$GG_ATTR_ROOT/before"
+sh "$GG_ATTR_ROOT/test-hooks/production" "$@"
+cp "$1" "$GG_ATTR_ROOT/after"
+GG_VERBOSE_HOOK
+      chmod +x "$probe/test-hooks/prepare-commit-msg"
+      git -C "$probe" config core.hooksPath "$probe/test-hooks"
+      printf 'verbose fixture\n' > "$probe/a.txt"
+      git -C "$probe" add a.txt
+      probe_tree="$(git -C "$probe" write-tree)"
+      # Plumbing creates only synthetic private fixture history; no installed
+      # hook is invoked or bypassed to plant intentionally legacy attribution.
+      if [ "$probe_agent" = codex ]; then
+        probe_seed="$(printf 'auto subject\n\n# a markdown heading in the body\n\nCo-authored-by: Codex <codex@users.noreply.github.com>\nAgent: codex\n' |
+          git -C "$probe" commit-tree "$probe_tree")"
+      else
+        probe_seed="$(printf 'auto subject\n\n# a markdown heading in the body\n\nCo-authored-by: Other <other@example.test>\n' |
+          git -C "$probe" commit-tree "$probe_tree")"
+      fi
+      git -C "$probe" update-ref HEAD "$probe_seed"
+      (cd "$probe" && GG_ATTR_ROOT="$probe" GG_ATTR_MARKER="$probe_marker" GIT_GUARD_AGENT="$probe_agent" GIT_EDITOR=true \
+        git -c core.commentChar=auto -c commit.verbose=true commit -q --amend)
+      t_expect_rc 0 "$?" "$probe_agent real auto+verbose amend (literal marker=$probe_marker)"
+      git -C "$probe" log -1 --format=%B > "$probe/message"
+      git -c 'core.commentChar=;' interpret-trailers --parse "$probe/message" > "$probe/trailers"
+      t_expect_rc 1 "$(grep -c "^Agent: $probe_agent$" "$probe/trailers")" "$probe_agent remains exactly one parsed trailer above verbose diff"
+      grep -qx '# a markdown heading in the body' "$probe/message"
+      t_assert "$?" "$probe_agent verbose amend preserves body heading"
+      if [ "$probe_marker" = 1 ]; then
+        grep -qx '# ------------------------ >8 ------------------------' "$probe/message"
+        t_assert "$?" "$probe_agent preserves earlier literal body scissors"
+      fi
+      if [ "$probe_agent" = codex ]; then
+        t_expect_rc 0 "$(grep -c 'codex@users.noreply.github.com' "$probe/message")" "verbose amend removes the exact legacy Codex trailer"
+        t_expect_rc 1 "$(grep -c '^Co-authored-by: Codex <noreply@openai.com>$' "$probe/trailers")" "verbose amend has exactly one parsed canonical co-author"
+      else
+        grep -qx 'Co-authored-by: Other <other@example.test>' "$probe/trailers"
+        t_assert "$?" "Claude verbose amend preserves the other contributor"
+      fi
+      grep -qx '; ------------------------ >8 ------------------------' "$probe/before"
+      t_assert "$?" "actual Git selected semicolon for the verbose boundary"
+      sed -n '/^; ------------------------ >8 ------------------------$/,$p' "$probe/before" > "$probe/tail-before"
+      sed -n '/^; ------------------------ >8 ------------------------$/,$p' "$probe/after" > "$probe/tail-after"
+      cmp -s "$probe/tail-before" "$probe/tail-after"
+      t_assert "$?" "$probe_agent scissors and actual verbose diff remain byte-identical"
+      gg_rmrepo "$probe"
+    done
+  done
+
   # A human (no agent) never has a message rewritten, legacy line included.
   printf 'human amend\n\nCo-authored-by: Codex <codex@users.noreply.github.com>\n' > "$r/human-legacy-message"
   cp "$r/human-legacy-message" "$r/human-legacy-before"
