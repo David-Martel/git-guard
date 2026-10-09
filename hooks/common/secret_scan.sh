@@ -83,6 +83,8 @@ if [ "$#" -gt 0 ]; then
   gg_scan_targets="$*"
 fi
 
+_GG_TIER1RE='(AKIA[0-9A-Z]{16})|(ghp_[A-Za-z0-9_]{30,})|(github_pat_[A-Za-z0-9_]{30,})|(gh[osur]_[A-Za-z0-9_]{30,})|(glpat-[A-Za-z0-9_-]{20,})|(xox[baprse]-[A-Za-z0-9-]{10,})|(AIza[0-9A-Za-z_-]{35})|(\b[sr]k_live_[0-9a-zA-Z]{16,})|(sk-ant-[A-Za-z0-9_-]{20,})|(sk-proj-[A-Za-z0-9_-]{20,})|(sk-[A-Za-z0-9]{32,})|(npm_[A-Za-z0-9]{36})|(pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{20,})|(SG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})|(\bSK[0-9a-fA-F]{32}\b)|(\b[MNO][A-Za-z0-9_-]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,})|(AccountKey=[A-Za-z0-9+/=]{60,})|(eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.)|([-]----BEGIN ([A-Z]+ )?PRIVATE KEY-----)'
+
 # --- context helpers ---------------------------------------------------------
 
 # Credential-key regex, spelled with character classes rather than `grep -i`,
@@ -122,6 +124,8 @@ _gg_looks_like_code() {
   # ident.ident[.ident...] -- field access / attribute chain
   if printf '%s' "$v" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$'; then
     return 0
+  elif [ "$?" -gt 1 ]; then
+    return 2
   fi
   # bare type names that show up as struct-field declarations
   case "$v" in
@@ -152,12 +156,12 @@ _gg_is_placeholder() {
   # Shell / PowerShell / Make interpolation anywhere in the value: "$safeTag-$sha".
   # `$` followed by an identifier or opening brace/paren. A leading `$2b$` bcrypt
   # hash is NOT matched (digit after `$`), so hashes still reach the checks.
-  if printf '%s' "$v" | grep -Eq '\$[A-Za-z_{(]'; then return 0; fi
+  if printf '%s' "$v" | grep -Eq '\$[A-Za-z_{(]'; then return 0; elif [ "$?" -gt 1 ]; then return 2; fi
   # Low-entropy: a single-case alphabetic word shorter than 12 chars. Covers the
   # CI-service defaults (postgres, mysql, root, admin, guest, secret) without a
   # hand-maintained denylist. A real credential of this shape is already weak.
-  if printf '%s' "$v" | grep -Eq '^[a-z]{1,11}$'; then return 0; fi
-  if printf '%s' "$v" | grep -Eq '^[A-Z]{1,11}$'; then return 0; fi
+  if printf '%s' "$v" | grep -Eq '^[a-z]{1,11}$'; then return 0; elif [ "$?" -gt 1 ]; then return 2; fi
+  if printf '%s' "$v" | grep -Eq '^[A-Z]{1,11}$'; then return 0; elif [ "$?" -gt 1 ]; then return 2; fi
   return 1
 }
 
@@ -174,94 +178,144 @@ scan_match() {
   # patterns, test fixtures, or known-safe example values.
   case "$line" in *'pragma: allowlist secret'*) return 1 ;; esac
 
-  # ---- TIER 1: high-confidence provider formats (context-free) -------------
-  # AWS access key id
-  if printf '%s' "$line" | grep -Eq 'AKIA[0-9A-Z]{16}'; then
-    echo "AWS access key"; return 0
-  fi
-  # GitHub classic personal access token
-  if printf '%s' "$line" | grep -Eq 'ghp_[A-Za-z0-9_]{30,}'; then
-    echo "GitHub PAT"; return 0
-  fi
-  # GitHub fine-grained PAT / other github_pat_ tokens
-  if printf '%s' "$line" | grep -Eq 'github_pat_[A-Za-z0-9_]{30,}'; then
-    echo "GitHub fine-grained PAT"; return 0
-  fi
-  # Other GitHub token classes: oauth / user-to-server / server-to-server / refresh
-  if printf '%s' "$line" | grep -Eq 'gh[osur]_[A-Za-z0-9_]{30,}'; then
-    echo "GitHub token"; return 0
-  fi
-  # GitLab personal access token
-  if printf '%s' "$line" | grep -Eq 'glpat-[A-Za-z0-9_-]{20,}'; then
-    echo "GitLab PAT"; return 0
-  fi
-  # Slack tokens (bot/user/app/refresh/legacy)
-  if printf '%s' "$line" | grep -Eq 'xox[baprse]-[A-Za-z0-9-]{10,}'; then
-    echo "Slack token"; return 0
-  fi
-  # Google API key
-  if printf '%s' "$line" | grep -Eq 'AIza[0-9A-Za-z_-]{35}'; then
-    echo "Google API key"; return 0
-  fi
-  # Stripe live secret / restricted key
-  if printf '%s' "$line" | grep -Eq '\b[sr]k_live_[0-9a-zA-Z]{16,}'; then
-    echo "Stripe live key"; return 0
-  fi
-  # Anthropic API key
-  if printf '%s' "$line" | grep -Eq 'sk-ant-[A-Za-z0-9_-]{20,}'; then
-    echo "Anthropic API key"; return 0
-  fi
-  # OpenAI API key (classic and project-scoped)
-  if printf '%s' "$line" | grep -Eq 'sk-proj-[A-Za-z0-9_-]{20,}'; then
-    echo "OpenAI project key"; return 0
-  fi
-  if printf '%s' "$line" | grep -Eq 'sk-[A-Za-z0-9]{32,}'; then
-    echo "OpenAI API key"; return 0
-  fi
-  # npm access token
-  if printf '%s' "$line" | grep -Eq 'npm_[A-Za-z0-9]{36}'; then
-    echo "npm token"; return 0
-  fi
-  # PyPI upload token
-  if printf '%s' "$line" | grep -Eq 'pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{20,}'; then
-    echo "PyPI token"; return 0
-  fi
-  # SendGrid API key
-  if printf '%s' "$line" | grep -Eq 'SG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'; then
-    echo "SendGrid API key"; return 0
-  fi
-  # Twilio API key SID
-  if printf '%s' "$line" | grep -Eq '\bSK[0-9a-fA-F]{32}\b'; then
-    echo "Twilio key SID"; return 0
-  fi
-  # Discord bot token (3 dot-separated segments, id.timestamp.hmac)
-  if printf '%s' "$line" | grep -Eq '\b[MNO][A-Za-z0-9_-]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}'; then
-    echo "Discord bot token"; return 0
-  fi
-  # Azure storage account key in a connection string
-  if printf '%s' "$line" | grep -Eq 'AccountKey=[A-Za-z0-9+/=]{60,}'; then
-    echo "Azure storage key"; return 0
-  fi
-  # JSON Web Token (header.payload., both base64url of a JSON object)
-  if printf '%s' "$line" | grep -Eq 'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.'; then
-    echo "JWT"; return 0
-  fi
-  # PEM private key header. The leading '-' must not be parsed as an option, and
-  # `-e` is NOT a portable way to achieve that: uutils grep (increasingly common
-  # on PATH via ~/bin coreutils shims) rejects `-e` outright, so this test errored
-  # on every line and the detector FAILED OPEN — demonstrated 2026-08-15 by
-  # committing an OPENSSH PRIVATE KEY successfully with uutils grep ahead of GNU
-  # grep, while the AWS detector on the next lines still blocked correctly.
-  # Bracketing the first dash makes the pattern not start with '-' at all, which
-  # needs no flag and is verified matching under BOTH greps.
-  if printf '%s' "$line" | grep -Eq '[-]----BEGIN ([A-Z]+ )?PRIVATE KEY-----'; then
-    echo "private key"; return 0
-  fi
+  # One exact-union probe avoids 19 process starts on contextual-only lines.
+  # Preserve the existing ordered provider labels on a positive union match.
+  tier1_status=0
+  printf '%s' "$line" | grep -Eq "$_GG_TIER1RE" || tier1_status=$?
+  case "$tier1_status" in
+    0)
+    # ---- TIER 1: high-confidence provider formats (context-free) -------------
+    # AWS access key id
+    if printf '%s' "$line" | grep -Eq 'AKIA[0-9A-Z]{16}'; then
+      echo "AWS access key"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # GitHub classic personal access token
+    if printf '%s' "$line" | grep -Eq 'ghp_[A-Za-z0-9_]{30,}'; then
+      echo "GitHub PAT"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # GitHub fine-grained PAT / other github_pat_ tokens
+    if printf '%s' "$line" | grep -Eq 'github_pat_[A-Za-z0-9_]{30,}'; then
+      echo "GitHub fine-grained PAT"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # Other GitHub token classes: oauth / user-to-server / server-to-server / refresh
+    if printf '%s' "$line" | grep -Eq 'gh[osur]_[A-Za-z0-9_]{30,}'; then
+      echo "GitHub token"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # GitLab personal access token
+    if printf '%s' "$line" | grep -Eq 'glpat-[A-Za-z0-9_-]{20,}'; then
+      echo "GitLab PAT"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # Slack tokens (bot/user/app/refresh/legacy)
+    if printf '%s' "$line" | grep -Eq 'xox[baprse]-[A-Za-z0-9-]{10,}'; then
+      echo "Slack token"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # Google API key
+    if printf '%s' "$line" | grep -Eq 'AIza[0-9A-Za-z_-]{35}'; then
+      echo "Google API key"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # Stripe live secret / restricted key
+    if printf '%s' "$line" | grep -Eq '\b[sr]k_live_[0-9a-zA-Z]{16,}'; then
+      echo "Stripe live key"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # Anthropic API key
+    if printf '%s' "$line" | grep -Eq 'sk-ant-[A-Za-z0-9_-]{20,}'; then
+      echo "Anthropic API key"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # OpenAI API key (classic and project-scoped)
+    if printf '%s' "$line" | grep -Eq 'sk-proj-[A-Za-z0-9_-]{20,}'; then
+      echo "OpenAI project key"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    if printf '%s' "$line" | grep -Eq 'sk-[A-Za-z0-9]{32,}'; then
+      echo "OpenAI API key"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # npm access token
+    if printf '%s' "$line" | grep -Eq 'npm_[A-Za-z0-9]{36}'; then
+      echo "npm token"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # PyPI upload token
+    if printf '%s' "$line" | grep -Eq 'pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{20,}'; then
+      echo "PyPI token"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # SendGrid API key
+    if printf '%s' "$line" | grep -Eq 'SG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'; then
+      echo "SendGrid API key"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # Twilio API key SID
+    if printf '%s' "$line" | grep -Eq '\bSK[0-9a-fA-F]{32}\b'; then
+      echo "Twilio key SID"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # Discord bot token (3 dot-separated segments, id.timestamp.hmac)
+    if printf '%s' "$line" | grep -Eq '\b[MNO][A-Za-z0-9_-]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}'; then
+      echo "Discord bot token"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # Azure storage account key in a connection string
+    if printf '%s' "$line" | grep -Eq 'AccountKey=[A-Za-z0-9+/=]{60,}'; then
+      echo "Azure storage key"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # JSON Web Token (header.payload., both base64url of a JSON object)
+    if printf '%s' "$line" | grep -Eq 'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.'; then
+      echo "JWT"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+    # PEM private key header. The leading '-' must not be parsed as an option, and
+    # `-e` is NOT a portable way to achieve that: uutils grep (increasingly common
+    # on PATH via ~/bin coreutils shims) rejects `-e` outright, so this test errored
+    # on every line and the detector FAILED OPEN — demonstrated 2026-08-15 by
+    # committing an OPENSSH PRIVATE KEY successfully with uutils grep ahead of GNU
+    # grep, while the AWS detector on the next lines still blocked correctly.
+    # Bracketing the first dash makes the pattern not start with '-' at all, which
+    # needs no flag and is verified matching under BOTH greps.
+    if printf '%s' "$line" | grep -Eq '[-]----BEGIN ([A-Z]+ )?PRIVATE KEY-----'; then
+      echo "private key"; return 0
+    elif [ "$?" -gt 1 ]; then
+      return 2
+    fi
+      ;;
+    1) : ;;
+    *) return 2 ;;
+  esac
 
   # ---- TIER 2: contextual key = value literals ------------------------------
   # Require an assignment to a credential-ish key. Comparisons are not
   # assignments: `if password == expected` assigns nothing.
-  printf '%s' "$line" | grep -Eq "${_GG_KEYRE}[[:space:]]*[:=]" || return 1
+  key_status=0
+  printf '%s' "$line" | grep -Eq "${_GG_KEYRE}[[:space:]]*[:=]" || key_status=$?
+  case "$key_status" in 0) : ;; 1) return 1 ;; *) return 2 ;; esac
   case "$line" in *'=='*|*'!='*|*'<='*|*'>='*) return 1 ;; esac
 
   # Right-hand side: everything after the CREDENTIAL KEY's own ':' or '=' — NOT
@@ -291,10 +345,12 @@ scan_match() {
     # field access -- structurally incapable of being a hardcoded literal.
     _gg_is_source_ext "$sfile" && return 1
     # In config/shell, still reject anything code-shaped.
-    _gg_looks_like_code "$val" && return 1
+    if _gg_looks_like_code "$val"; then code_status=0; else code_status=$?; fi
+    case "$code_status" in 0) return 1 ;; 1) : ;; *) return 2 ;; esac
   fi
 
-  _gg_is_placeholder "$val" && return 1
+  if _gg_is_placeholder "$val"; then placeholder_status=0; else placeholder_status=$?; fi
+  case "$placeholder_status" in 0) return 1 ;; 1) : ;; *) return 2 ;; esac
 
   # Plausible value: require at least 6 chars to avoid empty/short noise.
   if [ "${#val}" -ge 6 ]; then
@@ -377,12 +433,20 @@ while IFS= read -r diffline; do
           |*[Pp][Aa][Ss][Ss][Ww]*|*[Pp][Ww][Dd]*|*[Aa][Pp][Ii][-_][Kk][Ee][Yy]* \
           |*[Aa][Pp][Ii][Kk][Ee][Yy]*|*[Ss][Ee][Cc][Rr][Ee][Tt]* \
           |*[Tt][Oo][Kk][Ee][Nn]*|*[Pp][Rr][Ii][Vv][Aa][Tt][Ee][-_][Kk][Ee][Yy]*)
-            label="$(scan_match "$content" "$cur_file")" && {
-              hit_file="$cur_file"
-              hit_line="$new_lineno"
-              hit_label="$label"
-              break
-            }
+            if label="$(scan_match "$content" "$cur_file")"; then scan_status=0; else scan_status=$?; fi
+            case "$scan_status" in
+              0)
+                hit_file="$cur_file"
+                hit_line="$new_lineno"
+                hit_label="$label"
+                break
+                ;;
+              1) : ;;
+              *)
+                printf 'git-guard BLOCKED: secret scan matcher failed at %s:%s. Staged work is preserved.\n' "$cur_file" "$new_lineno" >&2
+                exit 1
+                ;;
+            esac
             ;;
         esac
       fi

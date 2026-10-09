@@ -45,6 +45,71 @@ _ss_allows() {
   else t_fail "allows: $1 (expected rc=0, got rc=$_got)"; fi
 }
 
+
+# Diagnose synthetic staged records without printing their assembled value.
+_ss_label_probe() {
+  _r="$(gg_mktemp_repo)" || return 99
+  printf 'harmless line\ntoken=%s\n' "$1" > "$_r/provider.txt"
+  (cd "$_r" && git add provider.txt) >/dev/null 2>&1
+  _diagnostic="$(cd "$_r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" 2>&1)"; _got=$?
+  case "$_diagnostic" in
+    *"provider.txt:2 ($2)"*) _label_ok=1 ;;
+    *) _label_ok=0 ;;
+  esac
+  if [ "$_got" = 1 ] && [ "$_label_ok" = 1 ]; then t_ok "provider label/path/line: $2"
+  else t_fail "provider label/path/line: $2 (rc=$_got, label=$_label_ok)"; fi
+  gg_rmrepo "$_r"
+}
+
+_ss_matcher_error_probe() {
+  _r="$(gg_mktemp_repo)" || return 99
+  printf '%s\n' 'token=abcDEF012345' > "$_r/check.conf"
+  (cd "$_r" && git add check.conf) >/dev/null 2>&1
+  mkdir "$_r/matcher-bin"
+  cat > "$_r/matcher-bin/grep" <<'GG_MATCHER_ERROR'
+#!/bin/sh
+n=0
+[ ! -f "$GG_MATCHER_COUNT" ] || n="$(cat "$GG_MATCHER_COUNT")"
+n=$((n+1)); printf '%s' "$n" > "$GG_MATCHER_COUNT"
+case "$GG_MATCHER_PHASE:$n" in
+  provider:1) exit 2 ;;
+  ordered:1) exit 0 ;;
+  ordered:2) exit 2 ;;
+  context:1) exit 1 ;;
+  context:2) exit 2 ;;
+  code:1) exit 1 ;;
+  code:2) exit 0 ;;
+  code:3) exit 2 ;;
+  interpolate:1|lower:1|upper:1) exit 1 ;;
+  interpolate:2|lower:2|upper:2) exit 0 ;;
+  interpolate:3|lower:3|upper:3) exit 1 ;;
+  interpolate:4) exit 2 ;;
+  lower:4) exit 1 ;;
+  lower:5) exit 2 ;;
+  upper:4|upper:5) exit 1 ;;
+  upper:6) exit 2 ;;
+  *) exit 1 ;;
+esac
+GG_MATCHER_ERROR
+  chmod +x "$_r/matcher-bin/grep"
+  _diagnostic="$(cd "$_r" && PATH="$_r/matcher-bin:$PATH" GG_MATCHER_COUNT="$_r/count" GG_MATCHER_PHASE="$1" sh "$GG_ROOT/hooks/common/secret_scan.sh" 2>&1)"; _got=$?
+  case "$_diagnostic" in *'secret scan matcher failed'*) _failed=1 ;; *) _failed=0 ;; esac
+  if [ "$_got" = 1 ] && [ "$_failed" = 1 ]; then t_ok "matcher status 2 fails closed: $1"
+  else t_fail "matcher status 2 fails closed: $1 (rc=$_got, diagnostic=$_failed)"; fi
+  gg_rmrepo "$_r"
+}
+
+# A no-hit status remains a successful whole scan even when sh -e is used.
+_ss_errexit_probe() {
+  _r="$(gg_mktemp_repo)" || return 99
+  printf '%s\n' 'token=environment.lookup()' 'password=postgres' > "$_r/safe.conf"
+  (cd "$_r" && git add safe.conf) >/dev/null 2>&1
+  _diagnostic="$(cd "$_r" && sh -e "$GG_ROOT/hooks/common/secret_scan.sh" 2>&1)"; _got=$?
+  if [ "$_got" = 0 ]; then t_ok "normal negative scan remains successful with errexit"
+  else t_fail "negative scan with errexit (rc=$_got)"; fi
+  gg_rmrepo "$_r"
+}
+
 t_case_secret_scan() {
   t_begin "secret_scan: provider formats, contextual literals, FP regressions"
 
@@ -209,6 +274,38 @@ t_case_secret_scan() {
   else
     t_ok "portability: no 'grep -e' in secret_scan.sh"
   fi
+
+
+  # All 19 provider labels retain original priority and path/line diagnostics.
+  _tail32=0123456789abcdef0123456789abcdef
+  _ss_label_probe "AKIA""1234567890ABCDEF" 'AWS access key'
+  _ss_label_probe "ghp_""$_tail32" 'GitHub PAT'
+  _ss_label_probe "github_pat_""$_tail32" 'GitHub fine-grained PAT'
+  _ss_label_probe "gho_""$_tail32" 'GitHub token'
+  _ss_label_probe "glpat-""$_tail32" 'GitLab PAT'
+  _ss_label_probe "xoxb-""$_tail32" 'Slack token'
+  _ss_label_probe "AIza""${_tail32}abc" 'Google API key'
+  _ss_label_probe "sk_live_""$_tail32" 'Stripe live key'
+  _ss_label_probe "sk-ant-""$_tail32" 'Anthropic API key'
+  _ss_label_probe "sk-proj-""$_tail32" 'OpenAI project key'
+  _ss_label_probe "sk-""$_tail32" 'OpenAI API key'
+  _ss_label_probe "npm_""${_tail32}abcd" 'npm token'
+  _ss_label_probe "pypi-AgEIcHlwaS5vcmc""$_tail32" 'PyPI token'
+  _ss_label_probe "SG.""${_tail32}.${_tail32}" 'SendGrid API key'
+  _ss_label_probe "SK""$_tail32" 'Twilio key SID'
+  _ss_label_probe "M123456789012345678901234"".123456.${_tail32}" 'Discord bot token'
+  _ss_label_probe "AccountKey=""${_tail32}${_tail32}" 'Azure storage key'
+  _ss_label_probe "eyJ""1234567890.eyJ1234567890.sig" 'JWT'
+  _ss_label_probe "-----BEGIN"" RSA PRIVATE KEY-----" 'private key'
+  _ss_label_probe "AKIA""1234567890ABCDEF ghp_${_tail32}" 'AWS access key'
+  _ss_matcher_error_probe provider
+  _ss_matcher_error_probe context
+  _ss_matcher_error_probe ordered
+  _ss_matcher_error_probe code
+  _ss_matcher_error_probe interpolate
+  _ss_matcher_error_probe lower
+  _ss_matcher_error_probe upper
+  _ss_errexit_probe
 
   return 0
 }
