@@ -660,7 +660,7 @@ when the repo is over a limit, and never fails.
 |---|---|---|
 | `hygiene.mode` | `enforce` | `enforce`, `warn` or `off` (`GIT_GUARD_HYGIENE` beats it) |
 | `hygiene.maxWorktrees` | 3 | linked worktrees, primary excluded; `0` turns the check off |
-| `hygiene.maxStaleBranches` | 5 | local branches whose upstream is gone or whose tip is merged into `<remote>/HEAD`; `main`, `master`, `preserve/*` and branches checked out in a worktree are excluded; `0` is off |
+| `hygiene.maxStaleBranches` | 5 | local branches whose upstream is gone or whose tip is merged into `<remote>/HEAD`; `main`, `master`, `preserve/*` and branches a worktree uses (checked out, or under an in-progress rebase, `rebase --update-refs` or bisect) are excluded; `0` is off |
 | `hygiene.maxOpenPRs` | unset (off) | open non-bot PRs on the GitHub remote, through `gh api` REST; set it to enable |
 | `hygiene.exemptLockPrefix` | `vigil.operator-release/`, `vigil.fleet-build/` (set by `defaults` when none is configured) | multi-valued; a worktree locked with a reason that starts with one of these is infrastructure (for example `vigil.operator-release/`, `vigil.fleet-build/`) and is never counted or drained |
 | `hygiene.baseRef` | unset | integration ref used when `refs/remotes/<remote>/HEAD` is not set; without either, `refs/remotes/<remote>/main` or `/master` is tried, and if none exists the merged test is skipped |
@@ -704,10 +704,16 @@ deleted. If any of those steps fails, nothing is removed. Every branch is
 deleted with an atomic compare-and-delete of the exact tip that was checked
 (`git update-ref -d <ref> <tip>`), never `git branch -d`, which deletes whatever
 the branch points at now. An ancestor of the base needs no bundle; squash-merged
-work is deleted only after its bundle exists. Right before a worktree is
-removed, its HEAD, branch and status are read again, and it is kept if anything
-changed since inspection. A branch whose upstream is gone but whose commits
-are not on the base is bundled and kept for its owner. Removal uses plain
+work is deleted only after its bundle exists. Because a same-tip checkout does
+not move the ref, every worktree's use of the branch is read again right before
+the delete, and the branch is kept if any worktree has it checked out or is
+rebasing or bisecting it (a worktree in that state is listed as detached; drain
+reads its rebase and bisect state files, as `git branch -d` does), or if that
+scan fails. Right before a worktree is removed, its HEAD, branch, status
+(including ignored files, unless `--allow-ignored`) and in-progress operations
+are read again, and it is kept if anything changed since inspection. A branch
+whose upstream is gone but whose commits are not on the base is bundled and
+kept for its owner. Removal uses plain
 `git worktree remove`, never force. Remote branches are left to GitHub's
 `delete_branch_on_merge`. Missing worktree registrations (`prunable`) are only
 reported, because the drive may simply be offline.

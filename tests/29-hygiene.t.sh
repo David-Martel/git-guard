@@ -21,6 +21,10 @@
 #   * drain: --dry-run changes nothing; --apply removes only clean, merged,
 #     unlocked worktrees/branches, refuses dirty or locked ones, and bundles a
 #     branch with unique commits instead of deleting it.
+#   * drain never deletes a branch git itself treats as in use: checked out
+#     in any worktree, or under an in-progress rebase, bisect or
+#     rebase --update-refs (worktree list shows those as "detached"), also
+#     when that starts between inspection and the delete at the same tip.
 #   * `hygiene.sh defaults` sets global defaults only when unset.
 # shellcheck shell=sh
 
@@ -440,6 +444,109 @@ t_hyg_body() {
     && t_ok "failed final checkout scan retains the reviewed branch" \
     || t_fail "final checkout scan failure allowed branch deletion"
   gg_rmrepo "$r8"
+
+  # --- a branch under rebase or bisect is in use --------------------------
+  # `git worktree list` prints such a worktree as "detached", so a scan of its
+  # `branch` lines misses it. git's own `branch -d` (branch_checked_out) reads
+  # rebase-merge/head-name, rebase-apply/head-name, rebase-merge/update-refs
+  # and BISECT_START and refuses; drain must also keep these branches, both in
+  # the inventory and at the delete, including when the rebase starts after
+  # inspection at the same tip.
+  r9="$(t_hyg_repo)" || { t_fail "fixture r9"; return 0; }
+  (
+    cd "$r9" || exit 1
+    for c in c1 c2 c3; do
+      printf '%s\n' "$c" > "$c.txt" && git add "$c.txt" && git commit -q -m "$c" || exit 1
+    done
+    git push -q origin main 2>/dev/null || exit 1
+    git branch rebasing && git branch bisecting && git branch upd-top && git branch upd-mid HEAD~1 || exit 1
+    git worktree add -q "$wtp/rebasing" rebasing || exit 1
+    git worktree add -q "$wtp/bisecting" bisecting || exit 1
+    git worktree add -q "$wtp/upd-top" upd-top || exit 1
+    # `--exec false` stops the rebase after its first pick: no editor needed.
+    git -C "$wtp/rebasing" rebase -q --exec false HEAD~1 >/dev/null 2>&1
+    git -C "$wtp/bisecting" bisect start >/dev/null 2>&1 &&
+      git -C "$wtp/bisecting" bisect bad >/dev/null 2>&1 &&
+      git -C "$wtp/bisecting" bisect good HEAD~3 >/dev/null 2>&1 || exit 1
+    exit 0
+  ) || t_fail "could not build the r9 fixture"
+  r9_tip="$(git -C "$r9" rev-parse main)"
+  r9_mid="$(git -C "$r9" rev-parse main~1)"
+  # rebase --update-refs (git 2.38+) is optional: older git has no such state.
+  r9_upd=0
+  if git -C "$wtp/upd-top" rebase -q --update-refs --exec false HEAD~2 >/dev/null 2>&1 ||
+     [ -f "$(git -C "$wtp/upd-top" rev-parse --absolute-git-dir)/rebase-merge/update-refs" ]; then
+    r9_upd=1
+  fi
+  # Oracle: git itself treats each as in use. If `branch -d` deleted one, the
+  # fixture is not testing what it claims.
+  for b in rebasing bisecting; do
+    git -C "$r9" branch -d "$b" >/dev/null 2>&1 && t_fail "fixture: git branch -d deleted $b (not in use)"
+  done
+  if [ "$r9_upd" = "1" ]; then
+    git -C "$r9" branch -d upd-mid >/dev/null 2>&1 && t_fail "fixture: git branch -d deleted upd-mid (not in use)"
+  fi
+  ( cd "$r9" && sh "$hyg" report >"$log" 2>&1 )
+  if grep -Eq '^    (rebasing|bisecting)  \(' "$log"; then
+    t_fail "branch under rebase/bisect counted as a stale branch"
+  else t_ok "branch under rebase/bisect is not counted as stale"; fi
+  ( cd "$r9" && sh "$hyg" drain --apply >"$log" 2>&1 )
+  [ "$(git -C "$r9" rev-parse -q --verify refs/heads/rebasing)" = "$r9_tip" ] \
+    && t_ok "branch under an in-progress rebase in a worktree is retained" \
+    || t_fail "drain deleted a branch that a worktree is rebasing"
+  [ "$(git -C "$r9" rev-parse -q --verify refs/heads/bisecting)" = "$r9_tip" ] \
+    && t_ok "branch under an in-progress bisect in a worktree is retained" \
+    || t_fail "drain deleted a branch that a worktree is bisecting"
+  if [ "$r9_upd" = "1" ]; then
+    [ "$(git -C "$r9" rev-parse -q --verify refs/heads/upd-mid)" = "$r9_mid" ] \
+      && t_ok "branch listed in a rebase --update-refs is retained" \
+      || t_fail "drain deleted a branch that rebase --update-refs will rewrite"
+  else
+    t_skip "git $(git --version | awk '{print $3}') has no rebase --update-refs"
+  fi
+  # Same tip, rebase started between inspection and delete (the delete hook).
+  # The hook runs at every delete pause, so it is one-shot: it acts only while
+  # the late-rebase worktree does not exist yet.
+  git -C "$r9" branch late-rebase
+  ( cd "$r9" && GIT_GUARD_HYGIENE_TEST_PAUSE_AT=delete \
+      GIT_GUARD_HYGIENE_TEST_HOOK="[ -e '$wtp/late-rebase' ] || { git worktree add -q '$wtp/late-rebase' late-rebase && git -C '$wtp/late-rebase' rebase -q --exec false HEAD~1; }" \
+      sh "$hyg" drain --apply >"$log" 2>&1 )
+  r9_lgd="$(git -C "$wtp/late-rebase" rev-parse --absolute-git-dir 2>/dev/null)"
+  if [ -n "$r9_lgd" ] && [ -d "$r9_lgd/rebase-merge" ]; then
+    [ "$(git -C "$r9" rev-parse -q --verify refs/heads/late-rebase)" = "$r9_tip" ] \
+      && t_ok "same-tip branch whose rebase started after inspection is retained" \
+      || t_fail "drain deleted a same-tip branch whose rebase started after inspection"
+  else
+    t_fail "fixture: the delete hook did not leave late-rebase mid-rebase"
+  fi
+  for w in rebasing late-rebase upd-top; do git -C "$wtp/$w" rebase --abort >/dev/null 2>&1; done
+  git -C "$wtp/bisecting" bisect reset >/dev/null 2>&1
+  gg_rmrepo "$r9"
+
+  # A rebase state file that exists but cannot be read (here a directory in
+  # place of head-name) makes the in-use scan fail, and a failed scan must
+  # keep the branch. Positive control: once the bad state is gone, the same
+  # drain deletes the branch, so the scan failure is what kept it.
+  r10="$(t_hyg_repo)" || { t_fail "fixture r10"; return 0; }
+  git -C "$r10" branch scan-unreadable
+  reviewed="$(git -C "$r10" rev-parse HEAD)"
+  git -C "$r10" worktree add -q --detach "$wtp/badstate" main >/dev/null 2>&1
+  r10_gd="$(git -C "$wtp/badstate" rev-parse --absolute-git-dir 2>/dev/null)"
+  if [ -n "$r10_gd" ] && mkdir -p "$r10_gd/rebase-merge/head-name" &&
+     ! sed -n p "$r10_gd/rebase-merge/head-name" >/dev/null 2>&1; then
+    ( cd "$r10" && sh "$hyg" drain --apply >"$log" 2>&1 )
+    [ "$(git -C "$r10" rev-parse -q --verify refs/heads/scan-unreadable)" = "$reviewed" ] \
+      && t_ok "unreadable rebase state in a worktree retains the reviewed branch" \
+      || t_fail "an unreadable rebase state file allowed branch deletion"
+    rm -rf "$r10_gd/rebase-merge"
+    ( cd "$r10" && sh "$hyg" drain --apply >"$log" 2>&1 )
+    git -C "$r10" rev-parse -q --verify refs/heads/scan-unreadable >/dev/null \
+      && t_fail "positive control: branch still kept once the rebase state was removed" \
+      || t_ok "positive control: the same branch is deleted once the state is readable"
+  else
+    t_skip "this sed reads a directory without error; cannot fake an unreadable state file"
+  fi
+  gg_rmrepo "$r10"
 
   # --- stale-branch dimension --------------------------------------------
   r2="$(t_hyg_repo)" || { t_fail "fixture r2"; return 0; }
