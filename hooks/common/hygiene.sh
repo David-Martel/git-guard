@@ -170,15 +170,52 @@ hyg_worktrees() {
   '
 }
 
+# hyg_in_use — the local branches git itself refuses to delete because a
+# worktree uses them (branch.c branch_checked_out), one short name per line:
+#   * the branch checked out in any worktree, primary included, locked or not;
+#   * the branch an in-progress rebase returns to (rebase-merge/head-name,
+#     rebase-apply/head-name) and every branch a rebase --update-refs will
+#     rewrite (rebase-merge/update-refs);
+#   * the branch a bisect started from (BISECT_START).
+# A rebasing or bisecting worktree is listed as "detached" by
+# `git worktree list`, so its `branch` lines alone miss the last two kinds.
+# The state files are read from every registered git dir (the common dir and
+# <common>/worktrees/*), so an offline worktree still counts. Returns 1 when
+# anything cannot be read: callers must then treat every branch as in use.
+hyg_in_use() {
+  _iu_wl="$(git worktree list --porcelain 2>/dev/null)" || return 1
+  [ -n "$_iu_wl" ] || return 1
+  printf '%s\n' "$_iu_wl" | sed -n 's|^branch refs/heads/||p'
+  _iu_cd="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  _iu_cd="$(cd "$_iu_cd" 2>/dev/null && pwd)" || return 1
+  for _iu_g in "$_iu_cd" "$_iu_cd"/worktrees/*; do
+    [ -d "$_iu_g" ] || continue
+    for _iu_f in rebase-merge/head-name rebase-apply/head-name rebase-merge/update-refs; do
+      [ -e "$_iu_g/$_iu_f" ] || continue
+      # update-refs holds <ref>, <old oid>, <new oid> per entry; only the ref
+      # lines start with refs/heads/.
+      sed -n 's|^refs/heads/||p' "$_iu_g/$_iu_f" 2>/dev/null || return 1
+    done
+    if [ -e "$_iu_g/BISECT_START" ]; then
+      # The short branch name (or an object id when bisect began detached).
+      _iu_n="$(cat "$_iu_g/BISECT_START" 2>/dev/null)" || return 1
+      [ -z "$_iu_n" ] || printf '%s\n' "$_iu_n"
+    fi
+  done
+  return 0
+}
+
 # hyg_stale BASE — local branches whose upstream is gone or whose tip is
 # merged into BASE, excluding main, master, the base's own branch name,
-# preserve/*, and any branch checked out in a worktree (those are drained as
-# worktrees). One line each: <reason>\t<branch>. One awk pass: a fork per
+# preserve/*, and any branch a worktree uses (hyg_in_use: checked-out ones
+# are drained as worktrees; rebasing/bisecting ones belong to their owner).
+# One line each: <reason>\t<branch>. One awk pass: a fork per
 # branch made this minutes long on a repo with hundreds of branches.
 hyg_stale() {
   _base="${1:-}"
   [ -n "$HYG_TMP" ] || return 0
-  git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p' > "$HYG_TMP/checked-out"
+  # A failed scan only affects the count here; hyg_delete_branch re-reads it.
+  hyg_in_use > "$HYG_TMP/checked-out" 2>/dev/null || :
   : > "$HYG_TMP/merged"
   if [ -n "$_base" ]; then
     git for-each-ref --merged "$_base" --format='%(refname:short)' refs/heads/ > "$HYG_TMP/merged" 2>/dev/null || :
@@ -471,12 +508,14 @@ hyg_delete_branch() {
     if [ -z "$_b" ]; then _b="$(hyg_preserve "$1" "$2")" || return 1; fi
   fi
   hyg_test_pause delete
-  # A same-tip checkout does not move the ref. Include the primary and every
-  # registered worktree (locked or offline too); failed inspection retains it.
-  _delete_worktrees="$(git worktree list --porcelain 2>/dev/null)" || return 1
-  [ -n "$_delete_worktrees" ] || return 1
-  if printf '%s\n' "$_delete_worktrees" | grep -Fqx "branch refs/heads/$1"; then
-    hyg_say "git-guard hygiene: branch $1 kept (checked out since inspection)"
+  # A same-tip checkout, rebase or bisect does not move the ref, so the
+  # compare-and-delete below would not notice it: re-read every worktree's
+  # use of the branch right before deleting (hyg_in_use, which also covers
+  # the primary and locked or offline worktrees). Failed inspection retains it.
+  [ -n "$HYG_TMP" ] || return 1
+  hyg_in_use > "$HYG_TMP/in-use" 2>/dev/null || return 1
+  if grep -Fqx -- "$1" "$HYG_TMP/in-use"; then
+    hyg_say "git-guard hygiene: branch $1 kept (checked out, rebasing or bisecting in a worktree)"
     return 1
   else
     _delete_scan_status=$?
