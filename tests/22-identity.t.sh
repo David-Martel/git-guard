@@ -95,8 +95,13 @@ t_case_identity_cli() {
   else
     t_fail "key pair is named <agent>@<host>"
   fi
-  gg_id_eq "drwx------" "$(ls -ld "$lab/keys" | cut -c1-10)" "key directory is 0700"
-  gg_id_eq "-rw-------" "$(ls -ld "$lab/keys/claude@testhost" | cut -c1-10)" "private key is 0600"
+  if gg_is_windows; then
+    t_skip "key directory Unix 0700 mode NOT_TESTED on Windows; Windows ACL security is not qualified by this test"
+    t_skip "private key Unix 0600 mode NOT_TESTED on Windows; Windows ACL security is not qualified by this test"
+  else
+    gg_id_eq "drwx------" "$(ls -ld "$lab/keys" | cut -c1-10)" "key directory is 0700"
+    gg_id_eq "-rw-------" "$(ls -ld "$lab/keys/claude@testhost" | cut -c1-10)" "private key is 0600"
+  fi
   gg_id_eq 2 "$(wc -l < "$out" | tr -d ' ')" "keygen stdout is exactly two lines"
   head -n 1 "$out" | cmp -s - "$lab/keys/claude@testhost.pub"
   t_assert "$?" "keygen stdout line 1 is the public key"
@@ -118,9 +123,15 @@ t_case_identity_cli() {
   r="$(gg_mktemp_repo)" || { t_fail "env repo"; return; }
   git -C "$r" config user.signingkey /repo/local/key.pub   # repo-local value the agent must beat
   scope_line="$( . "$lab/env.sh"; cd "$r" && git config --show-scope --get user.signingkey )"
-  gg_id_eq "$(printf 'command\t%s' "$lab/keys/claude@testhost")" "$scope_line" "env beats repo-local user.signingkey at command scope"
+  expected_key="$lab/keys/claude@testhost"
+  expected_signers="$lab/as"
+  if gg_is_windows; then
+    expected_key="$(cygpath -am "$expected_key")"
+    expected_signers="$(cygpath -am "$expected_signers")"
+  fi
+  gg_id_eq "$(printf 'command\t%s' "$expected_key")" "$scope_line" "env beats repo-local user.signingkey at command scope"
   agent_line="$( . "$lab/env.sh"; printf '%s|%s|%s' "$GIT_GUARD_AGENT" "$(cd "$r" && git config --get gpg.ssh.allowedSignersFile)" "$(cd "$r" && git config --bool --get commit.gpgsign)" )"
-  gg_id_eq "claude|$lab/as|true" "$agent_line" "env sets GIT_GUARD_AGENT, allowedSignersFile and gpgsign"
+  gg_id_eq "claude|$expected_signers|true" "$agent_line" "env sets GIT_GUARD_AGENT, allowedSignersFile and gpgsign"
   GIT_GUARD_IDENTITY_KEYDIR="$lab/keys" sh "$GG_ID_SH" env codex --host testhost >/dev/null 2>&1
   t_expect_rc 1 "$?" "env refuses an identity whose key does not exist"
   GIT_GUARD_IDENTITY_KEYDIR="$lab/keys" sh "$GG_ID_SH" env codex --host testhost --allow-missing >/dev/null 2>&1

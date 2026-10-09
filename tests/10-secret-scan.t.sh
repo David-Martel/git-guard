@@ -243,7 +243,12 @@ t_case_secret_scan() {
   ( cd "$_r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" >/dev/null 2>&1 ); _got=$?
   if [ "$_got" = "1" ]; then t_ok "blocks: secret added while renaming (staged)"
   else t_fail "blocks: secret added while renaming (staged) (expected rc=1, got rc=$_got)"; fi
-  ( cd "$_r" && git -c user.name=t -c user.email=t@t commit -qm rename --no-gpg-sign ) >/dev/null 2>&1
+  _parent="$(git -C "$_r" rev-parse HEAD)"
+  _tree="$(git -C "$_r" write-tree)"
+  _head="$(printf 'synthetic rename history\n' | git -C "$_r" commit-tree "$_tree" -p "$_parent")"; _seed_rc=$?
+  t_expect_rc 0 "$_seed_rc" "fake rename history is created by isolated Git plumbing"
+  [ "$_seed_rc" = 0 ] && git -C "$_r" update-ref HEAD "$_head" "$_parent"
+  t_expect_rc 0 "$?" "fake rename history advances exactly the expected fixture HEAD"
   _head="$(cd "$_r" && git rev-parse HEAD)"
   ( cd "$_r" && sh "$GG_ROOT/hooks/common/secret_scan.sh" --commits "$_head" >/dev/null 2>&1 ); _got=$?
   if [ "$_got" = "1" ]; then t_ok "blocks: secret added while renaming (--commits)"

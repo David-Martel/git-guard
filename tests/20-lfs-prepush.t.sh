@@ -65,9 +65,31 @@ t_case_lfs_prepush() {
   # loudly instead of pushing dangling pointers. Invoke the hook directly with a
   # PATH holding only the tools it needs, none of them git-lfs.
   nolfs="$(mktemp -d "${GG_T_TMPROOT:-/tmp}/gg.nolfs.XXXXXX")"
-  for tool in git sh cat mktemp rm printf; do
-    tp="$(command -v "$tool" 2>/dev/null)" && [ -x "$tp" ] && ln -s "$tp" "$nolfs/$tool"
+  # Use real transport executables on MSYS, not user launchers whose own
+  # lookup fails in the deliberately restricted PATH. These are the closure
+  # used by pre-push and its identity/preservation/hygiene helpers.
+  for tool in git sh cat mktemp rm printf dirname env awk grep sed cut tr sort wc uname date sleep find head tail; do
+    tp="$(command -v "$tool" 2>/dev/null)"
+    if gg_is_windows; then
+      case "$tool" in
+        git) tp=/mingw64/bin/git.exe ;;
+        sh) tp=/usr/bin/sh.exe ;;
+        *) [ ! -x "/usr/bin/$tool.exe" ] || tp="/usr/bin/$tool.exe" ;;
+      esac
+    fi
+    if [ -x "$tp" ]; then
+      if gg_is_windows; then
+        # MSYS ln -s may copy the executable rather than create a native link.
+        # The relocated executable cannot find its DLLs in the restricted PATH.
+        # Execute the original in place, retaining its real DLL provenance.
+        printf '#!/bin/sh\nexec "%s" "$@"\n' "$tp" > "$nolfs/$tool"
+        chmod +x "$nolfs/$tool"
+      else
+        ln -s "$tp" "$nolfs/$tool"
+      fi
+    fi
   done
+  PATH="$nolfs" sh -c 'git --version >/dev/null' || t_fail "restricted PATH transport could not execute real Git"
   if [ -x "$nolfs/git-lfs" ] || PATH="$nolfs" command -v git-lfs >/dev/null 2>&1; then
     t_fail "test PATH unexpectedly still resolves git-lfs"
   else

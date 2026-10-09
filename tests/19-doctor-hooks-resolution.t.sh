@@ -88,13 +88,21 @@ t_case_doctor_hooks_resolution() {
   git -C "$src" -c tag.gpgsign=false -c tag.forceSignAnnotated=false tag "$tag_good2" HEAD
   ( HOME="$fake_home" sh "$src/install.sh" --to "$tag_good2" --store "$store" --hooks-link "$hookslink" ) \
     >/dev/null 2>&1
-  chmod -x "$store/$tag_good2/hooks/pre-commit"
-
+  if gg_is_windows; then
+    # NTFS does not implement chmod -x for these shell scripts. Corrupt the
+    # actual required-hook membership instead; do not claim Unix mode parity.
+    rm "$store/$tag_good2/hooks/pre-commit"
+    defect="required pre-commit is missing"
+    t_skip "doctor Unix non-executable mode NOT_TESTED on Windows"
+  else
+    chmod -x "$store/$tag_good2/hooks/pre-commit"
+    defect="pre-commit resolves but is not executable"
+  fi
   doctor_out="$(HOME="$fake_home" sh "$src/bin/git-guard" doctor 2>&1)"
   doctor_rc=$?
   [ "$doctor_rc" != 0 ] \
-    && t_ok "doctor exits non-zero when pre-commit resolves but is not executable (rc=$doctor_rc)" \
-    || t_fail "doctor should have caught the non-executable pre-commit but exited 0"
+    && t_ok "doctor exits non-zero when $defect (rc=$doctor_rc)" \
+    || t_fail "doctor should have caught $defect but exited 0"
 
   git -C "$GG_ROOT" worktree remove --force "$src" >/dev/null 2>&1
   # Why: a linked worktree shares refs with the real checkout, so these throwaway
