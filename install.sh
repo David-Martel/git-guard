@@ -75,6 +75,8 @@ UNINSTALL=0
 DEV_SYMLINK=0
 RULES_DIR=""
 TO_TAG=""
+WINDOWS_NATIVE_LINKS=0
+WINDOWS_LINK_TRANSACTION=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -97,7 +99,20 @@ ln_symlink() {  # $1 target, $2 linkname — portable, idempotent
   if [ -L "$lnk" ] && [ "$(readlink "$lnk" 2>/dev/null)" = "$tgt" ]; then
     echo "  ok (already linked): $lnk -> $tgt"; return 0
   fi
-  run "ln -sfn \"$tgt\" \"$lnk\"" && echo "  linked: $lnk -> $tgt"
+  if ! run "ln -sfn \"$tgt\" \"$lnk\""; then
+    [ "$WINDOWS_NATIVE_LINKS" = "0" ] || native_link_error "$lnk"
+    return 2
+  fi
+  if [ "$DRY" = "0" ] && [ "$WINDOWS_NATIVE_LINKS" = "1" ] && [ ! -L "$lnk" ]; then
+    native_link_error "$lnk"
+    return 2
+  fi
+  echo "  linked: $lnk -> $tgt"
+}
+
+native_link_error() {
+  echo "git-guard install: native Windows symlink required at '$1'; refusing a copied file/directory." >&2
+  echo "  Enable Windows Developer Mode or grant native symlink privileges, then retry." >&2
 }
 
 backup_once() {  # $1 path -> back up to <path>.pre-git-guard-backup, once
@@ -105,6 +120,84 @@ backup_once() {  # $1 path -> back up to <path>.pre-git-guard-backup, once
   if [ -e "$p" ] && [ ! -L "$p" ] && [ ! -e "$bk" ]; then
     run "mv \"$p\" \"$bk\"" && echo "  backed up: $p -> $bk"
   fi
+}
+
+# Snapshot only the four links/files this installer may replace. Native links
+# are copied before promotion so rollback needs atomic renames, not fresh
+# symlink privileges after a failure. Original hook directories use the existing
+# backup_once move rather than an unbounded recursive copy.
+snapshot_windows_link() {
+  snapshot_path="$1"; snapshot_key="$2"
+  if [ -L "$snapshot_path" ]; then
+    cp -P "$snapshot_path" "$WINDOWS_LINK_TRANSACTION/$snapshot_key" || return 2
+  elif [ -f "$snapshot_path" ]; then
+    cp -p "$snapshot_path" "$WINDOWS_LINK_TRANSACTION/$snapshot_key" || return 2
+  elif [ -d "$snapshot_path" ] && [ "$snapshot_key" = "hooks" ] && [ ! -e "$snapshot_path.pre-git-guard-backup" ]; then
+    : > "$WINDOWS_LINK_TRANSACTION/$snapshot_key.directory"
+  elif [ -e "$snapshot_path" ]; then
+    echo "git-guard install: refusing to replace unexpected non-link directory/type at '$snapshot_path'." >&2
+    return 2
+  else
+    : > "$WINDOWS_LINK_TRANSACTION/$snapshot_key.absent"
+  fi
+}
+
+begin_windows_link_transaction() {
+  [ "$WINDOWS_NATIVE_LINKS" = "1" ] && [ "$DRY" = "0" ] || return 0
+  mkdir -p "$STORE_ROOT" || return 2
+  WINDOWS_LINK_TRANSACTION="$(mktemp -d "$STORE_ROOT/.install-rollback.XXXXXX")" || return 2
+  snapshot_windows_link "$STORE_ROOT/current" current \
+    && snapshot_windows_link "$HOME_HOOKS" hooks \
+    && snapshot_windows_link "$AGENTS_DIR/QA_TOOLING.md" qa \
+    && snapshot_windows_link "$AGENTS_DIR/GIT_COMMIT_SAFETY.md" safety \
+    || { echo "git-guard install: could not preserve original links; current/config are untouched." >&2; return 2; }
+  trap rollback_windows_links 0
+}
+
+restore_windows_link() {
+  restore_path="$1"; restore_key="$2"
+  if [ -L "$WINDOWS_LINK_TRANSACTION/$restore_key" ] || [ -f "$WINDOWS_LINK_TRANSACTION/$restore_key" ]; then
+    mv -T "$WINDOWS_LINK_TRANSACTION/$restore_key" "$restore_path" || return 2
+  elif [ -f "$WINDOWS_LINK_TRANSACTION/$restore_key.directory" ]; then
+    [ ! -L "$restore_path" ] || rm -f "$restore_path" || return 2
+    if [ ! -e "$restore_path" ]; then
+      mv "$restore_path.pre-git-guard-backup" "$restore_path" || return 2
+    fi
+  elif [ -f "$WINDOWS_LINK_TRANSACTION/$restore_key.absent" ]; then
+    if [ -L "$restore_path" ] || [ -f "$restore_path" ]; then
+      rm -f "$restore_path" || return 2
+    elif [ -e "$restore_path" ]; then
+      echo "git-guard install: unexpected rollback destination preserved at '$restore_path'." >&2
+      return 2
+    fi
+  fi
+}
+
+rollback_windows_links() {
+  trap - 0
+  [ -n "$WINDOWS_LINK_TRANSACTION" ] || return 0
+  rollback_failed=0
+  restore_windows_link "$STORE_ROOT/current" current || rollback_failed=1
+  restore_windows_link "$HOME_HOOKS" hooks || rollback_failed=1
+  restore_windows_link "$AGENTS_DIR/QA_TOOLING.md" qa || rollback_failed=1
+  restore_windows_link "$AGENTS_DIR/GIT_COMMIT_SAFETY.md" safety || rollback_failed=1
+  if [ "$rollback_failed" = "1" ]; then
+    echo "git-guard install: rollback incomplete; original snapshots retained at $WINDOWS_LINK_TRANSACTION." >&2
+  else
+    echo "git-guard install: restored original current/hooks/docs after installation failure." >&2
+    finish_windows_link_transaction
+  fi
+}
+
+finish_windows_link_transaction() {
+  [ -n "$WINDOWS_LINK_TRANSACTION" ] || return 0
+  finished_transaction="$WINDOWS_LINK_TRANSACTION"
+  WINDOWS_LINK_TRANSACTION=""
+  trap - 0
+  # Only these installer-created, non-recursive snapshots/markers are removed.
+  rm -f "$finished_transaction"/* && rmdir "$finished_transaction" \
+    || echo "git-guard install: completed transaction snapshots retained at $finished_transaction." >&2
+  return 0
 }
 
 if [ "$UNINSTALL" = "1" ]; then
@@ -123,6 +216,20 @@ if [ "$UNINSTALL" = "1" ]; then
   echo "uninstall complete."
   exit 0
 fi
+
+# MSYS defaults to copying a symlink target. That cannot implement the atomic
+# version switch, and native Windows consumers must be able to follow our links.
+# Require native creation in child tools, preserving unrelated MSYS options.
+# nativestrict fails when privileges/filesystem support are unavailable instead
+# of silently installing copies. POSIX hosts retain their existing behavior.
+case "$(uname -s 2>/dev/null || echo)" in
+  MINGW*|MSYS*)
+    WINDOWS_NATIVE_LINKS=1
+    msys_options="$(printf '%s\n' "${MSYS:-}" | awk '{ for (i=1; i<=NF; i++) if ($i !~ /^winsymlinks(:|$)/) printf "%s ", $i }')"
+    MSYS="${msys_options}winsymlinks:nativestrict"
+    export MSYS
+    ;;
+esac
 
 echo "git-guard install (root: $GG_ROOT)"
 [ "$DRY" = "1" ] && echo "  (dry run — no changes will be made)"
@@ -230,7 +337,14 @@ flip_current() {  # $1 = version dir to point `current` at
   if [ "$DRY" = "1" ]; then echo "  DRY: atomically swap $cur -> $ver_dir"; return 0; fi
   tmp_link="$STORE_ROOT/.current.tmp.$$"
   rm -f "$tmp_link"
-  ln -s "$ver_dir" "$tmp_link" || { echo "git-guard install: could not create temp symlink for atomic swap" >&2; return 2; }
+  ln -s "$ver_dir" "$tmp_link" || {
+    [ "$WINDOWS_NATIVE_LINKS" = "0" ] || native_link_error "$tmp_link"
+    echo "git-guard install: could not create temp symlink for atomic swap" >&2; return 2;
+  }
+  if [ "$WINDOWS_NATIVE_LINKS" = "1" ] && [ ! -L "$tmp_link" ]; then
+    native_link_error "$tmp_link"
+    return 2
+  fi
   if mv --version >/dev/null 2>&1; then
     # GNU mv: -T is REQUIRED. Without it, `mv tmp_link current` STATs THROUGH
     # an existing `current` symlink-to-directory and would move tmp_link
@@ -254,8 +368,9 @@ flip_current() {  # $1 = version dir to point `current` at
 
 if [ "$DEV_SYMLINK" = "1" ]; then
   echo "  mode: --dev-symlink (LEGACY, live checkout — see header comment)"
+  begin_windows_link_transaction || exit 2
   backup_once "$HOME_HOOKS"
-  ln_symlink "$GG_HOOKS" "$HOME_HOOKS"
+  ln_symlink "$GG_HOOKS" "$HOME_HOOKS" || { if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then exit 2; fi; }
   DOCS_SRC="$GG_DOCS"
   RULES_LOCAL_TARGET="$GG_HOOKS/common/qa-gate.conf.local"
 else
@@ -286,21 +401,32 @@ else
   else
     VER_DIR="$(materialize_version "$TO_TAG")" || exit 2
   fi
+  begin_windows_link_transaction || exit 2
   flip_current "$VER_DIR" || exit 2
-  ln_symlink "$STORE_ROOT/current/hooks" "$HOME_HOOKS"
+  ln_symlink "$STORE_ROOT/current/hooks" "$HOME_HOOKS" || { if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then exit 2; fi; }
   DOCS_SRC="$STORE_ROOT/current/docs"
   RULES_LOCAL_TARGET="$STORE_ROOT/current/hooks/common/qa-gate.conf.local"
 fi
 
 # Point git's global hooksPath at it (both modes).
-run "git config --global core.hooksPath \"$HOME_HOOKS\"" && echo "  core.hooksPath = $HOME_HOOKS"
+if [ "$WINDOWS_NATIVE_LINKS" = "0" ]; then
+  run "git config --global core.hooksPath \"$HOME_HOOKS\"" && echo "  core.hooksPath = $HOME_HOOKS"
+fi
 
 # Docs symlinks (originals backed up once).
 run "mkdir -p \"$AGENTS_DIR\""
 for d in QA_TOOLING.md GIT_COMMIT_SAFETY.md; do
   backup_once "$AGENTS_DIR/$d"
-  ln_symlink "$DOCS_SRC/$d" "$AGENTS_DIR/$d"
+  ln_symlink "$DOCS_SRC/$d" "$AGENTS_DIR/$d" || { if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then exit 2; fi; }
 done
+
+# On Windows, configuration is published only after every native link succeeds.
+# A late hooks/docs failure restores the previous current/link snapshots.
+if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then
+  run "git config --global core.hooksPath \"$HOME_HOOKS\"" || exit 2
+  echo "  core.hooksPath = $HOME_HOOKS"
+  finish_windows_link_transaction || exit 2
+fi
 
 # Optional private-rules overlay.
 #   --dev-symlink: written straight into the live checkout's gitignored
