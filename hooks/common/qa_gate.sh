@@ -67,6 +67,11 @@ QA_CFG_MALFORMED=0 # set to 1 by qa_cfg_malformed; forces qa_main to refuse
                    # below would otherwise read state from the config that just
                    # failed to parse.
 QA_DEBUG="${QA_DEBUG:-0}"
+# A literal carriage return. `$'\r'` is not POSIX sh, and command substitution
+# keeps a CR (it strips only trailing newlines). Used to strip CRLF artefacts:
+# .qa-gate.conf files saved with Windows line endings, and output from native
+# Windows interpreters whose text-mode stdout writes "\r\n" (issue #52).
+QA_CR="$(printf '\r')"
 
 # ----------------------------------------------------------------------------
 # Logging
@@ -159,6 +164,9 @@ qa_load_cfg_file() {
   qa_cfg_lineno=0
   while IFS= read -r line || [ -n "$line" ]; do
     qa_cfg_lineno=$((qa_cfg_lineno + 1))
+    # CRLF conf file: drop the CR explicitly instead of relying on the
+    # [:space:] trims below happening to include it (issue #52).
+    line="${line%"$QA_CR"}"
     # leading-whitespace strip (builtin, bounded loop)
     line="${line#"${line%%[![:space:]]*}"}"
     case "$line" in ''|'#'*) continue ;; esac
@@ -708,7 +716,23 @@ qa_check_rust() {
 # report type debt from ROS/generated trees a repository had deliberately not
 # admitted to its gate yet. An absent checker section or absent scope key keeps
 # the historical all-staged-files behavior.
+#
+# The list is newline-delimited and must stay LF-only (issue #52). Native
+# Windows Python writes "\r\n" from text-mode stdout, so every path but the
+# last reached mypy as `src/a.py\r`; mypy could not open it, and a blocking
+# gate refused every commit with two or more staged Python files. The embedded
+# script pins its stdout to LF, and qa_python_scoped_files also strips any CR
+# that still arrives (an interpreter or sitecustomize that rewrites stdout),
+# while keeping the interpreter's exit status: a scope that cannot be read must
+# still block. bin/git-guard-run strips wsl.exe output with `tr -d '\r'` too.
 qa_python_scoped_files() {
+  _qps_out="$(qa_python_scoped_files_raw "$@")"
+  _qps_rc=$?
+  [ -n "$_qps_out" ] && printf '%s\n' "$_qps_out" | tr -d "$QA_CR"
+  return "$_qps_rc"
+}
+
+qa_python_scoped_files_raw() {
   _qps_checker="$1"
   shift
   if [ -z "$QA_PY" ] || [ ! -f "$REPO_ROOT/pyproject.toml" ]; then
@@ -722,6 +746,10 @@ from __future__ import annotations
 import fnmatch
 import pathlib
 import sys
+
+# LF-only output: the shell word-splits this list into checker arguments, and
+# Windows text-mode stdout would otherwise end every line with "\r\n" (#52).
+sys.stdout.reconfigure(newline="\n")
 
 try:
     import tomllib
