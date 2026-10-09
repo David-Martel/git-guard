@@ -710,9 +710,10 @@ the delete, and the branch is kept if any worktree has it checked out or is
 rebasing or bisecting it (a worktree in that state is listed as detached; drain
 reads its rebase and bisect state files, as `git branch -d` does), or if that
 scan fails. Right before a worktree is removed, its HEAD, branch, status
-(including ignored files, unless `--allow-ignored`) and in-progress operations are read again, and it is
-kept if anything changed since inspection. A branch whose upstream is gone but whose commits
-are not on the base is bundled and kept for its owner. Removal uses plain
+(including ignored files, unless `--allow-ignored`) and in-progress operations
+are read again, and it is kept if anything changed since inspection. A branch
+whose upstream is gone but whose commits are not on the base is bundled and
+kept for its owner. Removal uses plain
 `git worktree remove`, never force. Remote branches are left to GitHub's
 `delete_branch_on_merge`. Missing worktree registrations (`prunable`) are only
 reported, because the drive may simply be offline.

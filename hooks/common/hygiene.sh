@@ -181,7 +181,9 @@ hyg_worktrees() {
 # `git worktree list`, so its `branch` lines alone miss the last two kinds.
 # The state files are read from every registered git dir (the common dir and
 # <common>/worktrees/*), so an offline worktree still counts. Returns 1 when
-# anything cannot be read: callers must then treat every branch as in use.
+# a git dir cannot be searched or a state file that exists cannot be read:
+# callers must then treat every branch as in use. A state file that does not
+# exist means that operation is not in progress.
 hyg_in_use() {
   _iu_wl="$(git worktree list --porcelain 2>/dev/null)" || return 1
   [ -n "$_iu_wl" ] || return 1
@@ -190,6 +192,8 @@ hyg_in_use() {
   _iu_cd="$(cd "$_iu_cd" 2>/dev/null && pwd)" || return 1
   for _iu_g in "$_iu_cd" "$_iu_cd"/worktrees/*; do
     [ -d "$_iu_g" ] || continue
+    # An unsearchable git dir would make every state file look absent.
+    { [ -r "$_iu_g" ] && [ -x "$_iu_g" ]; } || return 1
     for _iu_f in rebase-merge/head-name rebase-apply/head-name rebase-merge/update-refs; do
       [ -e "$_iu_g/$_iu_f" ] || continue
       # update-refs holds <ref>, <old oid>, <new oid> per entry; only the ref
@@ -197,8 +201,10 @@ hyg_in_use() {
       sed -n 's|^refs/heads/||p' "$_iu_g/$_iu_f" 2>/dev/null || return 1
     done
     if [ -e "$_iu_g/BISECT_START" ]; then
-      # The short branch name (or an object id when bisect began detached).
+      # The short branch name, or an object id when bisect began detached.
+      # git strips a refs/heads/ prefix (read_and_strip_branch); so does this.
       _iu_n="$(cat "$_iu_g/BISECT_START" 2>/dev/null)" || return 1
+      _iu_n="${_iu_n#refs/heads/}"
       [ -z "$_iu_n" ] || printf '%s\n' "$_iu_n"
     fi
   done

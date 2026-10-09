@@ -505,9 +505,11 @@ t_hyg_body() {
     t_skip "git $(git --version | awk '{print $3}') has no rebase --update-refs"
   fi
   # Same tip, rebase started between inspection and delete (the delete hook).
+  # The hook runs at every delete pause, so it is one-shot: it acts only while
+  # the late-rebase worktree does not exist yet.
   git -C "$r9" branch late-rebase
   ( cd "$r9" && GIT_GUARD_HYGIENE_TEST_PAUSE_AT=delete \
-      GIT_GUARD_HYGIENE_TEST_HOOK="git worktree add -q '$wtp/late-rebase' late-rebase && git -C '$wtp/late-rebase' rebase -q --exec false HEAD~1" \
+      GIT_GUARD_HYGIENE_TEST_HOOK="[ -e '$wtp/late-rebase' ] || { git worktree add -q '$wtp/late-rebase' late-rebase && git -C '$wtp/late-rebase' rebase -q --exec false HEAD~1; }" \
       sh "$hyg" drain --apply >"$log" 2>&1 )
   r9_lgd="$(git -C "$wtp/late-rebase" rev-parse --absolute-git-dir 2>/dev/null)"
   if [ -n "$r9_lgd" ] && [ -d "$r9_lgd/rebase-merge" ]; then
@@ -520,6 +522,31 @@ t_hyg_body() {
   for w in rebasing late-rebase upd-top; do git -C "$wtp/$w" rebase --abort >/dev/null 2>&1; done
   git -C "$wtp/bisecting" bisect reset >/dev/null 2>&1
   gg_rmrepo "$r9"
+
+  # A rebase state file that exists but cannot be read (here a directory in
+  # place of head-name) makes the in-use scan fail, and a failed scan must
+  # keep the branch. Positive control: once the bad state is gone, the same
+  # drain deletes the branch, so the scan failure is what kept it.
+  r10="$(t_hyg_repo)" || { t_fail "fixture r10"; return 0; }
+  git -C "$r10" branch scan-unreadable
+  reviewed="$(git -C "$r10" rev-parse HEAD)"
+  git -C "$r10" worktree add -q --detach "$wtp/badstate" main >/dev/null 2>&1
+  r10_gd="$(git -C "$wtp/badstate" rev-parse --absolute-git-dir 2>/dev/null)"
+  if [ -n "$r10_gd" ] && mkdir -p "$r10_gd/rebase-merge/head-name" &&
+     ! sed -n p "$r10_gd/rebase-merge/head-name" >/dev/null 2>&1; then
+    ( cd "$r10" && sh "$hyg" drain --apply >"$log" 2>&1 )
+    [ "$(git -C "$r10" rev-parse -q --verify refs/heads/scan-unreadable)" = "$reviewed" ] \
+      && t_ok "unreadable rebase state in a worktree retains the reviewed branch" \
+      || t_fail "an unreadable rebase state file allowed branch deletion"
+    rm -rf "$r10_gd/rebase-merge"
+    ( cd "$r10" && sh "$hyg" drain --apply >"$log" 2>&1 )
+    git -C "$r10" rev-parse -q --verify refs/heads/scan-unreadable >/dev/null \
+      && t_fail "positive control: branch still kept once the rebase state was removed" \
+      || t_ok "positive control: the same branch is deleted once the state is readable"
+  else
+    t_skip "this sed reads a directory without error; cannot fake an unreadable state file"
+  fi
+  gg_rmrepo "$r10"
 
   # --- stale-branch dimension --------------------------------------------
   r2="$(t_hyg_repo)" || { t_fail "fixture r2"; return 0; }
