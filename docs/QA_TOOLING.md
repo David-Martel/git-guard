@@ -700,11 +700,13 @@ covered by an explicit custody transfer.
 A tip that is not an ancestor is preserved before anything is removed: it is
 pinned to a temporary ref, bundled, verified with `git bundle verify`, a
 `.sha256` file is written beside the bundle, and only then is the temporary ref
-deleted. If any of those steps fails, nothing is removed. An ancestor of the
-base needs no bundle: it is deleted with `git branch -d`, or, when `-d` refuses
-because the local HEAD is behind the remote base, with a compare-and-delete of
-the exact tip that was checked. Squash-merged work is deleted the same way,
-after its bundle exists. A branch whose upstream is gone but whose commits
+deleted. If any of those steps fails, nothing is removed. Every branch is
+deleted with an atomic compare-and-delete of the exact tip that was checked
+(`git update-ref -d <ref> <tip>`), never `git branch -d`, which deletes whatever
+the branch points at now. An ancestor of the base needs no bundle; squash-merged
+work is deleted only after its bundle exists. Right before a worktree is
+removed, its HEAD, branch and status are read again, and it is kept if anything
+changed since inspection. A branch whose upstream is gone but whose commits
 are not on the base is bundled and kept for its owner. Removal uses plain
 `git worktree remove`, never force. Remote branches are left to GitHub's
 `delete_branch_on_merge`. Missing worktree registrations (`prunable`) are only

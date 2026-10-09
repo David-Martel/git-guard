@@ -402,6 +402,18 @@ hyg_stashed() {
     awk -v a="WIP on $1:" -v b="On $1:" 'index($0, a) == 1 || index($0, b) == 1 { f = 1 } END { exit !f }'
 }
 
+# hyg_test_pause POINT — TEST-ONLY seams (default off), at POINT = start |
+# remove | delete (default start). GIT_GUARD_HYGIENE_TEST_HOOK is a command run
+# there (a test moves a ref between inspection and action, deterministically);
+# GIT_GUARD_HYGIENE_TEST_PAUSE sleeps that many seconds (a test signals the
+# run). Never set either in real use.
+hyg_test_pause() {
+  [ "${GIT_GUARD_HYGIENE_TEST_PAUSE_AT:-start}" = "$1" ] || return 0
+  if [ -n "${GIT_GUARD_HYGIENE_TEST_HOOK:-}" ]; then sh -c "$GIT_GUARD_HYGIENE_TEST_HOOK" >/dev/null 2>&1 || :; fi
+  if [ -n "${GIT_GUARD_HYGIENE_TEST_PAUSE:-}" ]; then sleep "$GIT_GUARD_HYGIENE_TEST_PAUSE"; fi
+  return 0
+}
+
 # hyg_sha256 FILE — hex sha256 of FILE, or failure when no tool is present.
 hyg_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -445,21 +457,24 @@ hyg_preserve() {
 }
 
 # hyg_delete_branch BRANCH TIP HOW [BUNDLE] — delete BRANCH only if it still
-# points at TIP. An ancestor of BASE is reachable from BASE, so it needs no
-# bundle: `branch -d` first, and when that refuses (merged into the remote base
-# but not into a local HEAD that is behind) a compare-and-delete of TIP. A
+# points at TIP, atomically (`update-ref -d <ref> <old>` is a compare-and-
+# delete). `git branch -d` is never used: it deletes whatever the branch points
+# at NOW whenever that is merged, so a branch that moved after inspection would
+# go. An ancestor of BASE is reachable from BASE and needs no bundle; a
 # non-ancestor (squash/patch-equivalent) is deleted only after a successful
-# preservation (BUNDLE, or one made here).
+# preservation (BUNDLE, or one made here). Its config section is removed after
+# a successful delete, as `branch -d` would.
 hyg_delete_branch() {
-  if [ "$3" = "ancestor" ]; then
-    git branch -q -d "$1" >/dev/null 2>&1 && return 0
-    git update-ref -d "refs/heads/$1" "$2" >/dev/null 2>&1
-    return
+  _b=""
+  if [ "$3" != "ancestor" ]; then
+    _b="${4:-}"
+    if [ -z "$_b" ]; then _b="$(hyg_preserve "$1" "$2")" || return 1; fi
   fi
-  _b="${4:-}"
-  if [ -z "$_b" ]; then _b="$(hyg_preserve "$1" "$2")" || return 1; fi
+  hyg_test_pause delete
   git update-ref -d "refs/heads/$1" "$2" >/dev/null 2>&1 || return 1
-  echo "      (bundle kept: $_b)"
+  git config --remove-section "branch.$1" >/dev/null 2>&1 || :
+  [ -z "$_b" ] || echo "      (bundle kept: $_b)"
+  return 0
 }
 
 hyg_drain() {
@@ -475,9 +490,7 @@ hyg_drain() {
   hyg_measure "" "" 0
   [ -n "$HYG_TMP" ] || { hyg_say "git-guard hygiene drain: cannot create a temp dir; nothing done"; return 1; }
   _min_age="$(hyg_int hygiene.drainMinAgeMinutes "$HYG_DEFAULT_MIN_AGE")"
-  # TEST-ONLY seam (default off): pause before any removal so a test can
-  # signal the run. Never set it in real use.
-  if [ -n "${GIT_GUARD_HYGIENE_TEST_PAUSE:-}" ]; then sleep "$GIT_GUARD_HYGIENE_TEST_PAUSE"; fi
+  hyg_test_pause start
   echo "git-guard hygiene drain ($([ "$_apply" = "1" ] && echo apply || echo dry-run)): $(git rev-parse --show-toplevel 2>/dev/null)"
   echo "  (merge state is judged from refs as of the last fetch; run git fetch --prune first)"
   [ -n "$HYG_BASE" ] || echo "  base ref unknown (no <remote>/HEAD, no hygiene.baseRef): nothing is provably merged; skipping."
@@ -527,6 +540,15 @@ hyg_drain() {
       if ! _bundle="$(hyg_preserve "${_br:-detached-$(basename "$_path")}" "$_head")"; then
         echo "  keep   $_path  (PRESERVE FAILED: bundle not written; nothing removed)"; continue
       fi
+    fi
+    # Recheck right before removal: keep it if its HEAD or branch changed
+    # since inspection (someone is using it).
+    hyg_test_pause remove
+    _now_head="$(git -C "$_path" rev-parse -q --verify HEAD 2>/dev/null || true)"
+    _now_br="$(git -C "$_path" symbolic-ref -q --short HEAD 2>/dev/null || true)"
+    if [ "$_now_head" != "$_head" ] || [ "$_now_br" != "$_br" ] ||
+       [ -n "$(git -C "$_path" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
+      echo "  keep   $_path  (changed since inspection; may be in use)"; continue
     fi
     if ! git worktree remove "$_path" >/dev/null 2>&1; then
       echo "  keep   $_path  (git worktree remove refused)"; continue

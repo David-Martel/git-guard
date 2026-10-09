@@ -365,6 +365,36 @@ t_hyg_body() {
   [ -z "$(ls -A "$tdir" 2>/dev/null)" ] && t_ok "temp dir removed on TERM" || t_fail "temp dir left behind after TERM"
   gg_rmrepo "$r5"
 
+  # --- exact-tip guards: a ref that moves after inspection is kept ---------
+  r6="$(t_hyg_repo)" || { t_fail "fixture r6"; return 0; }
+  (
+    cd "$r6" || exit 1
+    git branch mv                      # at C0, merged
+    printf 'c1\n' > c1.txt && git add c1.txt && git commit -q -m c1 || exit 1
+    git push -q origin main 2>/dev/null || exit 1
+    git worktree add -q --detach "$wtp/mvwt" HEAD~1 >/dev/null 2>&1 || exit 1
+  ) || t_fail "could not build the r6 fixture"
+  c1="$(git -C "$r6" rev-parse main)"
+  # Branch moves to another MERGED commit (C1) between inspection and delete:
+  # `branch -d` would still delete it; the compare-and-delete must not.
+  git -C "$r6" worktree lock --reason "hold" "$wtp/mvwt"
+  ( cd "$r6" && GIT_GUARD_HYGIENE_TEST_PAUSE_AT=delete \
+      GIT_GUARD_HYGIENE_TEST_HOOK="git branch -f mv $c1" \
+      sh "$hyg" drain --apply >"$log" 2>&1 )
+  [ "$(git -C "$r6" rev-parse -q --verify refs/heads/mv)" = "$c1" ] \
+    && t_ok "branch moved after inspection is kept (exact-tip delete)" \
+    || t_fail "branch that MOVED after inspection was deleted"
+  git -C "$r6" worktree unlock "$wtp/mvwt"
+  # Worktree HEAD moves between inspection and removal: keep it.
+  ( cd "$r6" && GIT_GUARD_HYGIENE_TEST_PAUSE_AT=remove \
+      GIT_GUARD_HYGIENE_TEST_HOOK="git -C '$wtp/mvwt' checkout -q --detach $c1" \
+      sh "$hyg" drain --apply >"$log" 2>&1 )
+  [ -d "$wtp/mvwt" ] && t_ok "worktree whose HEAD changed after inspection is kept" \
+    || t_fail "worktree removed although its HEAD changed after inspection"
+  grep -q "changed since inspection" "$log" && t_ok "changed worktree keep is explained" \
+    || t_fail "changed worktree keep not explained"
+  gg_rmrepo "$r6"
+
   # --- stale-branch dimension --------------------------------------------
   r2="$(t_hyg_repo)" || { t_fail "fixture r2"; return 0; }
   git -C "$r2" config hygiene.maxWorktrees 0
