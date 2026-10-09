@@ -5,8 +5,11 @@
 # without this it reports `label "git-guard-local" is unknown` on every job and the
 # real findings get lost in the noise.
 #
-# Keep this list in sync with the labels the runner registers with — see
-# ~/ci-runner-x64/repo-runners/git-guard.yml (RUNNER_LABELS).
+# Keep this list in sync with the labels the runners register with: asuspro13's
+# ~/ci-runner-x64/repo-runners/git-guard.yml (RUNNER_LABELS, which includes `docker`) and
+# vigil1's vigil-utils ci-runners/vigil1/runners/git-guard-1.env (no `docker`: rootless
+# podman, no daemon).
 self-hosted-runner:
   labels:
     - git-guard-local
+    - docker

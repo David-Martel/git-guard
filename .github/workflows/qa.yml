@@ -44,7 +44,9 @@ jobs:
   # then exercise doctor/rules and the bundled-rule validation in-container.
   # ---------------------------------------------------------------------------
   self-test-docker:
-    runs-on: [self-hosted, Linux, X64, git-guard-local]
+    # `docker`: this job builds and runs the image, so it needs a Docker daemon. vigil1's
+    # rootless-podman runner has the docker CLI but no daemon and would fail it.
+    runs-on: [self-hosted, Linux, X64, git-guard-local, docker]
     # A hung step on a self-hosted runner holds the runner until GitHub's 24h ceiling —
     # we measured a real 24h00m00s job elsewhere in this fleet. This suite finishes in
     # ~2 min; 20 is generous and still fails fast.
