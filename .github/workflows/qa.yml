@@ -18,9 +18,8 @@ name: git-guard QA
 #   * self-test-docker — builds the docker/Dockerfile image (the SAME image
 #     `bin/git-guard-run` uses) and self-tests inside it.
 #   * self-test-native — the non-Docker fallback: installs the toolchain on the
-#     runner and runs the identical assertions on bare ubuntu-latest. This keeps
-#     CI green even if the Docker build is unavailable, and proves the native
-#     backend path that `git-guard-run` falls through to.
+#     runner and runs the identical assertions on its native toolchain. This
+#     required check independently proves the native backend path.
 
 on:
   workflow_dispatch:
@@ -44,22 +43,52 @@ jobs:
   # then exercise doctor/rules and the bundled-rule validation in-container.
   # ---------------------------------------------------------------------------
   self-test-docker:
-    # `docker`: this job builds and runs the image, so it needs a Docker daemon. vigil1's
-    # rootless-podman runner has the docker CLI but no daemon and would fail it.
-    runs-on: [self-hosted, Linux, X64, git-guard-local, docker]
+    # This distinct label belongs only to the source-qualified native runner on
+    # vigil1's private rootless Docker engine. The Podman-hosted runner has no engine.
+    runs-on: [self-hosted, Linux, X64, vigil1, git-guard-native-docker]
     # A hung step on a self-hosted runner holds the runner until GitHub's 24h ceiling —
     # we measured a real 24h00m00s job elsewhere in this fleet. This suite finishes in
     # ~2 min; 20 is generous and still fails fast.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify private native Docker capability
+        run: |
+          test "$DOCKER_HOST" = "unix:///run/user/$(id -u)/nebula-docker.sock"
+          /usr/bin/python3 /usr/local/libexec/vigil-nebula-docker/install_native_docker.py verify --require-engine
 
       - name: Build git-guard QA image
-        run: docker build -t git-guard:ci -f docker/Dockerfile .
+        run: |
+          tag="git-guard:ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if docker image inspect "$tag" >/dev/null 2>&1; then
+            echo "refusing existing invocation image" >&2
+            exit 1
+          fi
+          source=$(git rev-parse HEAD)
+          [[ $source =~ ^[a-f0-9]{40}$ ]] || exit 1
+          context=$(mktemp -d)
+          trap 'rm -rf -- "$context"' EXIT
+          git archive "$source" | tar -x -C "$context"
+          docker build -t "$tag" \
+            --label "io.vigil.gitguard.source=$source" \
+            --label "io.vigil.gitguard.run-id=$GITHUB_RUN_ID" \
+            --label "io.vigil.gitguard.run-attempt=$GITHUB_RUN_ATTEMPT" \
+            -f "$context/docker/Dockerfile" "$context"
+          image=$(docker image inspect --format '{{.Id}}' "$tag")
+          [[ $image =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
+          printf 'GIT_GUARD_CI_IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
 
       - name: Versions (in image)
         run: |
-          docker run --rm --entrypoint sh git-guard:ci -c '
+          docker run --rm --entrypoint sh "$GIT_GUARD_CI_IMAGE" -c '
+            set -eu
+            for tool in git ast-grep shellcheck jq ruff python3 ssh-keygen; do
+              command -v "$tool" >/dev/null
+            done
+            python3 -c "import yaml"
             git --version
             ast-grep --version
             shellcheck --version | head -3
@@ -68,22 +97,22 @@ jobs:
             python3 --version'
 
       - name: git-guard doctor (in image)
-        run: docker run --rm --entrypoint git-guard git-guard:ci doctor
+        run: docker run --rm --entrypoint git-guard "$GIT_GUARD_CI_IMAGE" doctor
 
       - name: git-guard rule manifest (in image)
-        run: docker run --rm --entrypoint git-guard git-guard:ci rules
+        run: docker run --rm --entrypoint git-guard "$GIT_GUARD_CI_IMAGE" rules
 
       - name: git-guard verify — BLOCK trio fires, clean commit passes (in image)
-        run: docker run --rm git-guard:ci verify
+        run: docker run --rm "$GIT_GUARD_CI_IMAGE" verify
 
       # CI=true turns a missing ssh-keygen into a FAILURE instead of a skip, so
       # the identity suite's controls cannot silently stop running.
       - name: git-guard test — comprehensive validation suite (in image)
-        run: docker run --rm -e CI=true --entrypoint git-guard git-guard:ci test
+        run: docker run --rm -e CI=true --entrypoint git-guard "$GIT_GUARD_CI_IMAGE" test
 
       - name: validate bundled example rules (in image)
         run: |
-          docker run --rm --entrypoint sh git-guard:ci -c '
+          docker run --rm --entrypoint sh "$GIT_GUARD_CI_IMAGE" -c '
             cd /opt/git-guard
             fail=0
             for f in $(find rules-examples -name "*.yml"); do
@@ -98,10 +127,12 @@ jobs:
   # Docker and WSL are both unavailable, so manual QA exercises it directly.
   # ---------------------------------------------------------------------------
   self-test-native:
-    runs-on: [self-hosted, Linux, X64, git-guard-local]
+    runs-on: [self-hosted, Linux, X64, git-guard-local, vigil1]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       # The container runner image bakes uv, just, git, curl, python3 and shellcheck,
       # but NOT node. Without this the ast-grep step dies with `npm: command not found`
