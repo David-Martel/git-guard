@@ -45,7 +45,7 @@ jobs:
   self-test-docker:
     # This distinct label belongs only to the source-qualified native runner on
     # vigil1's private rootless Docker engine. The Podman-hosted runner has no engine.
-    runs-on: [self-hosted, Linux, X64, vigil1, git-guard-native-docker]
+    runs-on: [self-hosted, Linux, X64, vigil1, git-guard-native-docker, "git-guard-run-${{ github.run_id }}-${{ github.run_attempt }}"]
     # A hung step on a self-hosted runner holds the runner until GitHub's 24h ceiling —
     # we measured a real 24h00m00s job elsewhere in this fleet. This suite finishes in
     # ~2 min; 20 is generous and still fails fast.
