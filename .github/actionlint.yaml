@@ -13,3 +13,5 @@ self-hosted-runner:
   labels:
     - git-guard-local
     - docker
+    - vigil1
+    - git-guard-native-docker
