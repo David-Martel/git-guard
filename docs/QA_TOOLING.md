@@ -32,43 +32,30 @@
 
 ## 1. Architecture — how a commit flows through the hooks
 
-There are THREE entry paths to git hooks on this machine:
+The active `core.hooksPath` chooses the entry point. A repository override
+(`.githooks`, for example) remains its own authority; the global chain does not
+replace it or automatically dispatch a separate `.pre-commit-config.yaml`.
 
-```
-                                  git commit
-                                      │
-        ┌─────────────────────────────┼──────────────────────────────┐
-        │                             │                              │
-  GLOBAL chain                 LOCAL core.hooksPath           repo lefthook /
-  (core.hooksPath =            override (.githooks)           .githooks (naked
-   ~/.git-hooks)               intublade/jetson/pixel          repos hit GLOBAL)
-        │                             │
-        ▼                             ▼
-  ~/.git-hooks/pre-commit     <repo>/.githooks/pre-commit
-   (lefthook stub +            └─ calls ──► ~/.config/codex-security/
-    git-guard sentinel)                     git-hooks/pre-commit
-        │                                        │
-        ├─ git-guard sentinel block:             ├─ secret_scan.sh (BLOCK)
-        │   1. secret_scan.sh        (BLOCK)     └─ qa_gate.sh      (BLOCK/WARN)
-        │   2. nul-cleanup.sh        (BLOCK)
-        │   3. qa_gate.sh            (BLOCK/WARN)  ← THIS subsystem
-        │   4. protected-branch WARN
-        │   5. partial-staging WARN
-        │
-        └─ call_lefthook run "pre-commit"  (unchanged tail; dispatches to a
-                                            repo's lefthook.yml / .githooks)
+```text
+GLOBAL ~/.git-hooks/pre-commit
+  secret scan -> reserved paths -> preserve exemption -> qa_gate
+  -> branch/staging warnings -> one downstream provider
+
+GLOBAL ~/.git-hooks/pre-push
+  LFS upload -> identity -> preserve exemption -> backlog hygiene
+  -> one downstream provider with original remote arguments/ref stdin
+
+Provider precedence
+  explicit downstream -> executable .git-guard/<hook>.local
+  -> declared lefthook configuration -> declared pre-commit configuration
 ```
 
-- **Naked repos** (~40, incl. SENSITIVE `finance-warehouse` / `fin-aid-applications`)
-  have no local hook → they hit the GLOBAL `~/.git-hooks/pre-commit`. Before this
-  subsystem they got ONLY nul-cleanup; now they also get secret-scan + the QA gate.
-- **Local-override repos** (`core.hooksPath=.githooks`: intublade/jetson/pixel)
-  bypass the global chain; their `.githooks/pre-commit` calls
-  `~/.config/codex-security/git-hooks/pre-commit`, which now runs secret-scan + QA.
-- **The `post-*` hooks** (`post-commit`/`post-checkout`/`post-merge`) are the
-  FULL dispatcher (LFS / run-repo-hook / ps-module-sync). `post-commit` also has
-  a git-guard sentinel that prints the landed SHA. Only `pre-commit`/`pre-push`
-  are lefthook stubs — do NOT double-run dispatch.
+A PATH-only lefthook does not replace a declared pre-commit framework. A repo
+with no downstream declaration stays unaffected. Missing configured tools refuse
+loudly; provider errors propagate. Repositories with their own hooks keep their
+QA semantics (including intentional git-guard QA disabling), and this change does
+not enable or rewrite them. Post-commit identity and Agent trailer handling stay
+separate from software QA provider selection.
 
 ### Bypass / escape hatches (documented, not accidental)
 - `LEFTHOOK=0 git commit …` — short-circuits the stub BEFORE the git-guard block
@@ -98,6 +85,35 @@ branch. "Unset" means the default behaviour applies.
 | `GIT_GUARD_HYGIENE` | `hooks/common/hygiene.sh` (via `pre-push`, `post-checkout`) | Backlog-limit mode for this invocation: `off`, `warn` or `enforce`. Beats `git config hygiene.mode`; an unknown value means `warn`. See §12. |
 | `GIT_GUARD_HYGIENE_GH` | `hooks/common/hygiene.sh` | `gh` executable for the open-PR count (tests stub it). |
 | `GIT_GUARD_TEST_PAUSE_AFTER_RESOLVE` | `hooks/pre-commit` | **Test-only** seam (seconds to sleep after the version resolve). Never set it in real use. |
+
+Declared repository providers run after the explicit downstream and executable
+`.git-guard/*.local` providers: a declared lefthook configuration keeps priority;
+otherwise `.pre-commit-config.yaml` (or `.yml`, when `.yaml` is absent) dispatches
+the pre-commit framework. A
+lefthook binary on PATH without a repository configuration does not claim this
+role. Missing configured providers fail loudly. Repositories with their own
+`core.hooksPath` remain authoritative; this does not enable git-guard there.
+An explicitly allowed missing declared lefthook remains a skip of that provider,
+and does not fall through to the pre-commit framework. The framework executable
+must resolve to an executable file; a shell lookup alone is insufficient.
+Existing entries and symlinks count as declarations even when broken or not
+regular files. A broken `.yaml` declaration keeps priority and refuses instead
+of substituting `.yml`. Valid linked configs keep framework semantics at commit
+time; the new pre-push route requires a regular, non-symlink config in both the
+working checkout and the pushed HEAD, since a linked target is not sealed here.
+
+The framework route uses `pre-commit hook-impl`, preserving the hook stage,
+remote arguments and original pre-push stdin. Because the framework selects one
+update and runs tools in the working checkout, this route admits only one changed
+update whose commit is current HEAD, with a clean tracked workspace and a config
+belonging to that HEAD. Annotated tags are compared by their commit. Delete-only
+and unchanged-source pushes do not run software QA. Other heads, dirty tracked
+sources and multiple changed updates refuse before execution; publish them
+separately from their corresponding checkout or use an explicit repository gate
+that qualifies immutable snapshots. This route does not seal untracked files,
+environments or dependencies and is not a remote/offload qualification receipt.
+The explicit/local/lefthook providers retain their own semantics, and the
+documented emergency bypass remains available.
 
 `install.sh` flags (`./install.sh --help` prints the header). `git-guard install`
 passes all of its arguments straight to `install.sh` (`bin/git-guard`

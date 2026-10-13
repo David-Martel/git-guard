@@ -187,7 +187,7 @@ if [ -n "${GIT_GUARD_DOWNSTREAM_PRE_PUSH:-}" ]; then
   "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" "$@" || exit $?
 elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/pre-push.local" ]; then
   "$git_guard_repo_root/.git-guard/pre-push.local" "$@" || exit $?
-elif command -v lefthook >/dev/null 2>&1; then
+elif git_guard_lefthook_config "$git_guard_repo_root" >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then
   lefthook run pre-push "$@" || exit $?
 elif [ "${GIT_GUARD_ALLOW_MISSING_LEFTHOOK:-}" != "1" ] &&
      git_guard_lefthook_cfg="$(git_guard_lefthook_config "$git_guard_repo_root")"; then
@@ -202,6 +202,10 @@ elif [ "${GIT_GUARD_ALLOW_MISSING_LEFTHOOK:-}" != "1" ] &&
     "  * export GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1           (this machine, deliberate)" \
     "Do NOT use --no-verify." >&2
   exit 1
+elif { [ -e "$git_guard_repo_root/.pre-commit-config.yaml" ] || [ -L "$git_guard_repo_root/.pre-commit-config.yaml" ] ||
+       [ -e "$git_guard_repo_root/.pre-commit-config.yml" ] || [ -L "$git_guard_repo_root/.pre-commit-config.yml" ]; } &&
+     ! git_guard_lefthook_config "$git_guard_repo_root" >/dev/null 2>&1; then
+  sh "$git_guard_hook_dir/common/precommit-provider.sh" pre-push "$@" || exit $?
 fi
 
 exit 0
