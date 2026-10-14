@@ -79,6 +79,93 @@ EOF
   printf '%s\n' "$record" | (cd "$r" && env PATH="$path" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
   t_expect_rc 1 "$?" 'dirty tracked workspace cannot substitute for pushed HEAD'
   git -C "$r" restore a.txt
+  # Protect source-bound QA from live-index optimization flags. These are
+  # actual tracked source/configuration edits, not status-output mocks. A clean
+  # flagged file remains supported; an edited one must refuse before execution
+  # and before any ref reaches the private bare remote. Only this fixture index
+  # is changed; the publication checkout's index is never refreshed or rewritten.
+  for flag in assume-unchanged skip-worktree; do
+    for tracked in a.txt .pre-commit-config.yaml; do
+      git -C "$r" update-index "--$flag" -- "$tracked"
+      flag_before="$(git -C "$r" ls-files -v -- "$tracked")"
+      : > "$marker"
+      printf '%s\n' "$record" | (cd "$r" && env PATH="$path" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+      t_expect_rc 0 "$?" "$flag clean $tracked retains current-HEAD admission"
+      printf '# modified tracked fixture\n' >> "$r/$tracked"
+      : > "$marker"
+      (cd "$r" && env PATH="$path" git push fixture "HEAD:refs/heads/flag-$flag-${tracked##*.}") > "$log" 2>&1
+      t_expect_rc 1 "$?" "$flag modified $tracked refuses real Git push"
+      if [ -s "$marker" ]; then t_fail "$flag modified $tracked invoked provider"; else t_ok "$flag modified $tracked refused before provider"; fi
+      if git --git-dir="$remote" rev-parse --verify "refs/heads/flag-$flag-${tracked##*.}" >/dev/null 2>&1; then
+        t_fail "$flag modified $tracked published a ref"
+      else t_ok "$flag modified $tracked did not publish a ref"; fi
+      flag_after="$(git -C "$r" ls-files -v -- "$tracked")"
+      if [ "$flag_before" = "$flag_after" ]; then t_ok "$flag $tracked live-index optimization flag remains unchanged"; else t_fail "$flag $tracked live-index optimization flag changed"; fi
+      # Clear only our fixture flag before restoring only our fixture edit.
+      git -C "$r" update-index "--no-$flag" -- "$tracked"
+      git -C "$r" restore -- "$tracked"
+    done
+  done
+  # The private comparison must retain Git's text normalization instead of
+  # comparing raw CRLF bytes to a normalized blob. File names may contain spaces.
+  printf 'normalized.txt text eol=crlf\n' > "$r/.gitattributes"
+  printf 'normalized fixture\n' > "$r/normalized.txt"
+  printf 'spaced source\n' > "$r/source with spaces.txt"
+  (cd "$r" && git add .gitattributes normalized.txt 'source with spaces.txt' && env PATH="$path" git commit -m normalized-source-fixture) > "$log" 2>&1 </dev/null
+  t_expect_rc 0 "$?" 'Git attribute and spaced-path source fixtures committed'
+  head="$(git -C "$r" rev-parse HEAD)"
+  record="refs/heads/main $head refs/heads/main $zero"
+  printf 'normalized fixture\r\n' > "$r/normalized.txt"
+  printf '%s\n' "$record" | (cd "$r" && env PATH="$path" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+  t_expect_rc 0 "$?" 'Git-normalized CRLF workspace retains pushed-source admission'
+  git -C "$r" update-index --skip-worktree -- 'source with spaces.txt'
+  printf 'changed spaced source\n' >> "$r/source with spaces.txt"
+  : > "$marker"
+  printf '%s\n' "$record" | (cd "$r" && env PATH="$path" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+  t_expect_rc 1 "$?" 'hidden modification in spaced tracked path refuses'
+  if [ -s "$marker" ]; then t_fail 'hidden spaced source invoked provider'; else t_ok 'hidden spaced source refused before provider'; fi
+  git -C "$r" update-index --no-skip-worktree -- 'source with spaces.txt'
+  git -C "$r" restore -- 'source with spaces.txt'
+  if gg_is_windows; then
+    t_skip 'Unix tracked symlink and executable mode controls are not qualified on Windows'
+  else
+    ln -s a.txt "$r/source-link"
+    (cd "$r" && git add source-link && env PATH="$path" git commit -m source-link-fixture) > "$log" 2>&1 </dev/null
+    t_expect_rc 0 "$?" 'tracked source symlink fixture committed'
+    head="$(git -C "$r" rev-parse HEAD)"
+    record="refs/heads/main $head refs/heads/main $zero"
+    git -C "$r" update-index --assume-unchanged -- source-link
+    rm "$r/source-link"
+    ln -s normalized.txt "$r/source-link"
+    : > "$marker"
+    printf '%s\n' "$record" | (cd "$r" && env PATH="$path" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+    t_expect_rc 1 "$?" 'hidden tracked symlink target change refuses'
+    if [ -s "$marker" ]; then t_fail 'hidden symlink target invoked provider'; else t_ok 'hidden symlink target refused before provider'; fi
+    git -C "$r" update-index --no-assume-unchanged -- source-link
+    git -C "$r" restore -- source-link
+    git -C "$r" config core.filemode true
+    git -C "$r" update-index --skip-worktree -- a.txt
+    chmod +x "$r/a.txt"
+    : > "$marker"
+    printf '%s\n' "$record" | (cd "$r" && env PATH="$path" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+    t_expect_rc 1 "$?" 'hidden tracked executable mode change refuses'
+    if [ -s "$marker" ]; then t_fail 'hidden executable mode change invoked provider'; else t_ok 'hidden executable mode change refused before provider'; fi
+    git -C "$r" update-index --no-skip-worktree -- a.txt
+    chmod -x "$r/a.txt"
+  fi
+  # A restored worktree must not hide distinct staged source. The provider
+  # would otherwise validate HEAD while a subsequent commit publishes the index.
+  for tracked in a.txt .pre-commit-config.yaml; do
+    printf '# staged-only tracked fixture\n' >> "$r/$tracked"
+    git -C "$r" add -- "$tracked"
+    git -C "$r" show "HEAD:$tracked" > "$r/$tracked"
+    : > "$marker"
+    (cd "$r" && env PATH="$path" git push fixture "HEAD:refs/heads/staged-${tracked##*.}") > "$log" 2>&1
+    t_expect_rc 1 "$?" "staged modified $tracked with HEAD worktree refuses real Git push"
+    if [ -s "$marker" ]; then t_fail "staged modified $tracked invoked provider"; else t_ok "staged modified $tracked refused before provider"; fi
+    if git --git-dir="$remote" rev-parse --verify "refs/heads/staged-${tracked##*.}" >/dev/null 2>&1; then t_fail "staged modified $tracked published a ref"; else t_ok "staged modified $tracked did not publish a ref"; fi
+    git -C "$r" restore --staged --worktree -- "$tracked"
+  done
   previous="$head"
   printf 'next committed source\n' >> "$r/a.txt"
   (cd "$r" && git add a.txt && env PATH="$path" git commit -m next-source) > "$log" 2>&1 </dev/null
@@ -131,6 +218,45 @@ EOF
   printf '%s\n' "$record" | (cd "$r" && env PATH="$missing" GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
   t_expect_rc 0 "$?" 'allowed missing declared lefthook keeps push skip semantics'
   if [ -s "$marker" ]; then t_fail 'another provider substituted for intentionally skipped lefthook'; else t_ok 'intentional provider skip did not substitute framework'; fi
+  # Protect every supported named lefthook declaration. A broken named
+  # entry is not absence and cannot fall through to pre-commit or an intentional
+  # missing-provider skip. Real commits/pushes prove both dispatch and publication.
+  if gg_is_windows; then
+    t_skip 'Unix dangling lefthook symlink controls are not qualified on Windows'
+  else
+    rm -f "$r/lefthook.yml"
+    mkdir -p "$r/.config"
+    for stem in lefthook .lefthook .config/lefthook; do
+      for extension in yml yaml json toml; do
+        declaration="$stem.$extension"
+        for kind in dangling directory; do
+          if [ "$kind" = dangling ]; then ln -s missing-lefthook "$r/$declaration"; else mkdir "$r/$declaration"; fi
+          for provider_path in "$path" "$missing"; do
+            : > "$marker"
+            (cd "$r" && env PATH="$provider_path" GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 git commit --allow-empty -m invalid-lefthook) > "$log" 2>&1 </dev/null
+            t_expect_rc 1 "$?" "$kind $declaration refuses real commit with PATH=$provider_path"
+            grep -q 'declared lefthook configuration' "$log"; t_assert $? "$kind $declaration has a declaration-specific commit refusal"
+            head="$(git -C "$r" rev-parse HEAD)"
+            record="refs/heads/main $head refs/heads/main $zero"
+            printf '%s\n' "$record" | (cd "$r" && env PATH="$provider_path" GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+            t_expect_rc 1 "$?" "$kind $declaration refuses push dispatch with PATH=$provider_path"
+            grep -q 'declared lefthook configuration' "$log"; t_assert $? "$kind $declaration has a declaration-specific push refusal"
+            if [ -s "$marker" ]; then t_fail "$kind $declaration invoked a fallback provider"; else t_ok "$kind $declaration refused before provider fallback"; fi
+          done
+          if [ "$kind" = dangling ]; then rm "$r/$declaration"; else rmdir "$r/$declaration"; fi
+        done
+      done
+    done
+    # Existing priority is retained even if a later declaration is valid.
+    ln -s missing-lefthook "$r/lefthook.yml"
+    printf 'pre-commit: {}\n' > "$r/lefthook.yaml"
+    : > "$marker"
+    (cd "$r" && env PATH="$path" git push fixture HEAD:refs/heads/broken-lefthook) > "$log" 2>&1
+    t_expect_rc 1 "$?" 'broken higher-priority lefthook declaration refuses real Git push'
+    if git --git-dir="$remote" rev-parse --verify refs/heads/broken-lefthook >/dev/null 2>&1; then t_fail 'broken lefthook still published a ref'; else t_ok 'broken lefthook did not publish a ref'; fi
+    if [ -s "$marker" ]; then t_fail 'valid lower-priority lefthook replaced broken declaration'; else t_ok 'broken declaration refused before lower-priority provider'; fi
+    rm "$r/lefthook.yml" "$r/lefthook.yaml"
+  fi
   rm -f "$r/lefthook.yml"
   mkdir -p "$r/.git-guard"
   printf '#!/bin/sh\nexit 7\n' > "$r/.git-guard/pre-commit.local"

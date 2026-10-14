@@ -166,7 +166,7 @@ git_guard_lefthook_config() {
   [ -n "$1" ] || return 1
   for _gg_stem in lefthook .lefthook .config/lefthook; do
     for _gg_ext in yml yaml json toml; do
-      if [ -f "$1/${_gg_stem}.${_gg_ext}" ]; then
+      if [ -e "$1/${_gg_stem}.${_gg_ext}" ] || [ -L "$1/${_gg_stem}.${_gg_ext}" ]; then
         printf '%s' "${_gg_stem}.${_gg_ext}"; return 0
       fi
     done
@@ -187,21 +187,30 @@ if [ -n "${GIT_GUARD_DOWNSTREAM_PRE_PUSH:-}" ]; then
   "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" "$@" || exit $?
 elif [ -n "$git_guard_repo_root" ] && [ -x "$git_guard_repo_root/.git-guard/pre-push.local" ]; then
   "$git_guard_repo_root/.git-guard/pre-push.local" "$@" || exit $?
-elif git_guard_lefthook_config "$git_guard_repo_root" >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then
-  lefthook run pre-push "$@" || exit $?
-elif [ "${GIT_GUARD_ALLOW_MISSING_LEFTHOOK:-}" != "1" ] &&
-     git_guard_lefthook_cfg="$(git_guard_lefthook_config "$git_guard_repo_root")"; then
-  printf '%s\n' \
-    "git-guard BLOCK: this repo configures lefthook but lefthook is NOT installed." \
-    "  repo:   $git_guard_repo_root" \
-    "  config: $git_guard_lefthook_cfg" \
-    "Every pre-push gate that config defines is being SKIPPED SILENTLY." \
-    "Fix (pick one):" \
-    "  * install lefthook so the repo's gates actually run   <- preferred" \
-    "  * GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 git push ...     (this push only)" \
-    "  * export GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1           (this machine, deliberate)" \
-    "Do NOT use --no-verify." >&2
-  exit 1
+elif git_guard_lefthook_cfg="$(git_guard_lefthook_config "$git_guard_repo_root")"; then
+  # Preserve declaration priority, but do not mistake broken symlinks or
+  # directories for an absent provider and silently run a fallback instead.
+  if [ ! -f "$git_guard_repo_root/$git_guard_lefthook_cfg" ]; then
+    printf '%s\n' \
+      "git-guard BLOCK: declared lefthook configuration is missing or not a regular file." \
+      "  config: $git_guard_repo_root/$git_guard_lefthook_cfg" >&2
+    exit 1
+  fi
+  if command -v lefthook >/dev/null 2>&1; then
+    lefthook run pre-push "$@" || exit $?
+  elif [ "${GIT_GUARD_ALLOW_MISSING_LEFTHOOK:-}" != "1" ]; then
+    printf '%s\n' \
+      "git-guard BLOCK: this repo configures lefthook but lefthook is NOT installed." \
+      "  repo:   $git_guard_repo_root" \
+      "  config: $git_guard_lefthook_cfg" \
+      "Every pre-push gate that config defines is being SKIPPED SILENTLY." \
+      "Fix (pick one):" \
+      "  * install lefthook so the repo's gates actually run   <- preferred" \
+      "  * GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 git push ...     (this push only)" \
+      "  * export GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1           (this machine, deliberate)" \
+      "Do NOT use --no-verify." >&2
+    exit 1
+  fi
 elif { [ -e "$git_guard_repo_root/.pre-commit-config.yaml" ] || [ -L "$git_guard_repo_root/.pre-commit-config.yaml" ] ||
        [ -e "$git_guard_repo_root/.pre-commit-config.yml" ] || [ -L "$git_guard_repo_root/.pre-commit-config.yml" ]; } &&
      ! git_guard_lefthook_config "$git_guard_repo_root" >/dev/null 2>&1; then

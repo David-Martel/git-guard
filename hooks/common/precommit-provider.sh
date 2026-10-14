@@ -16,7 +16,8 @@ fi
 }
 
 refs=""
-trap '[ -z "$refs" ] || rm -f "$refs"' EXIT
+source_index=""
+trap '[ -z "$refs" ] || rm -f "$refs"; [ -z "$source_index" ] || rm -f "$source_index" "$source_index.lock"' EXIT
 if [ "$stage" = pre-push ]; then
   if [ -L "$config" ]; then
     printf '%s\n' 'git-guard BLOCK: pre-commit pre-push requires a regular non-symlink configuration bound to the pushed HEAD.' >&2
@@ -56,7 +57,16 @@ if [ "$stage" = pre-push ]; then
   done < "$refs"
   # Deletions and unchanged sources do not execute software QA.
   [ "$updates" -ne 0 ] || exit 0
-  if ! git diff --quiet HEAD --; then
+  # A live index can hide actual modifications under assume-unchanged or
+  # skip-worktree. Compare through a private HEAD index with neither flag: Git
+  # retains its normal attributes/clean-filter, symlink, mode and gitlink
+  # semantics, while the user's index and optimization flags remain untouched.
+  source_index="$(mktemp "${TMPDIR:-/tmp}/git-guard-source-index.XXXXXX")" || exit 1
+  # Keep the live staged-source gate as well: a restored HEAD worktree can
+  # otherwise conceal a different staged blob that would be committed next.
+  if ! git diff --cached --quiet "$head" -- ||
+     ! GIT_INDEX_FILE="$source_index" git read-tree "$head" ||
+     ! GIT_INDEX_FILE="$source_index" git diff --quiet "$head" --; then
     printf '%s\n' 'git-guard BLOCK: pre-commit pre-push needs a clean tracked HEAD workspace; staged or unstaged changes are not the pushed source.' >&2
     exit 1
   fi
