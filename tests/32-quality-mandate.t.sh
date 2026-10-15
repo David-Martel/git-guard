@@ -221,6 +221,18 @@ t_case_quality_mandate() {
   _qm_put "$r" src/s.py 'def probe(failures):\n    try:\n        connect()\n    except Exception as exc:  # noqa: BLE001  # SAFETY: collected and raised by the caller\n        failures.append(exc)\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 0 "$rc" "the same noqa with '# SAFETY: <reason>' passes"
+  _qm_put "$r" src/s.py '# ruff: noqa: E722\n\ndef probe():\n    try:\n        connect()\n    except:\n        raise\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "a file-level Ruff suppression without a reason blocks"
+  ( cd "$r" && sh "$_QM_SCAN" --all ) >"$log.json" 2>"$log"
+  "$(gg_python)" -c 'import json, sys; sys.exit(json.load(open(sys.argv[1]))["totals"]["suppression_reason"] != 1)' "$log.json"; rc=$?
+  t_expect_rc 0 "$rc" "whole-tree counts retain the unjustified file-level suppression"
+  _qm_put "$r" src/s.py '# ruff: noqa: E722  # SAFETY: all exceptions are immediately re-raised\n\ndef probe():\n    try:\n        connect()\n    except:\n        raise\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 0 "$rc" "a justified file-level Ruff suppression still passes"
+  _qm_put "$r" src/s.py '# ruff: noqa: E722  # best-effort: all exceptions are immediately re-raised\n\ndef probe():\n    try:\n        connect()\n    except:\n        raise\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 0 "$rc" "a file-level Ruff suppression accepts the existing best-effort reason"
   _qm_put "$r" src/s.py 'def probe():\n    try:\n        connect()\n    except OSError:  # ast-grep-ignore: mandate-except-pass  # SAFETY: optional probe\n        pass\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 0 "$rc" "a same-line ast-grep-ignore with a reason suppresses on every ast-grep version"
@@ -301,9 +313,13 @@ t_case_quality_mandate() {
   _qm_commit "$r" "clean source"
   _qm_scan "$r" "$log" --write-baseline
   _qm_commit "$r" "clean baseline"
+  _qm_before_diff="$(git -C "$r" rev-parse HEAD)"
   _qm_put "$r" src/app.py "$_QM_NARROW"
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 1 "$rc" "raw staged source contains the except-pass before attributes"
+  printf '*.py -diff\n' > "$r/.gitattributes"
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "untracked binary attributes cannot hide a staged source finding"
   _qm_smudge="$GG_T_TMPROOT/qm-smudge"
   printf '#!/bin/sh\ncat >/dev/null\nprintf "value = 1\\n"\n' > "$_qm_smudge"
   chmod +x "$_qm_smudge"
@@ -313,6 +329,9 @@ t_case_quality_mandate() {
   t_expect_rc 1 "$rc" "untracked checkout attributes cannot hide a staged except-pass"
   rm "$r/.gitattributes"
   _qm_commit "$r" "source regression"
+  printf '*.py -diff\n' > "$r/.gitattributes"
+  _qm_scan "$r" "$log" --range "$_qm_before_diff..HEAD"; rc=$?
+  t_expect_rc 1 "$rc" "untracked binary attributes cannot hide a range source finding"
   _qm_scan "$r" "$log" --check-baseline; rc=$?
   t_expect_rc 1 "$rc" "raw committed source exceeds its baseline before attributes"
   printf '*.py filter=qm-smudge\n' > "$r/.gitattributes"

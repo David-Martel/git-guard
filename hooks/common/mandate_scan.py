@@ -409,7 +409,9 @@ PY_TEST_PARTS = frozenset({"tests", "test"})
 
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 NOQA_RE = re.compile(
-    r"#\s*noqa\s*:\s*([A-Z]+[0-9]+(?:[\s,]+[A-Z]+[0-9]+)*)", re.IGNORECASE
+    r"#\s*(?:(?:ruff|flake8)\s*:\s*)?noqa\s*:\s*"
+    r"([A-Z]+[0-9]+(?:[\s,]+[A-Z]+[0-9]+)*)",
+    re.IGNORECASE,
 )
 SG_IGNORE_RE = re.compile(
     r"ast-grep-ignore(?:\s*:\s*([A-Za-z0-9_\-]+(?:\s*,\s*[A-Za-z0-9_\-]+)*))?"
@@ -613,6 +615,7 @@ DIFF_FLAGS = (
     "--no-color",
     "--no-ext-diff",
     "--no-textconv",
+    "--text",
     "--src-prefix=a/",
     "--dst-prefix=b/",
     "-M",
