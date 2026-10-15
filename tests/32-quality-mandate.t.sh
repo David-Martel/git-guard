@@ -153,6 +153,21 @@ t_case_quality_mandate() {
   _qm_has "$log" "git-guard mandate: PASSED" "the pass is stated, not silent"
   gg_rmrepo "$r"
 
+  # Pure renames have no +++ header, but their destinations still need BLOCK rules.
+  r="$(_qm_repo)"
+  _qm_put "$r" legacy.txt 'from pydantic.v1 import BaseModel\n'
+  _qm_put "$r" literal.txt 'from typing import Literal\n\n\ndef f(c: Literal["a", "b"]) -> None:\n    print(c)\n'
+  _qm_commit "$r" "non-source inputs"
+  _qm_rename_base="$(git -C "$r" rev-parse HEAD)"
+  ( cd "$r" && git mv legacy.txt app.py && git mv literal.txt literal.py )
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "a pure staged rename into Python still enforces whole-file BLOCK rules"
+  _qm_lacks "$log" "[literal_enum]" "a pure rename adds no lines to warn on"
+  _qm_commit "$r" "source renames"
+  _qm_scan "$r" "$log" --range "$_qm_rename_base..HEAD"; rc=$?
+  t_expect_rc 1 "$rc" "a pure range rename into Python still enforces whole-file BLOCK rules"
+  gg_rmrepo "$r"
+
   # ---- line mapping is exact on line 1 (ast-grep 0-based vs git 1-based) -------
   r="$(_qm_repo)"
   _qm_put "$r" src/types_.py 'from typing import Optional\n\n\ndef f(x: Optional[int]) -> int:\n    return x or 0\n'
@@ -233,6 +248,15 @@ t_case_quality_mandate() {
   _qm_put "$r" src/s.py '# ruff: noqa: E722  # best-effort: all exceptions are immediately re-raised\n\ndef probe():\n    try:\n        connect()\n    except:\n        raise\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 0 "$rc" "a file-level Ruff suppression accepts the existing best-effort reason"
+  _qm_put "$r" src/s.py '# ruff: noqa: PGH004\n\ndef probe():\n    try:\n        connect()\n    except:  # noqa\n        raise\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "a file-level PGH004 suppression cannot hide a blanket noqa"
+  ( cd "$r" && sh "$_QM_SCAN" --all ) >"$log.json" 2>"$log"
+  "$(gg_python)" -c 'import json, sys; sys.exit(json.load(open(sys.argv[1]))["totals"]["suppression_reason"] != 1)' "$log.json"; rc=$?
+  t_expect_rc 0 "$rc" "whole-tree counts retain an attempted suppression of the suppression guard"
+  _qm_put "$r" src/s.py '# ruff: noqa: PGH004  # SAFETY: reviewed suppression\n\ndef probe():\n    try:\n        connect()\n    except:  # noqa\n        raise\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "a reason cannot make the suppression guard self-suppressible"
   _qm_put "$r" src/s.py 'def probe():\n    try:\n        connect()\n    except OSError:  # ast-grep-ignore: mandate-except-pass  # SAFETY: optional probe\n        pass\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 0 "$rc" "a same-line ast-grep-ignore with a reason suppresses on every ast-grep version"

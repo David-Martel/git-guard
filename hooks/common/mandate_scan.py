@@ -623,10 +623,19 @@ DIFF_FLAGS = (
 )
 
 
-def staged_changes(repo: Path) -> Dict[str, Set[int]]:
-    return parse_changed_lines(
-        git(repo, *DIFF_FLAGS, "--cached").decode("utf-8", "surrogateescape")
+def diff_changes(repo: Path, *args: str) -> Dict[str, Set[int]]:
+    changes = parse_changed_lines(
+        git(repo, *DIFF_FLAGS, *args).decode("utf-8", "surrogateescape")
     )
+    # Pure renames have no +++ header. Keep their destinations for whole-file
+    # BLOCK rules, with no added lines for changed-only findings or warnings.
+    for path in split_nul(git(repo, *DIFF_FLAGS, "--name-only", "-z", *args)):
+        changes.setdefault(path, set())
+    return changes
+
+
+def staged_changes(repo: Path) -> Dict[str, Set[int]]:
+    return diff_changes(repo, "--cached")
 
 
 def range_changes(repo: Path, spec: str) -> Tuple[str, Dict[str, Set[int]]]:
@@ -640,8 +649,7 @@ def range_changes(repo: Path, spec: str) -> Tuple[str, Dict[str, Set[int]]]:
         head = verify_commit(repo, right or "HEAD")
     else:
         raise MandateError(f"--range needs BASE..HEAD or BASE...HEAD, got '{spec}'")
-    diff = git(repo, *DIFF_FLAGS, base, head).decode("utf-8", "surrogateescape")
-    return head, parse_changed_lines(diff)
+    return head, diff_changes(repo, base, head)
 
 
 def split_nul(raw: bytes) -> List[str]:
@@ -1170,7 +1178,6 @@ def suppression_codes(enabled: Mapping[str, Severity]) -> Set[str]:
         for rule in RULES
         if enabled[rule.key] is not Severity.OFF
         for code in rule.ruff_codes
-        if not code.startswith("PGH")
     }
 
 
@@ -1192,11 +1199,16 @@ def text_findings(
 
 def unjustified_suppression(comment: str, codes: Set[str]) -> str:
     """Why ``comment`` (comment text only, never code or strings) is unjustified."""
+    noqa = NOQA_RE.search(comment)
+    named = (
+        {c.upper() for c in re.split(r"[\s,]+", noqa.group(1)) if c} if noqa else set()
+    )
+    guards = sorted(named & codes & set(RULES_BY_KEY["suppression_code"].ruff_codes))
+    if guards:
+        return f"suppression checks cannot suppress themselves: {', '.join(guards)}"
     if REASON_RE.search(comment):
         return ""
-    noqa = NOQA_RE.search(comment)
     if noqa:
-        named = {c.upper() for c in re.split(r"[\s,]+", noqa.group(1)) if c}
         hit = sorted(named & codes)
         if hit:
             return (
