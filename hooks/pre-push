@@ -212,7 +212,9 @@ elif git_guard_lefthook_cfg="$(git_guard_lefthook_config "$git_guard_repo_root")
     exit 1
   fi
 elif { [ -e "$git_guard_repo_root/.pre-commit-config.yaml" ] || [ -L "$git_guard_repo_root/.pre-commit-config.yaml" ] ||
-       [ -e "$git_guard_repo_root/.pre-commit-config.yml" ] || [ -L "$git_guard_repo_root/.pre-commit-config.yml" ]; } &&
+       [ -e "$git_guard_repo_root/.pre-commit-config.yml" ] || [ -L "$git_guard_repo_root/.pre-commit-config.yml" ] ||
+       git cat-file -e HEAD:.pre-commit-config.yaml 2>/dev/null ||
+       git cat-file -e HEAD:.pre-commit-config.yml 2>/dev/null; } &&
      ! git_guard_lefthook_config "$git_guard_repo_root" >/dev/null 2>&1; then
   sh "$git_guard_hook_dir/common/precommit-provider.sh" pre-push "$@" || exit $?
 fi

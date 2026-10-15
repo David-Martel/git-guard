@@ -5,6 +5,9 @@ set -u
 
 stage="$1"; shift
 root="$(git rev-parse --show-toplevel)" || exit 1
+# Match the directory passed by generated pre-commit hooks, pinned to this
+# dispatcher's release. Older frameworks require it for their legacy-hook path.
+hook_dir="$(cd "$(dirname "$0")/.." && pwd -P)" || exit 1
 config="$root/.pre-commit-config.yaml"
 if [ ! -e "$config" ] && [ ! -L "$config" ] &&
    { [ -e "$root/.pre-commit-config.yml" ] || [ -L "$root/.pre-commit-config.yml" ]; }; then
@@ -27,6 +30,7 @@ if [ "$stage" = pre-push ]; then
   cat > "$refs" || exit 1
   head="$(git rev-parse --verify HEAD)" || exit 1
   updates=0
+  admitted_record=""
   while read -r local_ref local_sha remote_ref remote_sha extra; do
     [ -n "${local_ref}${local_sha}${remote_ref}${remote_sha}${extra}" ] || continue
     if [ -n "$extra" ] || [ -z "$remote_sha" ]; then
@@ -54,9 +58,14 @@ if [ "$stage" = pre-push ]; then
       printf '%s\n' 'git-guard BLOCK: pre-commit provider supports one changed update at current HEAD; publish other heads separately from their own checkout.' >&2
       exit 1
     fi
+    admitted_record="$local_ref $local_sha $remote_ref $remote_sha"
   done < "$refs"
   # Deletions and unchanged sources do not execute software QA.
   [ "$updates" -ne 0 ] || exit 0
+  # The framework selects its first eligible input record. Replaying unchanged
+  # annotated-tag rewrites would let an empty diff conceal the changed release.
+  # Keep the admitted record's original object identities and remote ref names.
+  printf '%s\n' "$admitted_record" > "$refs" || exit 1
   # A live index can hide actual modifications under assume-unchanged or
   # skip-worktree. Compare through a private HEAD index with neither flag: Git
   # retains its normal attributes/clean-filter, symlink, mode and gitlink
@@ -83,9 +92,9 @@ if [ ! -f "$provider" ] || [ ! -x "$provider" ]; then
   exit 1
 fi
 # hook-impl is the framework backend used by its generated Git hooks. It
-# translates the original remote argv/ref stdin and retains stage filtering.
+# translates remote argv/admitted ref stdin and retains stage filtering.
 if [ "$stage" = pre-push ]; then
-  "$provider" hook-impl --config "$config" --hook-type "$stage" -- "$@" < "$refs"
+  "$provider" hook-impl --config "$config" --hook-type "$stage" --hook-dir "$hook_dir" -- "$@" < "$refs"
 else
-  "$provider" hook-impl --config "$config" --hook-type "$stage" -- "$@"
+  "$provider" hook-impl --config "$config" --hook-type "$stage" --hook-dir "$hook_dir" -- "$@"
 fi
