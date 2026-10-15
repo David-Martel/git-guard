@@ -282,10 +282,42 @@ t_case_quality_mandate() {
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 1 "$rc" "an added .unwrap() in non-test Rust blocks"
   _qm_has "$log" "[rust_panic]" "the block names rust_panic"
-  _qm_put "$r" src/lib.rs 'pub fn f(x: Option<u8>) -> u8 {\n    x.unwrap_or(0)\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {\n        assert_eq!(super::f(Some(1)), 1);\n        Some(1).unwrap();\n    }\n}\n'
+  _qm_put "$r" src/lib.rs 'pub fn f(x: Option<u8>) -> u8 {\n    x.unwrap_or(0)\n}\n\n#[cfg(test)]\n#[allow(dead_code)]\nmod tests {\n    fn helper() { Some(1).unwrap(); }\n}\n'
   _qm_put "$r" tests/it.rs 'fn t() { Some(1).unwrap(); }\n'
   _qm_scan "$r" "$log" --staged; rc=$?
-  t_expect_rc 0 "$rc" ".unwrap() inside #[cfg(test)] and under tests/ passes"
+  t_expect_rc 0 "$rc" ".unwrap() inside stacked #[cfg(test)] attributes and under tests/ passes"
+  _qm_put "$r" src/lib.rs '#[test]\n#[ignore]\nfn t() { Some(1).unwrap(); }\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 0 "$rc" ".unwrap() inside stacked #[test] attributes passes"
+  printf '%b' '\npub fn production() { Some(1).unwrap(); }\n' >> "$r/src/lib.rs"
+  ( cd "$r" && git add src/lib.rs )
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "a preceding test attribute does not exempt the next production item"
+  gg_rmrepo "$r"
+
+  # Actual review #72: untracked attributes must not smudge scanned source.
+  r="$(_qm_repo)"
+  _qm_put "$r" src/app.py "$_QM_CLEAN"
+  _qm_commit "$r" "clean source"
+  _qm_scan "$r" "$log" --write-baseline
+  _qm_commit "$r" "clean baseline"
+  _qm_put "$r" src/app.py "$_QM_NARROW"
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "raw staged source contains the except-pass before attributes"
+  _qm_smudge="$GG_T_TMPROOT/qm-smudge"
+  printf '#!/bin/sh\ncat >/dev/null\nprintf "value = 1\\n"\n' > "$_qm_smudge"
+  chmod +x "$_qm_smudge"
+  ( cd "$r" && git config filter.qm-smudge.clean cat && git config filter.qm-smudge.smudge "$_qm_smudge" )
+  printf '*.py filter=qm-smudge\n' > "$r/.gitattributes"
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "untracked checkout attributes cannot hide a staged except-pass"
+  rm "$r/.gitattributes"
+  _qm_commit "$r" "source regression"
+  _qm_scan "$r" "$log" --check-baseline; rc=$?
+  t_expect_rc 1 "$rc" "raw committed source exceeds its baseline before attributes"
+  printf '*.py filter=qm-smudge\n' > "$r/.gitattributes"
+  _qm_scan "$r" "$log" --check-baseline; rc=$?
+  t_expect_rc 1 "$rc" "untracked checkout attributes cannot hide committed baseline regression"
   gg_rmrepo "$r"
 
   # ---- warn-level rule (Literal-as-enum) reports and passes --------------------

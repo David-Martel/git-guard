@@ -28,6 +28,10 @@ rule:
           kind: mod_item
           stopBy: end
           follows:
+            # Search this item's attribute stack, never an earlier item.
+            stopBy:
+              not:
+                kind: attribute_item
             kind: attribute_item
             regex: 'cfg\(\s*test\s*\)'
     - not:
@@ -35,7 +39,9 @@ rule:
           kind: function_item
           stopBy: end
           follows:
-            stopBy: neighbor
+            stopBy:
+              not:
+                kind: attribute_item
             kind: attribute_item
             regex: '^#\[\s*([A-Za-z_]+::)*test\b'
 note: |

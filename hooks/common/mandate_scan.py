@@ -13,7 +13,7 @@ catalogue, with a source line per rule, is docs/QA_TOOLING.md "Quality mandate".
 Modes
 -----
 ``--staged``                 findings on lines this commit adds or modifies (the
-                             staged content is exported with checkout-index; the
+                             staged content is exported as raw Git blobs; the
                              working tree is never read).
 ``--range BASE..HEAD``       the same, for a commit range (CI, pre-push).
 ``--all [--rev REV]``        whole-tree per-rule, per-file counts as JSON on stdout.
@@ -675,10 +675,55 @@ def rev_files(repo: Path, rev: str) -> List[str]:
     return files
 
 
-def export_index(repo: Path, paths: Sequence[str], dest: Path) -> None:
-    if paths:
-        payload = b"".join(p.encode("utf-8", "surrogateescape") + b"\0" for p in paths)
-        git(repo, "checkout-index", f"--prefix={dest}/", "-z", "--stdin", stdin=payload)
+def export_index(
+    repo: Path,
+    paths: Sequence[str],
+    dest: Path,
+    *,
+    env: Optional[Mapping[str, str]] = None,
+) -> None:
+    """Export exact index blobs without checkout filters or attribute conversions."""
+    if not paths:
+        return
+    objects: Dict[str, str] = {}
+    for entry in split_nul(git(repo, "ls-files", "-s", "-z", env=env)):
+        meta, _, path = entry.partition("\t")
+        parts = meta.split()
+        if (
+            len(parts) == LS_META_FIELDS
+            and parts[2] == "0"
+            and parts[0] in ("100644", "100755")
+        ):
+            objects[path] = parts[1]
+    # Object IDs, rather than path expressions, make the batch protocol safe for
+    # filenames containing newlines. One Git process per chunk avoids one per file.
+    command = ["git", "cat-file", "--batch"]
+    for batch in chunks(paths):
+        missing = [path for path in batch if path not in objects]
+        if missing:
+            raise ToolFailure("git", command, f"index file unavailable: {missing[0]!r}")
+        payload = b"".join(objects[path].encode("ascii") + b"\n" for path in batch)
+        blobs = io.BytesIO(git(repo, "cat-file", "--batch", stdin=payload, env=env))
+        for path in batch:
+            header = blobs.readline().split()
+            if (
+                len(header) != 3
+                or header[0] != objects[path].encode("ascii")
+                or header[1] != b"blob"
+                or not header[2].isdigit()
+            ):
+                raise ToolFailure(
+                    "git", command, f"invalid raw blob header for {path!r}"
+                )
+            size = int(header[2])
+            content = blobs.read(size)
+            if len(content) != size or blobs.read(1) != b"\n":
+                raise ToolFailure("git", command, f"incomplete raw blob for {path!r}")
+            exported = dest / path
+            exported.parent.mkdir(parents=True, exist_ok=True)
+            exported.write_bytes(content)
+        if blobs.read():
+            raise ToolFailure("git", command, "unexpected trailing raw blob data")
 
 
 def export_rev(
@@ -689,16 +734,7 @@ def export_rev(
     env = dict(os.environ)
     env["GIT_INDEX_FILE"] = str(scratch / "mandate.index")
     git(repo, "read-tree", rev, env=env)
-    payload = b"".join(p.encode("utf-8", "surrogateescape") + b"\0" for p in paths)
-    git(
-        repo,
-        "checkout-index",
-        f"--prefix={dest}/",
-        "-z",
-        "--stdin",
-        stdin=payload,
-        env=env,
-    )
+    export_index(repo, paths, dest, env=env)
 
 
 # ------------------------------------------------------------------- path policy
