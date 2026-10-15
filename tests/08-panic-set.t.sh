@@ -47,7 +47,7 @@ gg_fixture_fixed_size_init() {
 # Write a per-repo .qa-gate.conf. $2.. are literal `key=value` lines.
 # `mandate.enabled=off` comes first in every conf: this category tests the
 # advisory ast-grep panic set (`astgrep_panics`), and since the quality mandate
-# (tests/31-quality-mandate.t.sh) an added .unwrap() in src/ also BLOCKS by
+# (tests/32-quality-mandate.t.sh) an added .unwrap() in src/ also BLOCKS by
 # default through `mandate.rust_panic=changed`. Left on, it would decide every
 # assertion below for reasons that have nothing to do with `astgrep_panics`.
 gg_write_conf() {

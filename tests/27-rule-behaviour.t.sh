@@ -292,7 +292,7 @@ fn f() {}'
     'fn f(x: Option<u8>) -> u8 { x.unwrap_or(0) }'
 
   # ---- mandate (read by hooks/common/mandate_scan.sh, not the qa_gate cache) --
-  # Category 31 drives these through the scanner (changed lines, suppressions,
+  # Category 32 drives these through the scanner (changed lines, suppressions,
   # severities); these rows pin each rule's own match in isolation.
   _rb_row mandate/python/mandate-pydantic-v1.yml src/m.py \
     'from pydantic.v1 import BaseModel' \

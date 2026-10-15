@@ -1776,6 +1776,30 @@ def check_baseline(
     return Outcome.PASSED
 
 
+def new_register_commits(repo: Path, local_sha: str, remote_sha: str) -> List[str]:
+    """Commits a ref update introduces that touch the debt register, plus its tip.
+
+    An intermediate commit with a regressed or malformed register must not slip
+    through because the tip's register is fine (git-guard #72 review, P1).
+    """
+    if remote_sha == ZERO_SHA:
+        scope = ["--not", "--remotes"]  # a new ref: everything no remote has
+    else:
+        scope = ["--not", remote_sha]
+    listed = run(
+        ["git", "rev-list", "--full-history", local_sha, *scope, "--",
+         BASELINE_RELPATH],
+        cwd=repo,
+        tool="git",
+    )
+    if listed.returncode != 0:
+        # Cannot enumerate (e.g. the remote tip is not local): fall back to the
+        # tip rather than skip the check.
+        debug(f"rev-list failed for {local_sha[:12]}; checking the tip only")
+        return [local_sha]
+    return [local_sha] + [c for c in listed.stdout.decode().split() if c != local_sha]
+
+
 def pushed_baseline_shas(repo: Path, ref_lines: str) -> List[str]:
     """Pushed commits (from a pre-push ref list) that carry a debt register."""
     shas: List[str] = []
@@ -1783,20 +1807,21 @@ def pushed_baseline_shas(repo: Path, ref_lines: str) -> List[str]:
         parts = line.split()
         if len(parts) != PRE_PUSH_FIELDS:
             continue
-        local_ref, local_sha = parts[0], parts[1]
+        local_ref, local_sha, remote_sha = parts[0], parts[1], parts[3]
         if local_sha == ZERO_SHA or local_ref.startswith("refs/tags/"):
             continue
-        if local_sha in shas:
-            continue
-        has = run(
-            ["git", "cat-file", "-e", f"{local_sha}:{BASELINE_RELPATH}"],
-            cwd=repo,
-            tool="git",
-        )
-        if has.returncode == 0:
-            shas.append(local_sha)
-        else:
-            debug(f"{local_sha[:12]} carries no {BASELINE_RELPATH}")
+        for sha in new_register_commits(repo, local_sha, remote_sha):
+            if sha in shas:
+                continue
+            has = run(
+                ["git", "cat-file", "-e", f"{sha}:{BASELINE_RELPATH}"],
+                cwd=repo,
+                tool="git",
+            )
+            if has.returncode == 0:
+                shas.append(sha)
+            else:
+                debug(f"{sha[:12]} carries no {BASELINE_RELPATH}")
     return shas
 
 

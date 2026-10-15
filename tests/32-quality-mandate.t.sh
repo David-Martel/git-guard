@@ -1,5 +1,5 @@
 #!/bin/sh
-# Category 31 — the owner's quality mandate (hooks/common/mandate_scan.sh).
+# Category 32 — the owner's quality mandate (hooks/common/mandate_scan.sh).
 #
 # Behaviour protected:
 #   * --staged blocks a mandate finding on a line the commit adds or modifies,
@@ -102,7 +102,7 @@ _QM_NARROW='def probe():\n    try:\n        connect()\n    except OSError:\n    
 _QM_CLEAN='\n\ndef added(value: int) -> int:\n    return value + 1\n'
 
 t_case_quality_mandate() {
-  t_begin "31 quality mandate: changed lines, rules, suppressions, debt register"
+  t_begin "32 quality mandate: changed lines, rules, suppressions, debt register"
   log="$(gg_tmp_log)"
 
   if ! gg_has_python; then
@@ -391,6 +391,31 @@ t_case_quality_mandate() {
   _qm_push "$r" "$log"; rc=$?
   t_expect_rc 0 "$rc" "a repo with no register pushes as before"
   _qm_lacks "$log" "git-guard mandate" "and the mandate prints nothing for it"
+  gg_rmrepo "$r"
+
+  # ---- every pushed commit is checked, not only the tip --------------------------
+  # (git-guard #72 review, P1.) An intermediate commit with a malformed register
+  # used to reach the remote whenever the tip's register was fine.
+  r="$(_qm_repo)"
+  _qm_put "$r" README.md 'base\n'
+  _qm_commit "$r" "base"
+  _qm_base="$(git -C "$r" rev-parse HEAD)"
+  _qm_put "$r" src/app.py "$_QM_NARROW"
+  _qm_put "$r" .git-guard/mandate-baseline.json '{"version": 1, "rules": []}\n'
+  _qm_commit "$r" "malformed in the middle"
+  _qm_mid="$(git -C "$r" rev-parse HEAD)"
+  ( cd "$r" && sh "$_QM_SCAN" --write-baseline ) >/dev/null 2>&1
+  _qm_commit "$r" "valid at the tip"
+  _qm_tip="$(git -C "$r" rev-parse HEAD)"
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_base" > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 1 "$rc" "a malformed register in an intermediate pushed commit blocks"
+  _qm_has "$log" "MALFORMED" "the block says MALFORMED"
+  _qm_has "$log" "$(printf %s "$_qm_mid" | cut -c1-12)" "and names the intermediate commit"
+  # positive control: once the remote already has the bad commit, only the tip is new.
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_mid" > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 0 "$rc" "the same tip pushes once the remote already holds the bad commit"
   gg_rmrepo "$r"
 
   # ---- repository policy is read from the same snapshot as the code ------------

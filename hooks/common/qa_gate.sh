@@ -136,7 +136,7 @@ QA_KNOWN_KEYS="qa.enabled nul_cleanup astgrep astgrep_panics astgrep_autofix rus
 # "Quality mandate"). Read by mandate_scan.sh through `--get-prefix mandate.`,
 # never via qa_cfg here. Rule ids are underscore-only: the loader evals
 # `qacfg_<key>`, and a hyphen is not legal in a shell variable name.
-# tests/31-quality-mandate.t.sh asserts this list, the RULES table and the
+# tests/32-quality-mandate.t.sh asserts this list, the RULES table and the
 # defaults in qa-gate.conf name the same keys.
 QA_KNOWN_KEYS="$QA_KNOWN_KEYS mandate.enabled mandate.vendored mandate.pydantic_v1 mandate.pydantic_v1_ambiguous mandate.bare_except mandate.blind_except mandate.except_pass mandate.except_continue mandate.except_sentinel mandate.broad_suppress mandate.no_any mandate.raise_from mandate.bare_exception_raise mandate.raise_without_message mandate.unchecked_subprocess mandate.suppression_code mandate.suppression_reason mandate.str_enum_param mandate.literal_enum mandate.magic_number mandate.python_syntax mandate.rust_panic"
 qa_cfg_key_known() {
