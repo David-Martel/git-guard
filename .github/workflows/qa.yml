@@ -43,9 +43,14 @@ jobs:
   # then exercise doctor/rules and the bundled-rule validation in-container.
   # ---------------------------------------------------------------------------
   self-test-docker:
-    # This distinct label belongs only to the source-qualified native runner on
-    # vigil1's private rootless Docker engine. The Podman-hosted runner has no engine.
-    runs-on: [self-hosted, Linux, X64, vigil1, git-guard-native-docker, "git-guard-run-${{ github.run_id }}-${{ github.run_attempt }}"]
+    # Route (owner directive 2026-10-15: a required check never waits undetermined).
+    # Default: the source-qualified native runner on vigil1's private rootless Docker
+    # engine, admitted per run by the vigil1 GitGuard provider (the distinct per-run label).
+    # Fallback: repository variable GITGUARD_DOCKER_ROUTE=asuspro13 sends the job to the
+    # persistent asuspro13-gitguard-x64 runner (host Docker socket, ci_runners.slice), for
+    # use while the vigil1 provider cannot admit runs. Flip it back by deleting the variable;
+    # no workflow change is needed either way. Same image build and assertions on both.
+    runs-on: ${{ vars.GITGUARD_DOCKER_ROUTE == 'asuspro13' && fromJSON('["self-hosted","Linux","X64","git-guard-local","docker"]') || fromJSON(format('["self-hosted","Linux","X64","vigil1","git-guard-native-docker","git-guard-run-{0}-{1}"]', github.run_id, github.run_attempt)) }}
     # A hung step on a self-hosted runner holds the runner until GitHub's 24h ceiling —
     # we measured a real 24h00m00s job elsewhere in this fleet. This suite finishes in
     # ~2 min; 20 is generous and still fails fast.
@@ -56,9 +61,17 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Verify private native Docker capability
+        if: vars.GITGUARD_DOCKER_ROUTE != 'asuspro13'
         run: |
           test "$DOCKER_HOST" = "unix:///run/user/$(id -u)/nebula-docker.sock"
           /usr/bin/python3 /usr/local/libexec/vigil-nebula-docker/install_native_docker.py verify --require-engine
+
+      - name: Verify asuspro13 fallback Docker engine
+        if: vars.GITGUARD_DOCKER_ROUTE == 'asuspro13'
+        run: |
+          test "$RUNNER_NAME" = "asuspro13-gitguard-x64"
+          docker version --format '{{.Server.Version}}'
+          echo "::notice::self-test-docker ran on the asuspro13 fallback route (GITGUARD_DOCKER_ROUTE=asuspro13)"
 
       - name: Build git-guard QA image
         run: |
