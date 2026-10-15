@@ -537,14 +537,40 @@ t_case_quality_mandate() {
 
   # ---- a type change (symlink -> regular file) is scanned (git-guard #72 review) --
   r="$(_qm_repo)"
+  _qm_conf "$r" 'python.ruff_check=off\npython.ruff_format=off\npython.mypy=off\npython.basedpyright=off\nastgrep=off\n'
   _qm_put "$r" README.md 'base\n'
   ( cd "$r" && mkdir -p src && ln -s ../README.md src/model.py )
   _qm_commit "$r" "symlink"
+  _qm_type_base="$(git -C "$r" rev-parse HEAD)"
   rm -f "$r/src/model.py"
   _qm_put "$r" src/model.py 'from pydantic.v1 import BaseModel\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 1 "$rc" "a symlink turned into a file with pydantic.v1 blocks (type change is scanned)"
   _qm_has "$log" "pydantic_v1" "the block names pydantic_v1"
+  ( cd "$r" && sh "$GG_ROOT/hooks/pre-commit" ) >"$log" 2>&1; rc=$?
+  t_expect_rc 1 "$rc" "pre-commit dispatches mandate checks for a source type change"
+  _qm_has "$log" "pydantic_v1" "pre-commit reports the actual type-change finding"
+  _qm_commit "$r" "source replaces symlink"
+  _qm_scan "$r" "$log" --range "$_qm_type_base..HEAD"; rc=$?
+  t_expect_rc 1 "$rc" "a range symlink-to-file type change enforces pydantic.v1"
+  gg_rmrepo "$r"
+
+  # Same review: added source symlinks caused exporter errors. Protect the
+  # regular-file-only policy in staged/range/caller paths; detect alias target
+  # text treated as source. Needs the symlink support used by the case above.
+  r="$(_qm_repo)"
+  _qm_conf "$r" 'python.ruff_check=off\npython.ruff_format=off\npython.mypy=off\npython.basedpyright=off\nastgrep=off\n'
+  _qm_put "$r" README.md 'value = 1\n'
+  _qm_commit "$r" "base"
+  _qm_type_base="$(git -C "$r" rev-parse HEAD)"
+  ( cd "$r" && ln -s README.md alias.py && git add alias.py )
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 0 "$rc" "an added Python symlink is skipped before staged export"
+  ( cd "$r" && sh "$GG_ROOT/hooks/pre-commit" ) >"$log" 2>&1; rc=$?
+  t_expect_rc 0 "$rc" "pre-commit preserves the source-symlink skip policy"
+  _qm_commit "$r" "source alias"
+  _qm_scan "$r" "$log" --range "$_qm_type_base..HEAD"; rc=$?
+  t_expect_rc 0 "$rc" "an added Python symlink is skipped before range export"
   gg_rmrepo "$r"
 
   # ---- repository policy is read from the same snapshot as the code ------------

@@ -1465,7 +1465,11 @@ def changed_mode(
     tools: Tools,
 ) -> Outcome:
     enabled = policy.severities
-    files = sorted(p for p in changes if scannable(p, policy.vendored))
+    # Match census destination modes before exporting: a symlink is a Git blob,
+    # but its target text is not Python/Rust source. Type changes into regular
+    # files still enter the same scan as added/modified files.
+    regular = set(index_files(repo) if export == "index" else rev_files(repo, export))
+    files = sorted(p for p in changes if p in regular and scannable(p, policy.vendored))
     if not files:
         debug("no Python/Rust files changed")
         return Outcome.PASSED
