@@ -37,4 +37,4 @@ note: |
     model.dict(...)              -> model.model_dump(...)
     model.copy(update={...})     -> model.model_copy(update={...})
   If it is not, record that on the line:
-    x.dict()  # noqa: GGM-PYDANTIC  # SAFETY: <receiver> is not a pydantic model
+    x.dict()  # ast-grep-ignore: mandate-pydantic-v1-ambiguous  # SAFETY: <receiver> is not a pydantic model
