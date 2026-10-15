@@ -619,7 +619,7 @@ DIFF_FLAGS = (
     "--src-prefix=a/",
     "--dst-prefix=b/",
     "-M",
-    "--diff-filter=AMR",
+    "--diff-filter=d",  # everything but deletions: A, M, R, C and T (type change)
 )
 
 

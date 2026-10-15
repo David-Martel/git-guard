@@ -535,6 +535,18 @@ t_case_quality_mandate() {
   t_expect_rc 0 "$rc" "the restored tip passes once the intermediate commit is remote"
   gg_rmrepo "$r"
 
+  # ---- a type change (symlink -> regular file) is scanned (git-guard #72 review) --
+  r="$(_qm_repo)"
+  _qm_put "$r" README.md 'base\n'
+  ( cd "$r" && mkdir -p src && ln -s ../README.md src/model.py )
+  _qm_commit "$r" "symlink"
+  rm -f "$r/src/model.py"
+  _qm_put "$r" src/model.py 'from pydantic.v1 import BaseModel\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "a symlink turned into a file with pydantic.v1 blocks (type change is scanned)"
+  _qm_has "$log" "pydantic_v1" "the block names pydantic_v1"
+  gg_rmrepo "$r"
+
   # ---- repository policy is read from the same snapshot as the code ------------
   # (git-guard #72 review, P2.) The scanner used to read .qa-gate.conf from the
   # working tree once and apply it to every snapshot it scanned, so a pushed
