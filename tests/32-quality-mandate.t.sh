@@ -234,6 +234,16 @@ t_case_quality_mandate() {
   t_expect_rc 1 "$rc" "an ast-grep-ignore inside a string does not suppress a finding"
   gg_rmrepo "$r"
 
+  r="$(_qm_repo)"
+  _qm_put "$r" src/lib.rs '// ast-grep-ignore: mandate-rust-panic\nfn probe() { panic!("failed"); }\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "a Rust-only mandate suppression without a reason blocks"
+  _qm_has "$log" "[suppression_reason]" "the Rust-only block names suppression_reason"
+  _qm_put "$r" src/lib.rs '// ast-grep-ignore: mandate-rust-panic  # SAFETY: fixture exercises a deliberate panic\nfn probe() { panic!("failed"); }\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 0 "$rc" "the same Rust-only suppression with a reason passes"
+  gg_rmrepo "$r"
+
   # ---- per-rule severity ---------------------------------------------------------
   r="$(_qm_repo)"
   _qm_put "$r" src/n.py "$_QM_NARROW"
@@ -360,12 +370,24 @@ t_case_quality_mandate() {
   _qm_push "$r" "$log"; rc=$?
   t_expect_rc 1 "$rc" "hooks/pre-push refuses a commit whose register does not hold"
   _qm_has "$log" "debt register does not hold" "pre-push says why"
+  _qm_before_ratchet="$(git -C "$r" rev-parse HEAD)"
   ( cd "$r" && sh "$_QM_SCAN" --write-baseline ) >/dev/null 2>&1
   _qm_commit "$r" "ratchet"
   printf 'refs/heads/main %s refs/heads/main %s\n' "$(git -C "$r" rev-parse HEAD)" \
-    0000000000000000000000000000000000000000 > "$GG_T_TMPROOT/qm-refs"
+    "$_qm_before_ratchet" > "$GG_T_TMPROOT/qm-refs"
   _qm_push "$r" "$log"; rc=$?
-  t_expect_rc 0 "$rc" "after the ratchet commit the push passes"
+  t_expect_rc 0 "$rc" "the ratchet commit passes when earlier debt is already remote"
+  _qm_fault_bin="$GG_T_TMPROOT/qm-buffer-fault"
+  mkdir -p "$_qm_fault_bin"
+  printf '#!/bin/sh\nexit 1\n' > "$_qm_fault_bin/mktemp"
+  chmod +x "$_qm_fault_bin/mktemp"
+  PATH="$_qm_fault_bin:$PATH" _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 1 "$rc" "failed mandatory ref-buffer creation refuses the push"
+  rm "$_qm_fault_bin/mktemp"
+  printf '#!/bin/sh\nexit 1\n' > "$_qm_fault_bin/cat"
+  chmod +x "$_qm_fault_bin/cat"
+  PATH="$_qm_fault_bin:$PATH" _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 1 "$rc" "failed ref-buffer write refuses the push"
   gg_rmrepo "$r"
 
   r="$(_qm_repo)"
@@ -416,6 +438,26 @@ t_case_quality_mandate() {
   printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_mid" > "$GG_T_TMPROOT/qm-refs"
   _qm_push "$r" "$log"; rc=$?
   t_expect_rc 0 "$rc" "the same tip pushes once the remote already holds the bad commit"
+  gg_rmrepo "$r"
+
+  r="$(_qm_repo)"
+  _qm_put "$r" src/app.py "$_QM_CLEAN"
+  ( cd "$r" && sh "$_QM_SCAN" --write-baseline ) >/dev/null 2>&1
+  _qm_commit "$r" "valid source and register"
+  _qm_base="$(git -C "$r" rev-parse HEAD)"
+  _qm_put "$r" src/app.py "$_QM_NARROW"
+  _qm_commit "$r" "source-only register regression"
+  _qm_mid="$(git -C "$r" rev-parse HEAD)"
+  _qm_put "$r" src/app.py "$_QM_CLEAN"
+  _qm_commit "$r" "source-only restoration"
+  _qm_tip="$(git -C "$r" rev-parse HEAD)"
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_base" > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 1 "$rc" "a source-only intermediate register regression blocks"
+  _qm_has "$log" "$(printf %s "$_qm_mid" | cut -c1-12)" "the source-only block names its introduced commit"
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_mid" > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 0 "$rc" "the restored tip passes once the intermediate commit is remote"
   gg_rmrepo "$r"
 
   # ---- repository policy is read from the same snapshot as the code ------------

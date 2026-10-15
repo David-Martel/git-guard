@@ -19,6 +19,12 @@
 git_guard_uses_lfs() {
   git grep -q -I -e 'filter=lfs' -- .gitattributes '*/.gitattributes' 2>/dev/null
 }
+git_guard_read_refs() {
+  cat > "$git_guard_stdin" || {
+    printf '%s\n' "git-guard BLOCK: cannot buffer the complete pushed ref list." >&2
+    exit 1
+  }
+}
 git_guard_stdin=""
 if git_guard_uses_lfs; then
   if ! command -v git-lfs >/dev/null 2>&1; then
@@ -30,7 +36,7 @@ if git_guard_uses_lfs; then
   fi
   git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX")" || exit 1
   trap 'rm -f "$git_guard_stdin"' EXIT
-  cat > "$git_guard_stdin"
+  git_guard_read_refs
   git lfs pre-push "$@" < "$git_guard_stdin" || exit $?
 fi
 
@@ -63,7 +69,7 @@ if [ "$git_guard_identity_mode" != "off" ] && [ ! -t 0 ] &&
   if [ -z "$git_guard_stdin" ]; then
     if git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)"; then
       trap 'rm -f "$git_guard_stdin"' EXIT
-      cat > "$git_guard_stdin"
+      git_guard_read_refs
     else
       # Cannot buffer the ref list (stale or unwritable TMPDIR). A WARN-ONLY
       # check must never block the push: skip attestation LOUDLY and leave
@@ -112,7 +118,7 @@ if [ -x "$git_guard_hook_dir/common/preserve.sh" ] && [ ! -t 0 ]; then
   if [ -z "$git_guard_stdin" ] &&
      git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)"; then
     trap 'rm -f "$git_guard_stdin"' EXIT
-    cat > "$git_guard_stdin"
+    git_guard_read_refs
   fi
   if [ -n "$git_guard_stdin" ]; then
     "$git_guard_hook_dir/common/preserve.sh" pre-push "$@" < "$git_guard_stdin"
@@ -131,7 +137,7 @@ if [ -f "$git_guard_hook_dir/common/hygiene.sh" ] && [ ! -t 0 ]; then
   if [ -z "$git_guard_stdin" ] &&
      git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)"; then
     trap 'rm -f "$git_guard_stdin"' EXIT
-    cat > "$git_guard_stdin"
+    git_guard_read_refs
   fi
   if [ -n "$git_guard_stdin" ]; then
     # Exit 77 is the only policy refusal. Any other failure (a crash, a
@@ -155,10 +161,14 @@ fi
 # mandate could not be evaluated) refuses too: a ratchet that did not run is
 # not a pass. `mandate.enabled=off` (repo .qa-gate.conf) switches it off.
 if [ -f "$git_guard_hook_dir/common/mandate_scan.sh" ] && [ ! -t 0 ]; then
-  if [ -z "$git_guard_stdin" ] &&
-     git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)"; then
+  if [ -z "$git_guard_stdin" ]; then
+    git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)" ||
+      git_guard_stdin="$(mktemp /tmp/git-guard-prepush.XXXXXX 2>/dev/null)" || {
+        printf '%s\n' "git-guard BLOCK: cannot create the mandatory pushed-ref buffer." >&2
+        exit 1
+      }
     trap 'rm -f "$git_guard_stdin"' EXIT
-    cat > "$git_guard_stdin"
+    git_guard_read_refs
   fi
   if [ -n "$git_guard_stdin" ]; then
     sh "$git_guard_hook_dir/common/mandate_scan.sh" --pre-push < "$git_guard_stdin"

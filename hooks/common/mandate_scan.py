@@ -1307,7 +1307,7 @@ def scan_tree(
             run_astgrep(tools.astgrep, root, scratch, targets, sg_ids)
         )
 
-    if any(r.text_check for r in live):
+    if files and any(r.text_check for r in active):
         result.findings.extend(text_findings(root, py_files + rs_files, enabled))
 
     result.findings = postprocess(root, result.findings, policy.vendored)
@@ -1777,7 +1777,7 @@ def check_baseline(
 
 
 def new_register_commits(repo: Path, local_sha: str, remote_sha: str) -> List[str]:
-    """Commits a ref update introduces that touch the debt register, plus its tip.
+    """Every commit a ref update introduces, including source-only changes.
 
     An intermediate commit with a regressed or malformed register must not slip
     through because the tip's register is fine (git-guard #72 review, P1).
@@ -1786,17 +1786,14 @@ def new_register_commits(repo: Path, local_sha: str, remote_sha: str) -> List[st
         scope = ["--not", "--remotes"]  # a new ref: everything no remote has
     else:
         scope = ["--not", remote_sha]
+    command = ["git", "rev-list", "--full-history", local_sha, *scope]
     listed = run(
-        ["git", "rev-list", "--full-history", local_sha, *scope, "--",
-         BASELINE_RELPATH],
+        command,
         cwd=repo,
         tool="git",
     )
     if listed.returncode != 0:
-        # Cannot enumerate (e.g. the remote tip is not local): fall back to the
-        # tip rather than skip the check.
-        debug(f"rev-list failed for {local_sha[:12]}; checking the tip only")
-        return [local_sha]
+        raise ToolFailure("git", command, "cannot enumerate introduced commits")
     return [local_sha] + [c for c in listed.stdout.decode().split() if c != local_sha]
 
 
