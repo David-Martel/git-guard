@@ -68,6 +68,23 @@ EOF
   fi
   git -C "$r" restore -- .pre-commit-config.yaml
 
+  # A pushed branch may declare gates that do not exist in the current checkout.
+  # Inspect the actual pushed source before allowing the no-provider path.
+  empty_tree="$(git -C "$r" mktree </dev/null)"
+  plain_head="$(printf 'plain checkout without provider\n' | git -C "$r" commit-tree "$empty_tree")"
+  git -C "$r" checkout --detach -q "$plain_head"
+  : > "$marker"
+  (cd "$r" && env PATH="$path" FRAMEWORK_RC=8 git push fixture "$head:refs/heads/non-head-config") > "$log" 2>&1
+  t_expect_rc 1 "$?" 'non-HEAD declared configuration refuses real Git push from unconfigured checkout'
+  grep -q 'declared pre-commit configuration' "$log"; t_assert $? 'non-HEAD configuration reaches fail-closed provider admission'
+  if [ -s "$marker" ]; then t_fail 'non-HEAD configuration ran against unconfigured checkout'; else t_ok 'non-HEAD configuration refused before provider'; fi
+  if git --git-dir="$remote" rev-parse --verify refs/heads/non-head-config >/dev/null 2>&1; then
+    t_fail 'non-HEAD configuration bypass published a ref'
+  else
+    t_ok 'non-HEAD configuration did not publish a ref'
+  fi
+  git -C "$r" checkout --detach -q "$head"
+
   missing="$GG_T_TMPROOT/framework-missing-bin"
   mkdir -p "$missing"
   for tool in git sh dirname cat grep sed awk sort uniq tr cut head tail wc find xargs mkdir rm mv cp chmod mktemp date uname sleep touch stat id; do

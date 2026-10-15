@@ -146,6 +146,19 @@ if [ -f "$git_guard_hook_dir/common/hygiene.sh" ] && [ ! -t 0 ]; then
   fi
 fi
 
+# Declaration detection must inspect the pushed commits even when neither the
+# checkout nor HEAD declares a provider. Buffer here if optional earlier checks
+# did not, retaining the complete ref list for the selected downstream gate.
+if [ -z "$git_guard_stdin" ] && [ ! -t 0 ]; then
+  # Optional identity checks may have warned about an unusable TMPDIR. Use
+  # the default temporary root as a fallback so their warn-only policy and
+  # downstream ref replay keep working while declaration inspection stays on.
+  git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)" ||
+    git_guard_stdin="$(mktemp /tmp/git-guard-prepush.XXXXXX)" || exit 1
+  trap 'rm -f "$git_guard_stdin"' EXIT
+  cat > "$git_guard_stdin" || exit 1
+fi
+
 # Replay the buffered ref list to whichever downstream gate runs below.
 if [ -n "$git_guard_stdin" ]; then
   exec < "$git_guard_stdin"
@@ -171,6 +184,22 @@ git_guard_lefthook_config() {
       fi
     done
   done
+  return 1
+}
+
+# A different pushed branch can declare gates that are absent from this HEAD.
+# Dispatch it to the existing source-binding refusal instead of skipping QA.
+git_guard_pushed_precommit_config() {
+  [ -n "$git_guard_stdin" ] || return 1
+  while read -r _gg_push_ref _gg_push_sha _gg_remote_ref _gg_remote_sha _gg_extra; do
+    _gg_push_commit="$(git rev-parse --verify "$_gg_push_sha^{commit}" 2>/dev/null)" || continue
+    _gg_remote_commit="$(git rev-parse --verify "$_gg_remote_sha^{commit}" 2>/dev/null)" || _gg_remote_commit=""
+    [ "$_gg_push_commit" != "$_gg_remote_commit" ] || continue
+    if git cat-file -e "$_gg_push_commit:.pre-commit-config.yaml" 2>/dev/null ||
+       git cat-file -e "$_gg_push_commit:.pre-commit-config.yml" 2>/dev/null; then
+      return 0
+    fi
+  done < "$git_guard_stdin"
   return 1
 }
 
@@ -214,7 +243,8 @@ elif git_guard_lefthook_cfg="$(git_guard_lefthook_config "$git_guard_repo_root")
 elif { [ -e "$git_guard_repo_root/.pre-commit-config.yaml" ] || [ -L "$git_guard_repo_root/.pre-commit-config.yaml" ] ||
        [ -e "$git_guard_repo_root/.pre-commit-config.yml" ] || [ -L "$git_guard_repo_root/.pre-commit-config.yml" ] ||
        git cat-file -e HEAD:.pre-commit-config.yaml 2>/dev/null ||
-       git cat-file -e HEAD:.pre-commit-config.yml 2>/dev/null; } &&
+       git cat-file -e HEAD:.pre-commit-config.yml 2>/dev/null ||
+       git_guard_pushed_precommit_config; } &&
      ! git_guard_lefthook_config "$git_guard_repo_root" >/dev/null 2>&1; then
   sh "$git_guard_hook_dir/common/precommit-provider.sh" pre-push "$@" || exit $?
 fi
