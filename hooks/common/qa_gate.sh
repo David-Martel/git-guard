@@ -57,9 +57,25 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
 
 # Per-repo override search (first hit wins).
 QA_REPO_CONF=""
-for cand in "$REPO_ROOT/.qa-gate.conf" "$REPO_ROOT/.git-guard/qa-gate.conf"; do
-  if [ -f "$cand" ]; then QA_REPO_CONF="$cand"; break; fi
-done
+# `--get-prefix PREFIX --repo-conf FILE`: the repo layer comes from FILE instead
+# of the working tree. mandate_scan.py exports FILE from the commit or index it
+# is scanning (git-guard #72 review), so policy and code come from one snapshot;
+# an empty FILE means that snapshot has no repo conf. The global defaults and
+# the machine overlay (qa-gate.conf.local) still load as below.
+QA_REPO_CONF_EXPLICIT=0
+if [ "${1:-}" = "--get-prefix" ] && [ "${3:-}" = "--repo-conf" ]; then
+  QA_REPO_CONF_EXPLICIT=1
+  QA_REPO_CONF="${4:-}"
+  if [ -n "$QA_REPO_CONF" ] && [ ! -f "$QA_REPO_CONF" ]; then
+    printf 'qa_gate.sh: --repo-conf %s is not a file\n' "$QA_REPO_CONF" >&2
+    exit 1
+  fi
+fi
+if [ "$QA_REPO_CONF_EXPLICIT" = "0" ]; then
+  for cand in "$REPO_ROOT/.qa-gate.conf" "$REPO_ROOT/.git-guard/qa-gate.conf"; do
+    if [ -f "$cand" ]; then QA_REPO_CONF="$cand"; break; fi
+  done
+fi
 
 QA_FAILED=0        # set to 1 by any block-level failure
 QA_CFG_MALFORMED=0 # set to 1 by qa_cfg_malformed; forces qa_main to refuse
@@ -240,10 +256,10 @@ if [ "${1:-}" = "--get" ]; then
   qa_cfg "$2" "${3:-}"
   exit 0
 fi
-# `qa_gate.sh --get-prefix PREFIX` prints `key=value` for every known key that
-# starts with PREFIX (empty value = set nowhere), one per line, in one config
-# parse. hooks/common/mandate_scan.py reads its ~20 `mandate.*` keys this way
-# instead of paying one full parse per key. Malformed config exits 1.
+# `qa_gate.sh --get-prefix PREFIX [--repo-conf FILE]` prints `key=value` for
+# every known key that starts with PREFIX (empty value = set nowhere), one per
+# line, in one config parse. hooks/common/mandate_scan.py reads its `mandate.*`
+# keys this way, per snapshot (see QA_REPO_CONF above). Malformed config exits 1.
 if [ "${1:-}" = "--get-prefix" ]; then
   [ "$QA_CFG_MALFORMED" = "0" ] && [ -n "${2:-}" ] || exit 1
   for qa_prefix_key in $QA_KNOWN_KEYS; do
@@ -709,8 +725,9 @@ qa_astgrep_run() {
 qa_check_mandate() {
   files="$(qa_staged_match '\.(py|rs)$')"
   [ -n "$files" ] || return 0
-  # Already parsed here, so an opted-out repo pays no interpreter spawn.
-  [ "$(qa_cfg mandate.enabled on)" = "off" ] && { qa_dbg "mandate.enabled=off"; return 0; }
+  # No short-circuit on this file's view of `mandate.enabled`: that is the
+  # WORKING-TREE conf, and the commit is held to the STAGED one, which the
+  # scanner reads from the index itself (git-guard #72 review).
   [ -f "$QA_SELF_DIR/mandate_scan.sh" ] || {
     qa_block "quality mandate scanner missing at $QA_SELF_DIR/mandate_scan.sh (broken install; re-run git-guard install)."
     return 0

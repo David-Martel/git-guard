@@ -786,6 +786,19 @@ does not read, so nothing is reported twice.
   `mandate.enabled=off` does. A direct caller owns the preserve/* decision:
   the exemption in §11 covers only the hook path.
 
+**Policy comes from the snapshot being checked.** The repo layer of the
+config (`.qa-gate.conf`, else `.git-guard/qa-gate.conf`) is read from the same
+snapshot as the code: from the **index** at pre-commit (`git cat-file blob
+:.qa-gate.conf`), and from **each pushed commit** at pre-push. A multi-ref push
+therefore judges every ref by its own committed policy, a checkout with
+`mandate.enabled=off` cannot switch off a pushed branch whose own conf is on, and
+an unstaged conf edit has no effect on the commit (stage it). The global
+defaults and the machine overlay (`qa-gate.conf.local` beside `qa_gate.sh`)
+still apply on top; every summary line ends with `policy: <snapshot> <file>`,
+naming the overlay when one is present, so the governing policy is never an
+invisible input. (git-guard #72 review; `qa_gate.sh --get-prefix mandate.
+--repo-conf FILE` is the interface.)
+
 **Severities.** One key per rule, `mandate.<rule>=off|warn|changed|block`:
 
 | value | effect |
@@ -874,6 +887,9 @@ the commit:
 - ast-grep exiting non-zero (all mandate rules are `severity: warning`, so a
   finding never makes it exit non-zero) or printing a line that is not a finding;
 - the rule files under `rules-examples/mandate/` not matching the scanner's table;
+- an executable named `ast-grep` whose `--version` exits non-zero or does not
+  name ast-grep (a broken install is not a missing tool). An `sg` that is not
+  ast-grep, such as util-linux set-group, still just means ast-grep is absent;
 - an invalid `mandate.<rule>` value, or a `.qa-gate.conf` that does not parse;
 - any child process still running after `GIT_GUARD_MANDATE_TIMEOUT` seconds
   (default 300). It is killed. Measured 2026-10-14: ast-grep 0.39.5 (the CI pin)

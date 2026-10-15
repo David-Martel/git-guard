@@ -17,8 +17,11 @@
 #     REGRESSION, UNRATCHETED, UNDECLARED and STALE, passes when it holds, and is
 #     wired into hooks/pre-push only for commits that carry it.
 #   * a scanner that exits 2 or prints unparseable output is a TOOL ERROR that
-#     blocks; a scanner that is not installed is a WARN naming the unevaluated
-#     rules (the anti-brick rule).
+#     blocks, and so is an installed `ast-grep` whose version probe fails; a
+#     scanner that is not installed (or a util-linux `sg`) is a WARN naming the
+#     unevaluated rules (the anti-brick rule).
+#   * repository policy (.qa-gate.conf) is read from the snapshot being checked:
+#     the index at pre-commit, each pushed commit at pre-push.
 #   * qa_gate.sh calls the scanner at pre-commit; QA_KNOWN_KEYS, the
 #     qa-gate.conf defaults and the scanner's RULES table name the same keys.
 #
@@ -52,6 +55,14 @@ _qm_put() {
 _qm_commit() {
   mkdir -p "$GG_T_TMPROOT/qm-no-hooks"
   ( cd "$1" && git add -A && git -c core.hooksPath="$GG_T_TMPROOT/qm-no-hooks" commit -q -m "$2" )
+}
+
+# _qm_conf REPO TEXT — write TEXT (printf %b) as the repo's .qa-gate.conf and
+# STAGE it: the scanner reads policy from the snapshot it scans (the index at
+# pre-commit), so an unstaged conf deliberately has no effect.
+_qm_conf() {
+  printf '%b' "$2" > "$1/.qa-gate.conf"
+  ( cd "$1" && git add .qa-gate.conf )
 }
 
 # _qm_scan REPO LOG ARGS... — run the scanner in REPO, stderr to LOG.
@@ -192,10 +203,10 @@ t_case_quality_mandate() {
   _qm_put "$r" qobi/chumpy/ch.py "$_QM_SWALLOW"
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 1 "$rc" "control: an undeclared third-party tree is scanned"
-  printf 'mandate.vendored=qobi/chumpy\n' > "$r/.qa-gate.conf"
+  _qm_conf "$r" 'mandate.vendored=qobi/chumpy\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 0 "$rc" "mandate.vendored=qobi/chumpy exempts the declared tree"
-  printf 'mandate.vendored=../outside\n' > "$r/.qa-gate.conf"
+  _qm_conf "$r" 'mandate.vendored=../outside\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 2 "$rc" "a mandate.vendored entry escaping the repo is a config TOOL ERROR"
   gg_rmrepo "$r"
@@ -228,18 +239,18 @@ t_case_quality_mandate() {
   _qm_put "$r" src/n.py "$_QM_NARROW"
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 1 "$rc" "control: a narrow except-pass blocks at the default severity"
-  printf 'mandate.except_pass=off\n' > "$r/.qa-gate.conf"
+  _qm_conf "$r" 'mandate.except_pass=off\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 0 "$rc" "mandate.except_pass=off lets it through"
-  printf 'mandate.except_pass=warn\n' > "$r/.qa-gate.conf"
+  _qm_conf "$r" 'mandate.except_pass=warn\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 0 "$rc" "mandate.except_pass=warn does not block"
   _qm_has "$log" "WARN [except_pass]" "warn still reports the finding"
-  printf 'mandate.except_pass=sometimes\n' > "$r/.qa-gate.conf"
+  _qm_conf "$r" 'mandate.except_pass=sometimes\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 2 "$rc" "an unknown severity value is a TOOL ERROR, not a default"
   _qm_has "$log" "mandate.except_pass=sometimes is not one of" "the error names the bad value"
-  printf 'mandate.enabled=off\n' > "$r/.qa-gate.conf"
+  _qm_conf "$r" 'mandate.enabled=off\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 0 "$rc" "mandate.enabled=off switches the layer off"
   gg_rmrepo "$r"
@@ -250,7 +261,7 @@ t_case_quality_mandate() {
   _qm_commit "$r" "debt"
   printf '%b' "$_QM_CLEAN" >> "$r/src/old.py"
   ( cd "$r" && git add src/old.py )
-  printf 'mandate.except_pass=block\n' > "$r/.qa-gate.conf"
+  _qm_conf "$r" 'mandate.except_pass=block\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 1 "$rc" "mandate.except_pass=block refuses old debt anywhere in a staged file"
   gg_rmrepo "$r"
@@ -382,15 +393,112 @@ t_case_quality_mandate() {
   _qm_lacks "$log" "git-guard mandate" "and the mandate prints nothing for it"
   gg_rmrepo "$r"
 
+  # ---- repository policy is read from the same snapshot as the code ------------
+  # (git-guard #72 review, P2.) The scanner used to read .qa-gate.conf from the
+  # working tree once and apply it to every snapshot it scanned, so a pushed
+  # branch was judged under whatever branch happened to be checked out, and an
+  # unstaged conf edit decided what a commit was held to.
+  _qm_register='{"version": 1, "policy_revision": "git-guard-mandate-1", "measured_at_commit": "fixture", "rules": {}}\n'
+  r="$(_qm_repo)"
+  _qm_put "$r" README.md 'base\n'
+  _qm_commit "$r" "base"
+  _qm_base="$(git -C "$r" rev-parse HEAD)"
+  # ref A: its own conf declares lib/a vendored, so its except-pass is exempt.
+  ( cd "$r" && git checkout -q -b ref-a "$_qm_base" )
+  _qm_put "$r" .qa-gate.conf 'mandate.vendored=lib/a\n'
+  _qm_put "$r" lib/a/app.py "$_QM_NARROW"
+  _qm_put "$r" .git-guard/mandate-baseline.json "$_qm_register"
+  _qm_commit "$r" "ref a"
+  _qm_a="$(git -C "$r" rev-parse HEAD)"
+  # ref B: its own conf makes except_pass advisory, so its except-pass is not counted.
+  ( cd "$r" && git checkout -q -b ref-b "$_qm_base" )
+  _qm_put "$r" .qa-gate.conf 'mandate.except_pass=warn\n'
+  _qm_put "$r" src/b.py "$_QM_NARROW"
+  _qm_put "$r" .git-guard/mandate-baseline.json "$_qm_register"
+  _qm_commit "$r" "ref b"
+  _qm_b="$(git -C "$r" rev-parse HEAD)"
+  # ref C: no conf (policy on), an undeclared finding: its register does not hold.
+  ( cd "$r" && git checkout -q -b ref-c "$_qm_base" )
+  _qm_put "$r" src/c.py "$_QM_NARROW"
+  _qm_put "$r" .git-guard/mandate-baseline.json "$_qm_register"
+  _qm_commit "$r" "ref c"
+  _qm_c="$(git -C "$r" rev-parse HEAD)"
+  ( cd "$r" && git checkout -q --detach "$_qm_base" )
+  printf 'refs/heads/ref-a %s refs/heads/ref-a %s\nrefs/heads/ref-b %s refs/heads/ref-b %s\n' \
+    "$_qm_a" 0000000000000000000000000000000000000000 "$_qm_b" 0000000000000000000000000000000000000000 \
+    > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 0 "$rc" "a two-ref push judges each ref by its own committed conf (vendored dir, severity)"
+  _qm_lacks "$log" "UNDECLARED" "neither ref is checked under the other's (or the checkout's) policy"
+  printf 'mandate.enabled=off\n' > "$r/.qa-gate.conf"   # untracked: the checkout opts out
+  printf 'refs/heads/ref-c %s refs/heads/ref-c %s\n' "$_qm_c" 0000000000000000000000000000000000000000 \
+    > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 1 "$rc" "a checkout with mandate.enabled=off still enforces a pushed ref whose own conf is on"
+  _qm_has "$log" "UNDECLARED except_pass" "the pushed ref's register is evaluated"
+  rm -f "$r/.qa-gate.conf"
+  gg_rmrepo "$r"
+
+  r="$(_qm_repo)"
+  _qm_put "$r" .qa-gate.conf 'mandate.except_pass=off\n'
+  _qm_put "$r" src/n.py "$_QM_NARROW"
+  printf 'mandate.except_pass=changed\n' > "$r/.qa-gate.conf"   # unstaged edit
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 0 "$rc" "the staged conf (except_pass=off) governs the commit, not the unstaged edit"
+  _qm_has "$log" "policy: index" "the summary names the staged policy it applied"
+  gg_rmrepo "$r"
+  r="$(_qm_repo)"
+  _qm_put "$r" src/n.py "$_QM_NARROW"
+  printf 'mandate.except_pass=off\nmandate.enabled=off\n' > "$r/.qa-gate.conf"   # never staged
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "an unstaged conf that switches rules off does not relax the commit"
+  printf 'python.ruff_check=off\npython.ruff_format=off\npython.mypy=off\npython.basedpyright=off\nastgrep=off\nmandate.enabled=off\n' \
+    > "$r/.qa-gate.conf"
+  gg_run_gate_log "$r" "$log"; rc=$?
+  t_expect_rc 1 "$rc" "qa_gate.sh defers to the staged mandate policy too"
+  gg_rmrepo "$r"
+
+  # ---- a broken ast-grep is a TOOL ERROR; an unrelated `sg` is "absent" -------
+  # (git-guard #72 review, P2.) A known `ast-grep` executable whose version probe
+  # fails used to fall through to the missing-tool WARN and pass.
+  r="$(_qm_repo)"
+  _qm_put "$r" src/app.py "$_QM_SWALLOW"
+  _qm_fake="$GG_T_TMPROOT/qm-fake-astgrep"
+  mkdir -p "$_qm_fake"
+  printf '#!/bin/sh\necho "ast-grep: cannot load runtime" >&2\nexit 3\n' > "$_qm_fake/ast-grep"
+  chmod +x "$_qm_fake/ast-grep"
+  ( cd "$r" && PATH="$_qm_fake:$PATH" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
+  t_expect_rc 2 "$rc" "an ast-grep whose --version exits 3 is a TOOL ERROR that blocks"
+  _qm_has "$log" "TOOL ERROR [ast-grep]" "the TOOL ERROR names ast-grep"
+  printf '#!/bin/sh\nexit 0\n' > "$_qm_fake/ast-grep"
+  ( cd "$r" && PATH="$_qm_fake:$PATH" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
+  t_expect_rc 2 "$rc" "an ast-grep that prints no version is a TOOL ERROR too"
+  _qm_sgbin="$GG_T_TMPROOT/qm-sg-bin"
+  mkdir -p "$_qm_sgbin"
+  for _qm_t in sh git dirname env sort tr ruff; do
+    _qm_p="$(command -v "$_qm_t" 2>/dev/null)" && ln -sf "$_qm_p" "$_qm_sgbin/$_qm_t"
+  done
+  _qm_p="$("$(gg_python)" -c 'import sys; print(sys.executable)' 2>/dev/null)" &&
+    ln -sf "$_qm_p" "$_qm_sgbin/python3"
+  printf '#!/bin/sh\necho "sg from util-linux 2.39"\n' > "$_qm_sgbin/sg"
+  chmod +x "$_qm_sgbin/sg"
+  ( cd "$r" && VIRTUAL_ENV='' PATH="$_qm_sgbin" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
+  t_expect_rc 1 "$rc" "an unrelated system sg is treated as no ast-grep (ruff still blocks the swallow)"
+  _qm_has "$log" "ast-grep is not installed, so these rules were NOT evaluated" \
+    "the util-linux sg reads as a missing ast-grep, not a TOOL ERROR"
+  gg_rmrepo "$r"
+
   # ---- qa_gate.sh calls the scanner at pre-commit ------------------------------
   r="$(_qm_repo)"
   printf 'python.ruff_check=off\npython.ruff_format=off\npython.mypy=off\npython.basedpyright=off\nastgrep=off\n' \
     > "$r/.qa-gate.conf"
+  ( cd "$r" && git add .qa-gate.conf )
   _qm_put "$r" src/app.py "$_QM_SWALLOW"
   gg_run_gate_log "$r" "$log"; rc=$?
   t_expect_rc 1 "$rc" "qa_gate.sh blocks a staged mandate finding"
   _qm_has "$log" "quality mandate findings" "the gate's block names the mandate"
   printf 'mandate.enabled=off\n' >> "$r/.qa-gate.conf"
+  ( cd "$r" && git add .qa-gate.conf )
   gg_run_gate_log "$r" "$log"; rc=$?
   t_expect_rc 0 "$rc" "qa_gate.sh with mandate.enabled=off passes"
   gg_rmrepo "$r"

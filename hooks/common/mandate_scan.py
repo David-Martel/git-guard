@@ -712,16 +712,12 @@ def language_of(path: str) -> Optional[Language]:
     return None
 
 
-# Repo-declared vendored trees (`mandate.vendored=dir/a,dir/b`), set once by
-# load_config before any path is classified.
-REPO_VENDORED: List[str] = []
-
-
-def is_vendored(path: str) -> bool:
+def is_vendored(path: str, declared: Sequence[str]) -> bool:
+    """Built-in vendored dirs, plus the snapshot's own `mandate.vendored` list."""
     parts = PurePosixPath(path).parts[:-1]
     if any(part in VENDORED_PARTS or part.startswith("external") for part in parts):
         return True
-    return any(path == pre or path.startswith(pre + "/") for pre in REPO_VENDORED)
+    return any(path == pre or path.startswith(pre + "/") for pre in declared)
 
 
 def parse_vendored(raw: str) -> List[str]:
@@ -759,21 +755,70 @@ def is_test_path(path: str, language: Language) -> bool:
     )
 
 
-def scannable(path: str) -> bool:
-    return language_of(path) is not None and not is_vendored(path)
+def scannable(path: str, declared: Sequence[str]) -> bool:
+    return language_of(path) is not None and not is_vendored(path, declared)
 
 
 # ---------------------------------------------------------------------- config
 
 
-def load_config(repo: Path) -> Tuple[bool, Dict[str, Severity]]:
-    command = ["sh", str(QA_GATE), "--get-prefix", "mandate."]
-    done = run(command, cwd=repo, tool="qa_gate.sh")
+CONF_CANDIDATES = (".qa-gate.conf", ".git-guard/qa-gate.conf")  # first hit wins
+INDEX = ""  # load_policy snapshot: the index (staged content), not a commit
+
+
+@dataclass(frozen=True)
+class Policy:
+    """The mandate.* configuration that governs one snapshot of the repo."""
+
+    enabled: bool
+    severities: Dict[str, Severity]
+    vendored: Tuple[str, ...]
+    source: str
+
+
+def load_policy(repo: Path, snapshot: str) -> Policy:
+    """Read the repo's mandate policy from the SAME snapshot as the code.
+
+    ``snapshot`` is a commit SHA, or INDEX for the staged content. The repo layer
+    (.qa-gate.conf, else .git-guard/qa-gate.conf) is exported from that snapshot,
+    never read from the working tree: otherwise a pushed branch would be judged
+    under whatever branch is checked out, and an unstaged edit would decide what a
+    commit is held to (git-guard #72 review). The global defaults and the machine
+    overlay (qa-gate.conf.local beside qa_gate.sh) apply on top as before, and the
+    overlay is named in ``source`` so it is never an invisible input.
+    """
+    label = "index" if snapshot == INDEX else snapshot[:12]
+    spec = ":" if snapshot == INDEX else f"{snapshot}:"
+    overlay = QA_GATE.parent / "qa-gate.conf.local"
+    with tempfile.TemporaryDirectory(prefix="git-guard-mandate-policy.") as tmp:
+        repo_conf = ""
+        source = f"{label}, no repo conf"
+        for candidate in CONF_CANDIDATES:
+            found = run(
+                ["git", "cat-file", "blob", spec + candidate], cwd=repo, tool="git"
+            )
+            if found.returncode == 0:
+                exported = Path(tmp) / label / candidate
+                exported.parent.mkdir(parents=True, exist_ok=True)
+                exported.write_bytes(found.stdout)
+                repo_conf = str(exported)
+                source = f"{label} {candidate}"
+                break
+        command = [
+            "sh",
+            str(QA_GATE),
+            "--get-prefix",
+            "mandate.",
+            "--repo-conf",
+            repo_conf,
+        ]
+        done = run(command, cwd=repo, tool="qa_gate.sh")
+    if overlay.is_file():
+        source += f" + machine overlay {overlay}"
     if done.returncode != 0:
         raise ConfigError(
-            "qa_gate.sh could not read the mandate.* configuration "
-            "(malformed .qa-gate.conf; "
-            f"its own message is above). {stderr_tail(done.stderr)}"
+            f"qa_gate.sh could not read the mandate.* configuration of {source} "
+            f"(malformed conf; its own message is above). {stderr_tail(done.stderr)}"
         )
     values: Dict[str, str] = {}
     for line in done.stdout.decode("utf-8", "replace").splitlines():
@@ -782,8 +827,10 @@ def load_config(repo: Path) -> Tuple[bool, Dict[str, Severity]]:
             values[key.strip()] = value.strip()
     enabled_raw = values.pop("mandate.enabled", "") or "on"
     if enabled_raw not in ("on", "off"):
-        raise ConfigError(f"mandate.enabled={enabled_raw} is not one of: on, off")
-    REPO_VENDORED[:] = parse_vendored(values.pop("mandate.vendored", ""))
+        raise ConfigError(
+            f"mandate.enabled={enabled_raw} is not one of: on, off (policy: {source})"
+        )
+    vendored = tuple(parse_vendored(values.pop("mandate.vendored", "")))
     unknown = sorted(k for k in values if k[len("mandate.") :] not in RULES_BY_KEY)
     if unknown:
         raise ConfigError(
@@ -803,10 +850,9 @@ def load_config(repo: Path) -> Tuple[bool, Dict[str, Severity]]:
             severities[rule.key] = Severity(raw)
         except ValueError as exc:
             raise ConfigError(
-                f"mandate.{rule.key}={raw} is not one of: {allowed} "
-                "(set in .qa-gate.conf, .git-guard/qa-gate.conf or qa-gate.conf.local)"
+                f"mandate.{rule.key}={raw} is not one of: {allowed} (policy: {source})"
             ) from exc
-    return enabled_raw == "on", severities
+    return Policy(enabled_raw == "on", severities, vendored, source)
 
 
 # ----------------------------------------------------------------------- tools
@@ -829,16 +875,35 @@ def resolve_ruff(repo: Path) -> Optional[str]:
 
 
 def resolve_astgrep() -> Optional[str]:
-    """A binary that IS ast-grep. On Linux /usr/bin/sg is util-linux set-group."""
-    for name in ("ast-grep", "sg"):
-        path = shutil.which(name)
-        if not path:
-            continue
-        # A candidate that cannot even start is a broken install, not "absent":
-        # run() raises a named ToolFailure for it rather than moving on quietly.
-        done = run([path, "--version"], cwd=Path.cwd(), tool=name)
-        if b"ast-grep" in done.stdout.lower():
+    """A binary that IS ast-grep. On Linux /usr/bin/sg is util-linux set-group.
+
+    An executable named ``ast-grep`` can only be ast-grep, so a failed version
+    probe (non-zero exit, or output that does not name ast-grep) is a broken
+    install and a TOOL ERROR, never "not installed" (git-guard #72 review). ``sg``
+    is different: on Linux it is usually util-linux set-group, so an ``sg`` that is
+    not ast-grep just means ast-grep is absent. A candidate that cannot start at
+    all raises from run().
+    """
+    path = shutil.which("ast-grep")
+    if path:
+        command = [path, "--version"]
+        done = run(command, cwd=Path.cwd(), tool="ast-grep")
+        version = done.stdout.decode("utf-8", "replace").strip()
+        if done.returncode != 0 or "ast-grep" not in version.lower():
+            raise ToolFailure(
+                "ast-grep",
+                command,
+                f"version probe failed (exit {done.returncode}, stdout "
+                f"{version[:80]!r}); stderr:\n{stderr_tail(done.stderr)}. An installed "
+                "ast-grep that cannot report its version cannot be trusted to scan.",
+            )
+        return path
+    path = shutil.which("sg")
+    if path:
+        done = run([path, "--version"], cwd=Path.cwd(), tool="sg")
+        if done.returncode == 0 and b"ast-grep" in done.stdout.lower():
             return path
+        debug(f"{path} is not ast-grep (util-linux set-group?); treating as absent")
     return None
 
 
@@ -1208,10 +1273,11 @@ def scan_tree(
     root: Path,
     scratch: Path,
     files: Sequence[str],
-    enabled: Mapping[str, Severity],
+    policy: Policy,
     tools: Tools,
 ) -> ScanResult:
     """Run every enabled rule over ``files`` (paths relative to ``root``)."""
+    enabled = policy.severities
     result = ScanResult()
     active = [r for r in RULES if enabled[r.key] is not Severity.OFF]
     py_files = [f for f in files if language_of(f) is Language.PYTHON]
@@ -1244,11 +1310,13 @@ def scan_tree(
     if any(r.text_check for r in live):
         result.findings.extend(text_findings(root, py_files + rs_files, enabled))
 
-    result.findings = postprocess(root, result.findings)
+    result.findings = postprocess(root, result.findings, policy.vendored)
     return result
 
 
-def postprocess(root: Path, findings: Iterable[Finding]) -> List[Finding]:
+def postprocess(
+    root: Path, findings: Iterable[Finding], declared: Sequence[str]
+) -> List[Finding]:
     """Drop test-exempt and suppressed findings; de-duplicate per rule/file/line."""
     cache: Dict[str, Tuple[List[str], Dict[int, str]]] = {}
     seen: Set[Tuple[str, str, int]] = set()
@@ -1256,7 +1324,7 @@ def postprocess(root: Path, findings: Iterable[Finding]) -> List[Finding]:
     for finding in sorted(findings, key=lambda f: (f.path, f.line, f.key, f.origin)):
         rule = RULES_BY_KEY[finding.key]
         language = language_of(finding.path)
-        if language is None or is_vendored(finding.path):
+        if language is None or is_vendored(finding.path, declared):
             continue
         if rule.exempt_tests and is_test_path(finding.path, language):
             continue
@@ -1342,10 +1410,11 @@ def changed_mode(
     repo: Path,
     changes: Mapping[str, Set[int]],
     export: str,
-    enabled: Mapping[str, Severity],
+    policy: Policy,
     tools: Tools,
 ) -> Outcome:
-    files = sorted(p for p in changes if scannable(p))
+    enabled = policy.severities
+    files = sorted(p for p in changes if scannable(p, policy.vendored))
     if not files:
         debug("no Python/Rust files changed")
         return Outcome.PASSED
@@ -1361,7 +1430,7 @@ def changed_mode(
         present = [
             f for f in files if (root / f).is_file() and not (root / f).is_symlink()
         ]
-        result = scan_tree(root, scratch, present, enabled, tools)
+        result = scan_tree(root, scratch, present, policy, tools)
         blocking: List[Finding] = []
         warnings: List[Finding] = []
         for finding in result.findings:
@@ -1382,7 +1451,7 @@ def changed_mode(
             print_finding(finding, "BLOCK", root)
     print_skips(result.skipped)
     elapsed = time.monotonic() - started
-    scope = f"{len(present)} file(s), {elapsed:.1f}s"
+    scope = f"{len(present)} file(s), {elapsed:.1f}s, policy: {policy.source}"
     if blocking:
         say(
             f"git-guard mandate: BLOCKED — {len(blocking)} finding(s) on {scope}: "
@@ -1409,15 +1478,14 @@ class Census:
     skipped: Dict[str, List[str]]
 
 
-def census(
-    repo: Path, rev: Optional[str], enabled: Mapping[str, Severity], tools: Tools
-) -> Census:
+def census(repo: Path, rev: Optional[str], policy: Policy, tools: Tools) -> Census:
+    enabled = policy.severities
     if rev is None:
-        files = [f for f in index_files(repo) if scannable(f)]
+        files = [f for f in index_files(repo) if scannable(f, policy.vendored)]
         measured = f"index@{head_sha(repo)}"
     else:
         sha = verify_commit(repo, rev)
-        files = [f for f in rev_files(repo, sha) if scannable(f)]
+        files = [f for f in rev_files(repo, sha) if scannable(f, policy.vendored)]
         measured = sha
     with tempfile.TemporaryDirectory(prefix="git-guard-mandate.") as tmp:
         scratch = Path(tmp)
@@ -1430,7 +1498,7 @@ def census(
         present = [
             f for f in files if (root / f).is_file() and not (root / f).is_symlink()
         ]
-        result = scan_tree(root, scratch, present, enabled, tools)
+        result = scan_tree(root, scratch, present, policy, tools)
     counts: Dict[str, Dict[str, int]] = {
         r.key: {} for r in RULES if enabled[r.key] is not Severity.OFF
     }
@@ -1446,15 +1514,15 @@ def enforced_keys(enabled: Mapping[str, Severity]) -> List[str]:
     ]
 
 
-def all_mode(
-    repo: Path, rev: Optional[str], enabled: Mapping[str, Severity], tools: Tools
-) -> Outcome:
-    result = census(repo, rev, enabled, tools)
+def all_mode(repo: Path, rev: Optional[str], policy: Policy, tools: Tools) -> Outcome:
+    enabled = policy.severities
+    result = census(repo, rev, policy, tools)
     payload = {
         "version": BASELINE_VERSION,
         "policy_revision": POLICY_REVISION,
         "canonical_policy": CANONICAL_POLICY,
         "measured_at_commit": result.measured_at,
+        "policy": policy.source,
         "scanned_files": result.files,
         "severity": {r.key: enabled[r.key].value for r in RULES},
         "totals": {k: sum(v.values()) for k, v in sorted(result.counts.items())},
@@ -1472,10 +1540,11 @@ def write_baseline(
     repo: Path,
     target: Path,
     rev: Optional[str],
-    enabled: Mapping[str, Severity],
+    policy: Policy,
     tools: Tools,
 ) -> Outcome:
-    result = census(repo, rev, enabled, tools)
+    enabled = policy.severities
+    result = census(repo, rev, policy, tools)
     unevaluated = sorted(
         {k for keys in result.skipped.values() for k in keys}
         & set(enforced_keys(enabled))
@@ -1645,9 +1714,10 @@ def check_baseline(
     repo: Path,
     rev: str,
     baseline_file: Optional[Path],
-    enabled: Mapping[str, Severity],
+    policy: Policy,
     tools: Tools,
 ) -> Outcome:
+    enabled = policy.severities
     sha = verify_commit(repo, rev)
     if baseline_file is not None:
         origin = str(baseline_file)
@@ -1677,7 +1747,7 @@ def check_baseline(
             "--write-baseline."
         )
         return Outcome.BLOCKED
-    result = census(repo, sha, enabled, tools)
+    result = census(repo, sha, policy, tools)
     unevaluated = {k for keys in result.skipped.values() for k in keys}
     enforced = [k for k in enforced_keys(enabled) if k not in unevaluated]
     print_skips(result.skipped)
@@ -1695,12 +1765,13 @@ def check_baseline(
         say(
             f"git-guard mandate: BLOCKED — debt register check failed at {sha[:12]} "
             f"({len(problems)} problem(s): {', '.join(kinds)}; {total} finding(s) "
-            f"counted over {result.files} file(s))."
+            f"counted over {result.files} file(s); policy: {policy.source})."
         )
         return Outcome.BLOCKED
     say(
         f"git-guard mandate: PASSED — debt register holds at {sha[:12]} ({total} "
-        f"recorded finding(s) over {result.files} file(s))."
+        f"recorded finding(s) over {result.files} file(s); policy: "
+        f"{policy.source})."
     )
     return Outcome.PASSED
 
@@ -1729,13 +1800,27 @@ def pushed_baseline_shas(repo: Path, ref_lines: str) -> List[str]:
     return shas
 
 
-def pre_push(
-    repo: Path, shas: Sequence[str], enabled: Mapping[str, Severity], tools: Tools
-) -> Outcome:
+def pre_push(repo: Path, shas: Sequence[str]) -> Outcome:
+    """Check each pushed commit's register under that commit's own policy."""
     worst = Outcome.PASSED
+    tools: Optional[Tools] = None
     for sha in shas:
-        worst = max(worst, check_baseline(repo, sha, None, enabled, tools))
+        policy = load_policy(repo, sha)
+        if not policy.enabled:
+            say(
+                f"git-guard mandate: mandate.enabled=off in {policy.source}; the "
+                f"debt register of {sha[:12]} is not checked."
+            )
+            continue
+        tools = tools or resolve_tools(repo)
+        worst = max(worst, check_baseline(repo, sha, None, policy, tools))
     return worst
+
+
+def resolve_tools(repo: Path) -> Tools:
+    tools = Tools(ruff=resolve_ruff(repo), astgrep=resolve_astgrep())
+    debug(f"ruff={tools.ruff} ast-grep={tools.astgrep} rules={RULES_ROOT}")
+    return tools
 
 
 # ------------------------------------------------------------------------- main
@@ -1805,27 +1890,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             pushed = pushed_baseline_shas(repo, sys.stdin.read())
             if not pushed:
                 return Outcome.PASSED
-        enabled_flag, enabled = load_config(repo)
-        if not enabled_flag:
+        if args.pre_push:
+            return pre_push(repo, pushed)
+        # Policy comes from the snapshot being scanned: the index for staged
+        # content and index-based counts, otherwise the named commit.
+        if args.staged:
+            snapshot, changes, export = INDEX, staged_changes(repo), "index"
+        elif args.range:
+            head, changes = range_changes(repo, args.range)
+            snapshot, export = head, head
+        elif args.check_baseline:
+            snapshot = verify_commit(repo, args.rev or "HEAD")
+        else:
+            snapshot = INDEX if args.rev is None else verify_commit(repo, args.rev)
+        policy = load_policy(repo, snapshot)
+        debug(f"policy: {policy.source}")
+        if not policy.enabled:
             debug("mandate.enabled=off")
             return Outcome.PASSED
-        tools = Tools(ruff=resolve_ruff(repo), astgrep=resolve_astgrep())
-        debug(f"ruff={tools.ruff} ast-grep={tools.astgrep} rules={RULES_ROOT}")
-        if args.staged:
-            return changed_mode(repo, staged_changes(repo), "index", enabled, tools)
-        if args.range:
-            head, changes = range_changes(repo, args.range)
-            return changed_mode(repo, changes, head, enabled, tools)
+        tools = resolve_tools(repo)
+        if args.staged or args.range:
+            return changed_mode(repo, changes, export, policy, tools)
         if args.all:
-            return all_mode(repo, args.rev, enabled, tools)
+            return all_mode(repo, args.rev, policy, tools)
         if args.write_baseline:
             target = args.baseline or repo / BASELINE_RELPATH
-            return write_baseline(repo, target, args.rev, enabled, tools)
-        if args.check_baseline:
-            return check_baseline(
-                repo, args.rev or "HEAD", args.baseline, enabled, tools
-            )
-        return pre_push(repo, pushed, enabled, tools)
+            return write_baseline(repo, target, args.rev, policy, tools)
+        return check_baseline(repo, snapshot, args.baseline, policy, tools)
     except ToolFailure as exc:
         say(f"git-guard mandate TOOL ERROR [{exc.tool}]: {exc.detail}")
         if exc.command:
