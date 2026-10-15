@@ -1,0 +1,38 @@
+# Quality mandate PY-06 (no silent failures). Read by hooks/common/mandate_scan.sh
+# under `mandate.except_continue` (default: changed = blocks on added/modified lines).
+#
+# Owner decision (2026-10-14): logging a caught exception and carrying on is NOT
+# handling it. clarius AGENTS.md:653 ("Logging a caught exception is NOT a
+# handled path. Every non-recoverable error must propagate as a typed raise")
+# wins over clarius's own checker, which accepted a log call. So unlike
+# rules-examples/python/silent-except-*.yml (advisory, logging-exempt), a log or
+# print call does not exempt the handler here. Recording the failure into a
+# collection the caller receives (`failures.append(...)`) still does, and so
+# does any re-raise.
+#
+# `queue.Empty` / `TimeoutError` in a polling loop is the loop's normal "nothing
+# yet" signal, not a failure, and stays exempt (same as the advisory rules).
+id: mandate-except-continue
+language: python
+severity: warning
+message: "Loop item skipped on error with no record — a partial result looks complete"
+rule:
+  kind: except_clause
+  has:
+    kind: block
+    all:
+      - has: {kind: continue_statement}
+      - not:
+          has:
+            kind: expression_statement
+            regex: '\.\s*(append|add|extend|insert|setdefault|add_note)\s*\('
+      - not: {has: {kind: raise_statement, stopBy: end}}
+  not:
+    regex: 'except\s+\(?\s*(queue\.)?(Empty|TimeoutError|asyncio\.TimeoutError)\b'
+note: |
+  Record the failure and surface it:
+    except ValueError as exc:
+        failures.append((item, exc))
+        continue
+  then return `failures` or raise if it is non-empty. Logging the skip alone
+  does not tell the caller anything.

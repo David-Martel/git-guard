@@ -1,0 +1,27 @@
+# Quality mandate PY-04, Literal half. Read by hooks/common/mandate_scan.sh
+# under `mandate.literal_enum` (default: WARN, not block).
+#
+# Ported from vigil-spark ast-grep-rules/python/py-no-literal-enum-annotation.yml.
+# Policy conflict, recorded rather than resolved by this tool:
+# vigil-ai-tpm templates/strict-python-module/RULES.md:11 RECOMMENDS
+# `Literal["a", "b"]`, while vigil-spark flags exactly that shape. Owner
+# decision 2026-10-14: report at warn. A repo that has chosen Enum can raise it
+# with `mandate.literal_enum=changed` in its .qa-gate.conf.
+#
+# A single-member Literal["x"] (a discriminator tag) is not flagged: the regex
+# needs a comma, i.e. two or more members.
+id: mandate-literal-enum
+language: python
+severity: warning
+message: "Multi-member Literal[...] used as an enumeration — an Enum gives one runtime definition site"
+rule:
+  kind: generic_type
+  regex: '^Literal\[\s*[rbuRBU]*["''][^]]*,'
+  has:
+    kind: identifier
+    regex: '^Literal$'
+note: |
+  class Color(StrEnum):
+      RED = "red"
+      BLUE = "blue"
+  def paint(color: Color) -> None: ...

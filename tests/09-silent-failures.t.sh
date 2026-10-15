@@ -26,9 +26,14 @@
 # silently dropped that malformed line (case *=*) so this never surfaced; the
 # new fail-closed parser (git-guard PR-4) turns it into a hard BLOCK, which is
 # how this was caught.
+#
+# `mandate.enabled=off` likewise: the quality mandate (tests/31) blocks these
+# same swallows on changed lines by default, logging or not, and this category
+# is about the advisory, logging-exempt rules-examples/python/silent-except-*.
 gg_conf_py_off() {
   repo_dir="$1"; shift
   {
+    printf 'mandate.enabled=off\n'
     printf 'python.ruff_check=off\n'
     printf 'python.ruff_format=off\n'
     printf 'python.mypy=off\n'

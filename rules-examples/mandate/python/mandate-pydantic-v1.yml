@@ -1,0 +1,64 @@
+# Quality mandate PY-01 (pydantic v2 only). Read by hooks/common/mandate_scan.sh
+# under config key `mandate.pydantic_v1` (default: block). Not loaded by the
+# qa_gate.sh rule cache, which reads only the top-level language dirs.
+#
+# Source: vigil-spark AGENTS.md ("Owned first-party Python packages use Pydantic
+# v2 only ... Do not add pydantic.v1, deprecated v1 validators"); vigil-ai-tpm
+# CLAUDE.md ("pydantic>=2,<3 only").
+#
+# Detects the unambiguous v1 surface only: the pydantic.v1 compatibility
+# namespace, the v1 validator decorators, a nested `class Config:` inside a
+# class that names BaseModel/BaseSettings/RootModel as a base, and the
+# v1-only classmethods (parse_obj, parse_raw, parse_file, from_orm). `.dict()`
+# and `.copy(update=...)` are ambiguous with non-pydantic objects and live in
+# mandate-pydantic-v1-ambiguous.yml at warn. A model whose base is a project
+# base class (e.g. ControlPlaneModel) is not resolved: the Config check cannot
+# see through inheritance.
+id: mandate-pydantic-v1
+language: python
+severity: warning
+message: "Pydantic v1 API — this fleet is pydantic v2 only"
+rule:
+  any:
+    - kind: import_from_statement
+      regex: '^from\s+pydantic\.v1\b'
+    - kind: import_statement
+      regex: '^import\s+pydantic\.v1\b'
+    - all:
+        - kind: import_from_statement
+          regex: '^from\s+pydantic\s+import\b'
+        - has:
+            stopBy: end
+            kind: identifier
+            regex: '^(validator|root_validator)$'
+            not:
+              inside:
+                kind: aliased_import
+                field: alias
+    - kind: decorator
+      regex: '^@\s*(pydantic\s*\.\s*)?(validator|root_validator)\b'
+    - all:
+        - kind: class_definition
+          regex: '^class\s+Config\s*:'
+        - inside:
+            stopBy: end
+            kind: class_definition
+            has:
+              field: superclasses
+              regex: '\b(BaseModel|BaseSettings|RootModel)\b'
+    - kind: call
+      has:
+        field: function
+        kind: attribute
+        has:
+          field: attribute
+          regex: '^(parse_obj|parse_raw|parse_file|from_orm)$'
+note: |
+  v2 replacements:
+    from pydantic.v1 import X          -> from pydantic import X (v2 API)
+    @validator("f")                    -> @field_validator("f")
+    @root_validator                    -> @model_validator(mode="after")
+    class Config: extra = "forbid"     -> model_config = ConfigDict(extra="forbid")
+    Model.parse_obj(data)              -> Model.model_validate(data)
+    Model.parse_raw(text)              -> Model.model_validate_json(text)
+    Model.from_orm(obj)                -> Model.model_validate(obj, from_attributes=True)

@@ -291,6 +291,43 @@ fn f() {}'
     'fn f(x: Option<u8>) -> u8 { x.unwrap() }' \
     'fn f(x: Option<u8>) -> u8 { x.unwrap_or(0) }'
 
+  # ---- mandate (read by hooks/common/mandate_scan.sh, not the qa_gate cache) --
+  # Category 31 drives these through the scanner (changed lines, suppressions,
+  # severities); these rows pin each rule's own match in isolation.
+  _rb_row mandate/python/mandate-pydantic-v1.yml src/m.py \
+    'from pydantic.v1 import BaseModel' \
+    'from pydantic import BaseModel, field_validator'
+  _rb_row mandate/python/mandate-pydantic-v1-ambiguous.yml src/m.py \
+    'data = model.dict()' \
+    'data = model.model_dump()'
+  _rb_row mandate/python/mandate-except-pass.yml src/m.py \
+    "$(printf 'try:\n    f()\nexcept OSError as exc:\n    log.warning(exc)\n    pass')" \
+    "$(printf 'try:\n    f()\nexcept OSError as exc:\n    raise ProbeError(\"probe failed\") from exc')"
+  _rb_row mandate/python/mandate-except-continue.yml src/m.py \
+    "$(printf 'for i in xs:\n    try:\n        f(i)\n    except ValueError:\n        log.info(i)\n        continue')" \
+    "$(printf 'for i in xs:\n    try:\n        f(i)\n    except ValueError as exc:\n        failures.append((i, exc))\n        continue')"
+  _rb_row mandate/python/mandate-except-sentinel.yml src/m.py \
+    "$(printf 'def f():\n    try:\n        return g()\n    except OSError:\n        log.error(\"x\")\n        return None')" \
+    "$(printf 'def f():\n    try:\n        return g()\n    except OSError as exc:\n        raise ProbeError(\"g failed\") from exc')"
+  _rb_row mandate/python/mandate-broad-suppress.yml src/m.py \
+    "$(printf 'with contextlib.suppress(Exception):\n    f()')" \
+    "$(printf 'with contextlib.suppress(FileNotFoundError):\n    f()')"
+  _rb_row mandate/python/mandate-explicit-any.yml src/m.py \
+    'def f(x: dict[str, Any]) -> None: ...' \
+    'def f(x: dict[str, object]) -> None: ...'
+  _rb_row mandate/python/mandate-raise-without-message.yml src/m.py \
+    'raise ValueError()' \
+    'raise ValueError("mode must be fast or safe")'
+  _rb_row mandate/python/mandate-str-enum-param.yml src/m.py \
+    'def run(mode: str = "fast") -> None: ...' \
+    'def run(mode: Mode = Mode.FAST) -> None: ...'
+  _rb_row mandate/python/mandate-literal-enum.yml src/m.py \
+    'def paint(color: Literal["red", "blue"]) -> None: ...' \
+    'def paint(color: Literal["red"]) -> None: ...'
+  _rb_row mandate/rust/mandate-rust-panic.yml src/lib.rs \
+    'fn f(x: Option<u8>) -> u8 { x.expect("present") }' \
+    "$(printf 'fn f(x: Option<u8>) -> u8 { x.unwrap_or(0) }\n#[cfg(test)]\nmod tests { fn t() { Some(1).unwrap(); } }')"
+
   # ---- security -------------------------------------------------------------
   _rb_row security/no-eval.yml src/a.js \
     'eval(code);' \

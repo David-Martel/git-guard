@@ -1,0 +1,40 @@
+# Quality mandate PY-01, ambiguous half. Read by hooks/common/mandate_scan.sh
+# under `mandate.pydantic_v1_ambiguous` (default: warn).
+#
+# `.dict()` and `.copy(update=...)` are pydantic v1 model methods, but the same
+# names exist on unrelated objects (a dataclass helper, a custom mapping), so a
+# structural match cannot tell a v1 call from a legitimate one. That is why this
+# half warns by default instead of blocking.
+id: mandate-pydantic-v1-ambiguous
+language: python
+severity: warning
+message: "Possible pydantic v1 method — `.dict()` / `.copy(update=...)` are v1 spellings"
+rule:
+  kind: call
+  any:
+    - has:
+        field: function
+        kind: attribute
+        has:
+          field: attribute
+          regex: '^dict$'
+    - all:
+        - has:
+            field: function
+            kind: attribute
+            has:
+              field: attribute
+              regex: '^copy$'
+        - has:
+            field: arguments
+            has:
+              kind: keyword_argument
+              has:
+                field: name
+                regex: '^update$'
+note: |
+  If the receiver is a pydantic model:
+    model.dict(...)              -> model.model_dump(...)
+    model.copy(update={...})     -> model.model_copy(update={...})
+  If it is not, record that on the line:
+    x.dict()  # noqa: GGM-PYDANTIC  # SAFETY: <receiver> is not a pydantic model

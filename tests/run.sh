@@ -113,6 +113,7 @@ t_case_rule_integrity
 t_case_rule_behaviour
 t_case_panic_set
 t_case_silent_failures
+t_case_quality_mandate
 t_case_attribution
 t_case_attribution_claude
 t_case_identity_cli
