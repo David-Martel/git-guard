@@ -66,7 +66,15 @@ export GG_T_TMPROOT
 # checks — so the cache goes in the per-suite temp root and dies with it.
 export GIT_GUARD_RULE_CACHE="$GG_T_TMPROOT/qa-rules"
 # shellcheck disable=SC2064  # expand GG_T_TMPROOT now (trap fires after vars may change)
-trap "rm -rf \"$GG_T_TMPROOT\"" EXIT INT TERM
+trap "rm -rf \"$GG_T_TMPROOT\"" EXIT
+# INT and TERM must EXIT, which runs the EXIT trap above. They used to share the cleanup trap,
+# and a POSIX sh trap that returns resumes the script: an interrupted run deleted its temp root
+# and carried on, every later case failing in a missing directory (reproduced 2026-10-16: the
+# suite was still running 3 s after SIGTERM, root gone). That is how the 2026-10-03 run below
+# reached the real .git/config. dash skips the EXIT trap when a signal kills it, so the exits
+# here are also what makes cleanup run at all on Ctrl-C.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Run every case from INSIDE the temp root, with git discovery fenced at it.
 # A case whose `r="$(gg_mktemp_repo)"` came back empty (for example after the
