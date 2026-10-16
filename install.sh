@@ -278,6 +278,16 @@ qa_verify_materialized_tree() {
     return 2
   fi
   rm -f /tmp/gg-verify-err.$$
+  # Old releases have no framework dispatcher. A release that references it
+  # must carry the helper before current can be changed, including re-use of
+  # an existing materialized version directory.
+  if grep -q 'precommit-provider.sh' "$t/hooks/pre-commit" "$t/hooks/pre-push" 2>/dev/null; then
+    if [ ! -f "$t/hooks/common/precommit-provider.sh" ] ||
+       ! sh -n "$t/hooks/common/precommit-provider.sh"; then
+      echo 'git-guard install: VERIFY FAILED — referenced pre-commit provider is missing or malformed.' >&2
+      return 2
+    fi
+  fi
   return 0
 }
 
