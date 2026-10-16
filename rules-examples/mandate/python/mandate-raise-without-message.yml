@@ -1,0 +1,43 @@
+# Quality mandate PY-08 (clearly defined, informative errors). Read by
+# hooks/common/mandate_scan.sh under `mandate.raise_without_message`
+# (default: changed).
+#
+# Sources: clarius README.md:123-125 ("propagate a typed raise ... with a
+# specific, actionable message"); vigil-spark AGENTS.md standing directive
+# (errors must be "loud and say how to fix the problem").
+#
+# Flags `raise FooError()` with an empty argument list and a bare
+# `raise FooError` / `raise FooException` class (no call at all). A bare
+# re-raise (`raise`), `raise exc` (a bound variable), `raise X from exc` with a
+# message, and NotImplementedError / StopIteration / StopAsyncIteration /
+# SystemExit / KeyboardInterrupt / GeneratorExit (control-flow or abstract
+# markers whose type IS the message) are not flagged.
+id: mandate-raise-without-message
+language: python
+severity: warning
+message: "Exception raised with no message — the reader gets a type name and no reason"
+rule:
+  kind: raise_statement
+  any:
+    - has:
+        kind: call
+        all:
+          - has:
+              field: arguments
+              kind: argument_list
+              regex: '^\(\s*\)$'
+          - has:
+              field: function
+              regex: '^([A-Za-z_][A-Za-z0-9_]*\.)*[A-Z][A-Za-z0-9_]*$'
+              not:
+                regex: '(^|\.)(NotImplementedError|StopIteration|StopAsyncIteration|SystemExit|KeyboardInterrupt|GeneratorExit)$'
+    - has:
+        any:
+          - kind: identifier
+          - kind: attribute
+        regex: '^([A-Za-z_][A-Za-z0-9_]*\.)*[A-Z][A-Za-z0-9_]*(Error|Exception)$'
+        not:
+          regex: '(^|\.)NotImplementedError$'
+note: |
+  Say what failed, with the values that matter, and how to fix it:
+    raise ConfigError(f"{path}: 'mode' must be one of {sorted(Mode)}, got {raw!r}")

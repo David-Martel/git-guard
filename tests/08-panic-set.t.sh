@@ -45,9 +45,14 @@ gg_fixture_fixed_size_init() {
 }
 
 # Write a per-repo .qa-gate.conf. $2.. are literal `key=value` lines.
+# `mandate.enabled=off` comes first in every conf: this category tests the
+# advisory ast-grep panic set (`astgrep_panics`), and since the quality mandate
+# (tests/32-quality-mandate.t.sh) an added .unwrap() in src/ also BLOCKS by
+# default through `mandate.rust_panic=changed`. Left on, it would decide every
+# assertion below for reasons that have nothing to do with `astgrep_panics`.
 gg_write_conf() {
   _r="$1"; shift
-  : > "$_r/.qa-gate.conf"
+  printf 'mandate.enabled=off\n' > "$_r/.qa-gate.conf"
   for _line in "$@"; do printf '%s\n' "$_line" >> "$_r/.qa-gate.conf"; done
 }
 
@@ -60,8 +65,9 @@ t_case_panic_set() {
   fi
 
   # --- default: warns, never blocks (the account-wide anti-brick promise) ---
+  # Default for the advisory panic set only; the mandate is isolated off.
   r="$(gg_mktemp_repo)"
-  gg_fixture_unwrap "$r"; ( cd "$r" && git add -A )
+  gg_fixture_unwrap "$r"; gg_write_conf "$r"; ( cd "$r" && git add -A )
   logf="$(gg_tmp_log)"
   gg_run_gate_log "$r" "$logf"; rc=$?
   t_expect_rc 0 "$rc" "default (no conf): unwrap warns, does NOT block"

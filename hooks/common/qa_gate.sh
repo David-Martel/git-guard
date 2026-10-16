@@ -57,9 +57,25 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
 
 # Per-repo override search (first hit wins).
 QA_REPO_CONF=""
-for cand in "$REPO_ROOT/.qa-gate.conf" "$REPO_ROOT/.git-guard/qa-gate.conf"; do
-  if [ -f "$cand" ]; then QA_REPO_CONF="$cand"; break; fi
-done
+# `--get-prefix PREFIX --repo-conf FILE`: the repo layer comes from FILE instead
+# of the working tree. mandate_scan.py exports FILE from the commit or index it
+# is scanning (git-guard #72 review), so policy and code come from one snapshot;
+# an empty FILE means that snapshot has no repo conf. The global defaults and
+# the machine overlay (qa-gate.conf.local) still load as below.
+QA_REPO_CONF_EXPLICIT=0
+if [ "${1:-}" = "--get-prefix" ] && [ "${3:-}" = "--repo-conf" ]; then
+  QA_REPO_CONF_EXPLICIT=1
+  QA_REPO_CONF="${4:-}"
+  if [ -n "$QA_REPO_CONF" ] && [ ! -f "$QA_REPO_CONF" ]; then
+    printf 'qa_gate.sh: --repo-conf %s is not a file\n' "$QA_REPO_CONF" >&2
+    exit 1
+  fi
+fi
+if [ "$QA_REPO_CONF_EXPLICIT" = "0" ]; then
+  for cand in "$REPO_ROOT/.qa-gate.conf" "$REPO_ROOT/.git-guard/qa-gate.conf"; do
+    if [ -f "$cand" ]; then QA_REPO_CONF="$cand"; break; fi
+  done
+fi
 
 QA_FAILED=0        # set to 1 by any block-level failure
 QA_CFG_MALFORMED=0 # set to 1 by qa_cfg_malformed; forces qa_main to refuse
@@ -116,6 +132,13 @@ qa_cfg_malformed() {
 # transform.
 # ----------------------------------------------------------------------------
 QA_KNOWN_KEYS="qa.enabled nul_cleanup astgrep astgrep_panics astgrep_autofix rust.fmt rust.clippy python.ruff_check python.ruff_format python.mypy python.basedpyright shell.shellcheck csharp.format powershell.astgrep powershell.psscriptanalyzer validate.json validate.yaml largefile largefile_kb rules_dir preserve_exemption"
+# Quality-mandate keys (hooks/common/mandate_scan.py RULES; docs/QA_TOOLING.md
+# "Quality mandate"). Read by mandate_scan.sh through `--get-prefix mandate.`,
+# never via qa_cfg here. Rule ids are underscore-only: the loader evals
+# `qacfg_<key>`, and a hyphen is not legal in a shell variable name.
+# tests/32-quality-mandate.t.sh asserts this list, the RULES table and the
+# defaults in qa-gate.conf name the same keys.
+QA_KNOWN_KEYS="$QA_KNOWN_KEYS mandate.enabled mandate.vendored mandate.pydantic_v1 mandate.pydantic_v1_ambiguous mandate.bare_except mandate.blind_except mandate.except_pass mandate.except_continue mandate.except_sentinel mandate.broad_suppress mandate.no_any mandate.raise_from mandate.bare_exception_raise mandate.raise_without_message mandate.unchecked_subprocess mandate.suppression_code mandate.suppression_reason mandate.str_enum_param mandate.literal_enum mandate.magic_number mandate.python_syntax mandate.rust_panic"
 qa_cfg_key_known() {
   case " $QA_KNOWN_KEYS " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
@@ -233,6 +256,19 @@ if [ "${1:-}" = "--get" ]; then
   qa_cfg "$2" "${3:-}"
   exit 0
 fi
+# `qa_gate.sh --get-prefix PREFIX [--repo-conf FILE]` prints `key=value` for
+# every known key that starts with PREFIX (empty value = set nowhere), one per
+# line, in one config parse. hooks/common/mandate_scan.py reads its `mandate.*`
+# keys this way, per snapshot (see QA_REPO_CONF above). Malformed config exits 1.
+if [ "${1:-}" = "--get-prefix" ]; then
+  [ "$QA_CFG_MALFORMED" = "0" ] && [ -n "${2:-}" ] || exit 1
+  for qa_prefix_key in $QA_KNOWN_KEYS; do
+    case "$qa_prefix_key" in
+      "$2"*) printf '%s=%s\n' "$qa_prefix_key" "$(qa_cfg "$qa_prefix_key" "")" ;;
+    esac
+  done
+  exit 0
+fi
 
 # Restricted structural checks require explicit caller authority; ambient
 # QA_ONLY_CHECKS never changes an ordinary hook's full gate.
@@ -265,7 +301,8 @@ qa_dbg "rules dir resolved to: $QA_RULES_DIR"
 # Staged-file list — captured ONCE at startup; every filter greps the cached
 # variable (no repeated `git diff` spawns).
 # ----------------------------------------------------------------------------
-QA_STAGED="$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)"
+# Include type changes: a symlink replaced by source needs the language gates.
+QA_STAGED="$(git diff --cached --name-only --diff-filter=ACMRT 2>/dev/null)"
 qa_staged_all() { printf '%s' "$QA_STAGED"; }
 qa_staged_match() {
   # $1 = ERE. Prints matching staged files from the cached list.
@@ -673,6 +710,37 @@ qa_astgrep_run() {
         fi ;;
     esac
   done
+}
+
+# ----------------------------------------------------------------------------
+# CHECK: quality mandate (hooks/common/mandate_scan.sh; docs/QA_TOOLING.md
+# "Quality mandate"). Per-rule `mandate.<rule>` keys decide off/warn/changed/
+# block; `changed` (the default for most rules) holds only the lines this
+# commit adds or modifies, so old debt in a touched file never blocks. The
+# scanner prints every finding with its fix and its debt-recording form, and a
+# final BLOCKED / PASSED / TOOL ERROR line. Exit 1 = findings, 2 = the mandate
+# could not be evaluated; both refuse the commit. Its own `mandate.enabled`
+# key, not `qa.enabled`, switches it off, so a repo that disables this gate to
+# run its own can still call mandate_scan.sh directly.
+# ----------------------------------------------------------------------------
+qa_check_mandate() {
+  files="$(qa_staged_match '\.(py|rs)$')"
+  [ -n "$files" ] || return 0
+  # No short-circuit on this file's view of `mandate.enabled`: that is the
+  # WORKING-TREE conf, and the commit is held to the STAGED one, which the
+  # scanner reads from the index itself (git-guard #72 review).
+  [ -f "$QA_SELF_DIR/mandate_scan.sh" ] || {
+    qa_block "quality mandate scanner missing at $QA_SELF_DIR/mandate_scan.sh (broken install; re-run git-guard install)."
+    return 0
+  }
+  ( cd "$REPO_ROOT" && sh "$QA_SELF_DIR/mandate_scan.sh" --staged )
+  rc=$?
+  case "$rc" in
+    0) : ;;
+    1) qa_block "quality mandate findings on staged lines (each is listed above with its fix)." ;;
+    2) qa_block "quality mandate TOOL ERROR (above): the mandate could not be evaluated, so the commit is refused rather than passed unchecked." ;;
+    *) qa_block "quality mandate scanner exited $rc (expected 0, 1 or 2)." ;;
+  esac
 }
 
 # ----------------------------------------------------------------------------
@@ -1182,6 +1250,9 @@ qa_main() {
   # Rules self-gate by language via their `language:`/`files:` fields. Trio
   # blocks, panic-set warns, rest warn (or block if astgrep=block).
   qa_astgrep_run
+
+  # Owner quality mandate on changed lines of staged *.py / *.rs.
+  qa_check_mandate
 
   # Structured-data + size.
   qa_check_validate

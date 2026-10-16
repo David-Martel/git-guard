@@ -1,0 +1,55 @@
+# Quality mandate PY-03 (no explicit Any). Read by hooks/common/mandate_scan.sh
+# under `mandate.no_any` (default: changed), together with ruff ANN401.
+#
+# Sources: clarius AGENTS.md:657-658 ("`Any` in type annotations is banned");
+# vigil-ai-tpm templates/strict-python-module/RULES.md:10-11 ("Avoid `Any`.
+# Use `object`"); vigil-oto CLAUDE.md:117 ("Do not introduce typing.Any").
+#
+# ruff ANN401 sees only function-signature annotations. This rule also covers
+# variable annotations, return/parameter positions nested in generics
+# (`dict[str, Any]`), type aliases built by subscription, `typing.Any`, and the
+# import itself. Both report under the same config key; mandate_scan.sh
+# de-duplicates a line both tools flag.
+id: mandate-explicit-any
+language: python
+severity: warning
+message: "Explicit `Any` — the type checker stops checking everything it touches"
+rule:
+  any:
+    - all:
+        - kind: identifier
+          regex: '^Any$'
+        - inside:
+            stopBy: end
+            any:
+              - kind: type
+              - kind: subscript
+              - kind: generic_type
+    - all:
+        - kind: attribute
+          regex: '^typing\s*\.\s*Any$'
+        - inside:
+            stopBy: end
+            any:
+              - kind: type
+              - kind: subscript
+              - kind: generic_type
+    - all:
+        - kind: import_from_statement
+          regex: '^from\s+(typing|typing_extensions)\s+import\b'
+        - has:
+            stopBy: end
+            kind: identifier
+            regex: '^Any$'
+            not:
+              inside:
+                kind: aliased_import
+                field: alias
+note: |
+  Replace Any with the narrowest honest type:
+    object                         an opaque value you only pass along
+    a Protocol / TypeVar           a value you call methods on / return unchanged
+    JsonValue (a recursive alias)  parsed JSON
+    a pydantic model / TypedDict   a structured mapping
+  Third-party signatures that force Any belong in one adapter, recorded:
+    def f(x: Any) -> None:  # noqa: ANN401  # SAFETY: <library> types this parameter as Any
