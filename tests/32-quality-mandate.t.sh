@@ -178,6 +178,22 @@ t_case_quality_mandate() {
   _qm_has "$log" "src/types_.py:1 " "the finding is reported at line 1, not 0 or 2"
   gg_rmrepo "$r"
 
+  # An added "++ 1" is valid Python but its diff line starts "+++ ". It must
+  # not redirect a later hunk's finding to a made-up path (PR #72 review 6200036532).
+  r="$(_qm_repo)"
+  _qm_put "$r" src/app.py 'value = 1\n\n\ndef probe():\n    try:\n        connect()\n    except OSError:\n        raise\n'
+  _qm_commit "$r" "header-like source base"
+  _qm_header_base="$(git -C "$r" rev-parse HEAD)"
+  _qm_put "$r" src/app.py '++ 1\nvalue = 1\n\n\ndef probe():\n    try:\n        connect()\n    except OSError:\n        pass\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "header-like added source does not hide a later staged violation"
+  _qm_has "$log" "[except_pass]" "the staged later hunk retains its except_pass finding"
+  _qm_commit "$r" "header-like source with later violation"
+  _qm_scan "$r" "$log" --range "$_qm_header_base..HEAD"; rc=$?
+  t_expect_rc 1 "$rc" "header-like added source does not hide a later range violation"
+  _qm_has "$log" "[except_pass]" "the range later hunk retains its except_pass finding"
+  gg_rmrepo "$r"
+
   # ---- pydantic v1: blocks, including in test files ----------------------------
   r="$(_qm_repo)"
   _qm_put "$r" src/model.py 'from pydantic.v1 import BaseModel\n'

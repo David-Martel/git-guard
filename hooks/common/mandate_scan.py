@@ -588,8 +588,13 @@ def parse_changed_lines(diff: str) -> Dict[str, Set[int]]:
     """Map each post-image path in a ``-U0`` diff to the 1-based lines it adds."""
     out: Dict[str, Set[int]] = {}
     current: Optional[str] = None
+    in_header = False
     for line in diff.splitlines():
-        if line.startswith("+++ "):
+        if line.startswith("diff --git "):
+            current = None
+            in_header = True
+            continue
+        if in_header and line.startswith("+++ "):
             target = unquote_git_path(line[4:].rstrip("\t"))
             if target == "/dev/null":
                 current = None
@@ -597,10 +602,12 @@ def parse_changed_lines(diff: str) -> Dict[str, Set[int]]:
             current = target[2:] if target.startswith("b/") else target
             out.setdefault(current, set())
             continue
-        if current is None:
-            continue
         match = HUNK_RE.match(line)
         if match:
+            # Hunk content can itself start "+++ "; only file headers name paths.
+            in_header = False
+            if current is None:
+                continue
             start = int(match.group(1))
             count = int(match.group(2)) if match.group(2) is not None else 1
             out[current].update(range(start, start + count))
