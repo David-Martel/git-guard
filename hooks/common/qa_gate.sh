@@ -724,7 +724,8 @@ qa_astgrep_run() {
 # run its own can still call mandate_scan.sh directly.
 # ----------------------------------------------------------------------------
 qa_check_mandate() {
-  files="$(qa_staged_match '\.(py|rs)$')"
+  # Git still C-quotes paths containing quotes or control characters.
+  files="$(qa_staged_match '\.(py|rs)"?$')"
   [ -n "$files" ] || return 0
   # No short-circuit on this file's view of `mandate.enabled`: that is the
   # WORKING-TREE conf, and the commit is held to the STAGED one, which the

@@ -539,6 +539,12 @@ t_case_quality_mandate() {
   printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_mid" > "$GG_T_TMPROOT/qm-refs"
   _qm_push "$r" "$log"; rc=$?
   t_expect_rc 0 "$rc" "the same tip pushes once the remote already holds the bad commit"
+  ( cd "$r" && git update-ref refs/remotes/origin/main "$_qm_mid" )
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" \
+    1111111111111111111111111111111111111111 > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 0 "$rc" "an unfetched remote replacement does not recheck already published debt"
+  _qm_lacks "$log" "MALFORMED" "the known remote history remains outside the introduced commits"
   gg_rmrepo "$r"
 
   r="$(_qm_repo)"
@@ -699,9 +705,9 @@ t_case_quality_mandate() {
   printf 'python.ruff_check=off\npython.ruff_format=off\npython.mypy=off\npython.basedpyright=off\nastgrep=off\n' \
     > "$r/.qa-gate.conf"
   ( cd "$r" && git add .qa-gate.conf )
-  _qm_put "$r" 'src/café.py' "$_QM_SWALLOW"
+  _qm_put "$r" 'src/caf"é.py' "$_QM_SWALLOW"
   gg_run_gate_log "$r" "$log"; rc=$?
-  t_expect_rc 1 "$rc" "qa_gate.sh blocks a staged mandate finding in a quoted UTF-8 filename"
+  t_expect_rc 1 "$rc" "qa_gate.sh blocks a staged mandate finding in a quoted UTF-8 filename with a quote"
   _qm_has "$log" "quality mandate findings" "the gate's block names the mandate"
   printf 'mandate.enabled=off\n' >> "$r/.qa-gate.conf"
   ( cd "$r" && git add .qa-gate.conf )

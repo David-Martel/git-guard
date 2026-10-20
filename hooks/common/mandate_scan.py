@@ -1853,9 +1853,11 @@ def new_register_commits(repo: Path, local_sha: str, remote_sha: str) -> List[st
             tool="git",
         )
         # A force push can replace a remote commit never fetched locally.
-        # Check all available local history rather than losing intermediate
-        # registers or refusing repositories that have no register at all.
-        scope = ["--not", remote_sha] if remote.returncode == 0 else []
+        # Use the new-ref boundary when that commit is unavailable: keep local
+        # intermediate registers, without rechecking known published history.
+        scope = (
+            ["--not", remote_sha] if remote.returncode == 0 else ["--not", "--remotes"]
+        )
     command = ["git", "rev-list", "--full-history", local_sha, *scope]
     listed = run(
         command,
