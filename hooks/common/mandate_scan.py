@@ -1283,7 +1283,11 @@ def marker_comments(
 
 def read_lines(path: Path) -> List[str]:
     try:
-        return path.read_text(encoding="utf-8", errors="replace").splitlines()
+        # Match physical source lines after read_text normalizes CRLF and CR.
+        lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
+        if lines[-1] == "":
+            lines.pop()
+        return lines
     except OSError as exc:
         raise ToolFailure(
             "read", [str(path)], f"cannot read exported file: {exc}"

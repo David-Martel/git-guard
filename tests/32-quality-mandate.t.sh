@@ -249,12 +249,15 @@ t_case_quality_mandate() {
 
   # ---- suppressions need a reason ----------------------------------------------
   r="$(_qm_repo)"
-  _qm_put "$r" src/s.py 'def probe(failures):\n    try:\n        connect()\n    except Exception as exc:  # noqa: BLE001\n        failures.append(exc)\n'
+  # Preserve physical lines after U+2028 so a later changed suppression cannot vanish.
+  _qm_put "$r" src/s.py 'import subprocess\n\nprint(1)\n'
+  _qm_commit "$r" "clean suppression fixture"
+  _qm_put "$r" src/s.py '# note x\nimport subprocess\nsubprocess.run(["true"])  # noqa: PLW1510\n\nprint(1)\n'
   _qm_scan "$r" "$log" --staged; rc=$?
-  t_expect_rc 1 "$rc" "'# noqa: BLE001' with no SAFETY reason blocks"
+  t_expect_rc 1 "$rc" "'# noqa: PLW1510' with no SAFETY reason blocks"
   _qm_has "$log" "[suppression_reason]" "the block names suppression_reason"
-  _qm_lacks "$log" "[blind_except]" "the noqa itself still suppresses BLE001"
-  _qm_put "$r" src/s.py 'def probe(failures):\n    try:\n        connect()\n    except Exception as exc:  # noqa: BLE001  # SAFETY: collected and raised by the caller\n        failures.append(exc)\n'
+  _qm_lacks "$log" "[unchecked_subprocess]" "the noqa itself still suppresses PLW1510"
+  _qm_put "$r" src/s.py '# note x\nimport subprocess\nsubprocess.run(["true"])  # noqa: PLW1510  # SAFETY: best-effort child status is intentionally ignored\n\nprint(1)\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 0 "$rc" "the same noqa with '# SAFETY: <reason>' passes"
   _qm_put "$r" src/s.py '# ruff: noqa: E722\n\ndef probe():\n    try:\n        connect()\n    except:\n        raise\n'
