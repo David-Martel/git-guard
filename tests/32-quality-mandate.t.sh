@@ -196,7 +196,7 @@ t_case_quality_mandate() {
 
   # ---- pydantic v1: blocks, including in test files ----------------------------
   r="$(_qm_repo)"
-  _qm_put "$r" src/model.py 'from pydantic.v1 import BaseModel\n'
+  _qm_put "$r" 'vendor\model.py' 'from pydantic.v1 import BaseModel\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 1 "$rc" "'from pydantic.v1 import BaseModel' blocks"
   _qm_has "$log" "[pydantic_v1]" "the block names pydantic_v1"
@@ -705,7 +705,7 @@ t_case_quality_mandate() {
   printf 'python.ruff_check=off\npython.ruff_format=off\npython.mypy=off\npython.basedpyright=off\nastgrep=off\n' \
     > "$r/.qa-gate.conf"
   ( cd "$r" && git add .qa-gate.conf )
-  _qm_put "$r" 'src/caf"é.py' "$_QM_SWALLOW"
+  _qm_put "$r" 'vendor\caf"é.py' "$_QM_SWALLOW"
   gg_run_gate_log "$r" "$log"; rc=$?
   t_expect_rc 1 "$rc" "qa_gate.sh blocks a staged mandate finding in a quoted UTF-8 filename with a quote"
   _qm_has "$log" "quality mandate findings" "the gate's block names the mandate"

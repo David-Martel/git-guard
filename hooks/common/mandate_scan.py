@@ -1069,7 +1069,9 @@ def relative_to_root(filename: str, root: Path) -> str:
             return candidate.resolve().relative_to(root.resolve()).as_posix()
         except ValueError:
             return candidate.as_posix()
-    return PurePosixPath(filename.replace("\\", "/")).as_posix()
+    return PurePosixPath(
+        filename.replace("\\", "/") if os.name == "nt" else filename
+    ).as_posix()
 
 
 def rule_inventory() -> Dict[str, Path]:
@@ -1170,7 +1172,9 @@ def astgrep_item(raw: str, number: int, command: Sequence[str]) -> List[Finding]
     return [
         Finding(
             SG_TO_KEY[rule_id],
-            PurePosixPath(path.replace("\\", "/")).as_posix(),
+            PurePosixPath(
+                path.replace("\\", "/") if os.name == "nt" else path
+            ).as_posix(),
             line + 1,
             end_line + 1,
             f"ast-grep:{rule_id}",
