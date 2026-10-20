@@ -618,6 +618,8 @@ def parse_changed_lines(diff: str) -> Dict[str, Set[int]]:
 DIFF_FLAGS = (
     "-c",
     "core.quotePath=false",
+    "-c",
+    "diff.interHunkContext=0",
     "diff",
     "-U0",
     "--no-color",
@@ -1501,6 +1503,20 @@ def changed_mode(
         present = [
             f for f in files if (root / f).is_file() and not (root / f).is_symlink()
         ]
+        for f in present:
+            try:
+                raw = (root / f).read_bytes()
+            except OSError as exc:
+                raise ToolFailure(
+                    "read", [f], f"cannot read exported file: {exc}"
+                ) from exc
+            if b"\r" in raw.replace(b"\r\n", b""):
+                raise ToolFailure(
+                    "git",
+                    [f],
+                    "lone CR line endings make changed-line coordinates ambiguous; "
+                    "convert to LF or CRLF before scanning",
+                )
         result = scan_tree(root, scratch, present, policy, tools)
         blocking: List[Finding] = []
         warnings: List[Finding] = []
