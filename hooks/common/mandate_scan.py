@@ -1847,7 +1847,15 @@ def new_register_commits(repo: Path, local_sha: str, remote_sha: str) -> List[st
     if remote_sha == ZERO_SHA:
         scope = ["--not", "--remotes"]  # a new ref: everything no remote has
     else:
-        scope = ["--not", remote_sha]
+        remote = run(
+            ["git", "cat-file", "-e", f"{remote_sha}^{{commit}}"],
+            cwd=repo,
+            tool="git",
+        )
+        # A force push can replace a remote commit never fetched locally.
+        # Check all available local history rather than losing intermediate
+        # registers or refusing repositories that have no register at all.
+        scope = ["--not", remote_sha] if remote.returncode == 0 else []
     command = ["git", "rev-list", "--full-history", local_sha, *scope]
     listed = run(
         command,

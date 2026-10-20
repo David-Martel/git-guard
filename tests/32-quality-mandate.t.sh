@@ -504,6 +504,11 @@ t_case_quality_mandate() {
   _qm_push "$r" "$log"; rc=$?
   t_expect_rc 0 "$rc" "a repo with no register pushes as before"
   _qm_lacks "$log" "git-guard mandate" "and the mandate prints nothing for it"
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$(git -C "$r" rev-parse HEAD)" \
+    1111111111111111111111111111111111111111 > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 0 "$rc" "a no-register force push needs no local copy of the remote commit"
+  _qm_lacks "$log" "TOOL ERROR" "an absent remote commit is not a scanner failure"
   gg_rmrepo "$r"
 
   # ---- every pushed commit is checked, not only the tip --------------------------
@@ -525,6 +530,11 @@ t_case_quality_mandate() {
   t_expect_rc 1 "$rc" "a malformed register in an intermediate pushed commit blocks"
   _qm_has "$log" "MALFORMED" "the block says MALFORMED"
   _qm_has "$log" "$(printf %s "$_qm_mid" | cut -c1-12)" "and names the intermediate commit"
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" \
+    1111111111111111111111111111111111111111 > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 1 "$rc" "an absent remote commit does not hide an intermediate malformed register"
+  _qm_has "$log" "MALFORMED" "the available local history still enforces its register"
   # positive control: once the remote already has the bad commit, only the tip is new.
   printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_mid" > "$GG_T_TMPROOT/qm-refs"
   _qm_push "$r" "$log"; rc=$?
@@ -689,9 +699,9 @@ t_case_quality_mandate() {
   printf 'python.ruff_check=off\npython.ruff_format=off\npython.mypy=off\npython.basedpyright=off\nastgrep=off\n' \
     > "$r/.qa-gate.conf"
   ( cd "$r" && git add .qa-gate.conf )
-  _qm_put "$r" src/app.py "$_QM_SWALLOW"
+  _qm_put "$r" 'src/café.py' "$_QM_SWALLOW"
   gg_run_gate_log "$r" "$log"; rc=$?
-  t_expect_rc 1 "$rc" "qa_gate.sh blocks a staged mandate finding"
+  t_expect_rc 1 "$rc" "qa_gate.sh blocks a staged mandate finding in a quoted UTF-8 filename"
   _qm_has "$log" "quality mandate findings" "the gate's block names the mandate"
   printf 'mandate.enabled=off\n' >> "$r/.qa-gate.conf"
   ( cd "$r" && git add .qa-gate.conf )

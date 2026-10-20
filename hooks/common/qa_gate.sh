@@ -302,7 +302,7 @@ qa_dbg "rules dir resolved to: $QA_RULES_DIR"
 # variable (no repeated `git diff` spawns).
 # ----------------------------------------------------------------------------
 # Include type changes: a symlink replaced by source needs the language gates.
-QA_STAGED="$(git diff --cached --name-only --diff-filter=ACMRT 2>/dev/null)"
+QA_STAGED="$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMRT 2>/dev/null)"
 qa_staged_all() { printf '%s' "$QA_STAGED"; }
 qa_staged_match() {
   # $1 = ERE. Prints matching staged files from the cached list.
