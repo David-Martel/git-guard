@@ -197,6 +197,32 @@ EOF
     if git --git-dir="$remote" rev-parse --verify "refs/heads/staged-${tracked##*.}" >/dev/null 2>&1; then t_fail "staged modified $tracked published a ref"; else t_ok "staged modified $tracked did not publish a ref"; fi
     git -C "$r" restore --staged --worktree -- "$tracked"
   done
+  # A declared ignore policy must not hide a different checked-out dependency.
+  submodule_repo="$(gg_mktemp_repo)"
+  dependency="$(gg_mktemp_repo)"
+  printf 'good\n' > "$dependency/source.txt"
+  (cd "$dependency" && git add source.txt && git commit -qm good)
+  good="$(git -C "$dependency" rev-parse HEAD)"
+  printf 'bad\n' > "$dependency/source.txt"
+  (cd "$dependency" && git add source.txt && git commit -qm bad)
+  bad="$(git -C "$dependency" rev-parse HEAD)"
+  mv "$dependency" "$submodule_repo/dependency"
+  printf '[submodule "dependency"]\n path = dependency\n url = ./dependency\n ignore = all\n' > "$submodule_repo/.gitmodules"
+  printf 'repos:\n- repo: local\n  hooks:\n  - id: dependency-check\n    name: dependency-check\n    language: system\n    entry: grep -qx good dependency/source.txt\n    pass_filenames: false\n    always_run: true\n    stages: [pre-push]\n' > "$submodule_repo/.pre-commit-config.yaml"
+  (cd "$submodule_repo" && git config core.hooksPath "$GG_ROOT/hooks" &&
+    git add .gitmodules .pre-commit-config.yaml &&
+    git update-index --add --cacheinfo "160000,$bad,dependency" &&
+    env PATH="$path" git commit -m submodule-source-fixture) > "$log" 2>&1 </dev/null
+  t_expect_rc 0 "$?" 'parent records the committed dependency despite ignore=all'
+  git -C "$submodule_repo/dependency" checkout -q --detach "$good"
+  : > "$marker"
+  (cd "$submodule_repo" && env PATH="$path" git push "$remote" HEAD:refs/heads/submodule-hidden) > "$log" 2>&1
+  t_expect_rc 1 "$?" 'ignore=all cannot hide a different dependency commit from real Git push'
+  grep -q 'clean tracked HEAD workspace' "$log"; t_assert $? 'hidden dependency has a pushed-source refusal'
+  if [ -s "$marker" ]; then t_fail 'hidden dependency invoked provider'; else t_ok 'hidden dependency refused before provider'; fi
+  if git --git-dir="$remote" rev-parse --verify refs/heads/submodule-hidden >/dev/null 2>&1; then t_fail 'hidden dependency published a ref'; else t_ok 'hidden dependency did not publish a ref'; fi
+  gg_rmrepo "$submodule_repo"
+
   previous="$head"
   printf 'next committed source\n' >> "$r/a.txt"
   (cd "$r" && git add a.txt && env PATH="$path" git commit -m next-source) > "$log" 2>&1 </dev/null

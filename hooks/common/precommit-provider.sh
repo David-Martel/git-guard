@@ -73,9 +73,9 @@ if [ "$stage" = pre-push ]; then
   source_index="$(mktemp "${TMPDIR:-/tmp}/git-guard-source-index.XXXXXX")" || exit 1
   # Keep the live staged-source gate as well: a restored HEAD worktree can
   # otherwise conceal a different staged blob that would be committed next.
-  if ! git diff --cached --quiet "$head" -- ||
+  if ! git diff --cached --quiet --ignore-submodules=none "$head" -- ||
      ! GIT_INDEX_FILE="$source_index" git read-tree "$head" ||
-     ! GIT_INDEX_FILE="$source_index" git diff --quiet "$head" --; then
+     ! GIT_INDEX_FILE="$source_index" git diff --quiet --ignore-submodules=none "$head" --; then
     printf '%s\n' 'git-guard BLOCK: pre-commit pre-push needs a clean tracked HEAD workspace; staged or unstaged changes are not the pushed source.' >&2
     exit 1
   fi
