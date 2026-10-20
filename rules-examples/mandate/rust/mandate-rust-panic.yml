@@ -1,0 +1,52 @@
+# Quality mandate RS-01 (no panics in production Rust). Read by
+# hooks/common/mandate_scan.sh under `mandate.rust_panic` (default: changed =
+# blocks on added/modified lines of non-test Rust).
+#
+# Sources: clarius CLAUDE.md:57 and Cargo.toml:94-102 (unwrap_used, expect_used,
+# panic, todo, unimplemented denied); vigil-audio AGENTS.md:31-38; agent-hub
+# CLAUDE.md:253 ("no unwrap in business logic").
+#
+# This is the changed-line half. The whole-file panic set in rules-examples/
+# rust/panics/ still follows `astgrep_panics` (default warn) in qa_gate.sh.
+# Test code is exempt: inline `#[cfg(test)]` modules and `#[test]` /
+# `#[tokio::test]` functions here, and tests/, benches/, examples/, *_test.rs
+# and build.rs by path in mandate_scan.sh.
+id: mandate-rust-panic
+language: rust
+severity: warning
+message: "Panicking call in production code — return a typed error instead"
+rule:
+  all:
+    - any:
+        - pattern: $EXPR.unwrap()
+        - pattern: $EXPR.expect($$$ARGS)
+        - pattern: panic!($$$ARGS)
+        - pattern: todo!($$$ARGS)
+        - pattern: unimplemented!($$$ARGS)
+    - not:
+        inside:
+          kind: mod_item
+          stopBy: end
+          follows:
+            # Search this item's attribute stack, never an earlier item.
+            stopBy:
+              not:
+                kind: attribute_item
+            kind: attribute_item
+            regex: 'cfg\(\s*test\s*\)'
+    - not:
+        inside:
+          kind: function_item
+          stopBy: end
+          follows:
+            stopBy:
+              not:
+                kind: attribute_item
+            kind: attribute_item
+            regex: '^#\[\s*([A-Za-z_]+::)*test\b'
+note: |
+  Propagate instead of panicking:
+    let v = map.get(k).ok_or(Error::MissingKey(k.clone()))?;
+    let n: u32 = s.parse().map_err(|e| Error::BadCount { raw: s.into(), source: e })?;
+  An invariant the type system cannot express is recorded on the line:
+    let first = v.first().expect("non-empty: checked above");  // ast-grep-ignore: mandate-rust-panic  // SAFETY: len checked on line N

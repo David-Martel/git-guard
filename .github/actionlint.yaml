@@ -14,4 +14,5 @@ self-hosted-runner:
     - git-guard-local
     - docker
     - vigil1
+    - asuspro13
     - git-guard-native-docker
