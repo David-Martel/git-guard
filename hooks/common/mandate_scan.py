@@ -740,6 +740,18 @@ def export_index(
             content = blobs.read(size)
             if len(content) != size or blobs.read(1) != b"\n":
                 raise ToolFailure("git", command, f"incomplete raw blob for {path!r}")
+            # Both scanners can skip non-UTF-8 Python without a failing exit.
+            # Validate once for changed scans and census; preserve exact bytes.
+            if language_of(path) is Language.PYTHON:
+                try:
+                    content.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ToolFailure(
+                        "git",
+                        command,
+                        f"source {path!r} is not UTF-8; "
+                        "convert to UTF-8 before scanning",
+                    ) from exc
             exported = dest / path
             exported.parent.mkdir(parents=True, exist_ok=True)
             exported.write_bytes(content)

@@ -246,6 +246,26 @@ t_case_quality_mandate() {
   t_expect_rc 1 "$rc" "an option-shaped filename cannot hide range pydantic v1"
   _qm_has "$log" "[pydantic_v1]" "the option-shaped range file retains its finding"
   gg_rmrepo "$r"
+  # PR #72 actual review: both scanners silently skipped valid Latin-1 Python.
+  r="$(_qm_repo)"
+  ( cd "$r" && git -c core.hooksPath="$GG_T_TMPROOT/qm-no-hooks" commit --allow-empty -qm "base" )
+  _qm_scan "$r" "$log" --write-baseline
+  _qm_commit "$r" "clean encoding baseline"
+  _qm_encoding_base="$(git -C "$r" rev-parse HEAD)"
+  _qm_put "$r" app.py '# coding: latin-1\n# \351\nfrom pydantic.v1 import BaseModel\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 2 "$rc" "Latin-1 staged source is a tool error, never a clean scan"
+  _qm_has "$log" "is not UTF-8" "the source error names the required conversion"
+  _qm_scan "$r" "$log" --all; rc=$?
+  t_expect_rc 2 "$rc" "Latin-1 census cannot report falsely clean counts"
+  _qm_scan "$r" "$log" --write-baseline; rc=$?
+  t_expect_rc 2 "$rc" "Latin-1 source cannot create a falsely clean baseline"
+  _qm_commit "$r" "Latin-1 source"
+  _qm_scan "$r" "$log" --range "$_qm_encoding_base..HEAD"; rc=$?
+  t_expect_rc 2 "$rc" "Latin-1 range source is a tool error, never a clean scan"
+  _qm_scan "$r" "$log" --check-baseline; rc=$?
+  t_expect_rc 2 "$rc" "Latin-1 source cannot pass a falsely clean baseline"
+  gg_rmrepo "$r"
   r="$(_qm_repo)"
   _qm_put "$r" tests/test_model.py 'from pydantic.v1 import BaseModel\n'
   _qm_scan "$r" "$log" --staged; rc=$?
