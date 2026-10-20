@@ -1,0 +1,42 @@
+# Quality mandate PY-05 / PY-06 ("no None/bool that drops the reason"). Read by
+# hooks/common/mandate_scan.sh under `mandate.except_sentinel` (default:
+# changed = blocks on added/modified lines).
+#
+# Source: clarius CLAUDE.md:422-423 ("Errors are typed and informative — no
+# `except: pass`, no logged-and-swallowed, no `None`/`bool` that drops the
+# reason"). This is the error-path reading of the owner's "no None": it does
+# NOT ban Optional/None in general (that would be ~16.7k fleet lines no source
+# asks for). It flags a handler that turns a caught exception into a falsy
+# value, because the caller then cannot tell "failed" from "legitimately
+# empty/absent/false".
+#
+# Logging before the return does not exempt the handler (owner decision
+# 2026-10-14: logging is not handling; the caller still cannot branch on it).
+# A re-raise anywhere in the handler does. Known disagreement: vigil-spark's
+# py-no-except-empty-sentinel deliberately exempts `return False` in
+# predicates; under the mandate a predicate whose False branch is a caught
+# exception must say so with a recorded suppression (see note).
+id: mandate-except-sentinel
+language: python
+severity: warning
+message: "Exception converted to a falsy return — the caller cannot tell failure from an empty result"
+rule:
+  kind: except_clause
+  has:
+    kind: block
+    all:
+      - has:
+          kind: return_statement
+          regex: '^return\s+(None|False|""|''''|\[\s*\]|\{\s*\}|\(\s*\)|set\(\)|dict\(\)|list\(\)|tuple\(\))\s*$'
+      - not: {has: {kind: raise_statement, stopBy: end}}
+  not:
+    regex: 'except\s+\(?\s*(queue\.)?(Empty|TimeoutError|asyncio\.TimeoutError)\b'
+note: |
+  Carry the reason to the caller:
+    except OSError as exc:
+        raise ProbeError(f"probe of {path} failed: {exc}") from exc
+  or return a typed outcome the caller must branch on (an Enum status, a
+  Result-like object) instead of a bare None/False/[]/{}.
+  If a falsy answer genuinely IS the meaning of the exception (a predicate such
+  as "process exists" on ProcessLookupError), record that on the except line:
+    except ProcessLookupError:  # ast-grep-ignore: mandate-except-sentinel  # SAFETY: no such pid means "not alive"

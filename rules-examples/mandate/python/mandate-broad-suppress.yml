@@ -1,0 +1,16 @@
+# Quality mandate PY-06 (no silent failures). Read by
+# hooks/common/mandate_scan.sh under `mandate.broad_suppress` (default: changed).
+# Same shape as rules-examples/python/broad-suppress.yml (advisory there).
+id: mandate-broad-suppress
+language: python
+severity: warning
+message: "contextlib.suppress(Exception) discards every error in the block"
+rule:
+  any:
+    - {pattern: "contextlib.suppress(Exception)"}
+    - {pattern: "suppress(Exception)"}
+    - {pattern: "contextlib.suppress(BaseException)"}
+    - {pattern: "suppress(BaseException)"}
+note: |
+  Narrow it to the exception you actually expect, and list several if needed:
+    with contextlib.suppress(FileNotFoundError, PermissionError):

@@ -159,6 +159,7 @@ errors. The default blocking surface is deliberately NARROW.
 | json validate | `*.json` | python | **BLOCK** | parse only |
 | yaml validate | `*.yml`/`*.yaml` | python+pyyaml | **WARN** | parser may be absent |
 | largefile | always | builtin | **WARN** | > `largefile_kb` (default 5120) → suggest LFS |
+| quality mandate | `*.py`/`*.rs` | `mandate_scan.sh` (ruff + ast-grep + text) | **BLOCK on changed lines** | per-rule `mandate.<rule>`; old debt in a touched file does not block; see §13 |
 
 **Language gating:** checks are gated by STAGED FILE EXTENSION, not just repo
 type. A docs-only commit is a TRUE no-op (no language tool runs). Python tools
@@ -228,23 +229,32 @@ Files OWNED by this subsystem (all under `~/.git-hooks/common/` unless noted):
 
 ## 4. The ast-grep rule cache (why it exists, how to refresh)
 
-Source rules live at `~/.claude/rules/{core,security,rust,rust/panics,csharp,powershell}/`
-(~56 files). ast-grep's multi-rule loader (`sg scan -c sgconfig.yml`) is ~20×
-faster than one `sg scan --rule` per file (≈200ms vs ≈4.4s for 46 rules), BUT a
-few source rules fail its strict parse and would poison the WHOLE batch:
+**Where the rules come from.** `qa_gate.sh` resolves one rules directory, first
+hit wins: `$GIT_GUARD_RULES_DIR` (env) → the `rules_dir` key in `qa-gate.conf` /
+`qa-gate.conf.local` (written only by `install.sh --rules-dir DIR`) → the bundled
+`rules-examples/` two levels above `qa_gate.sh`. **No overlay is configured by
+default, so an installed git-guard enforces the bundled `rules-examples/` set.**
+Measured on asuspro13 2026-10-14: the installed v0.2.10 cache's stamp
+(`qa-rules/.built-from`) reads `…/v0.2.10/hooks/common/../../rules-examples`, there
+is no `qa-gate.conf.local`, and no `rules_dir` is set, so the 78 rules in
+`~/.claude/rules` are not used by git-guard on that host. (An earlier version of
+this section said the installer always points `rules_dir` at `~/.claude/rules`;
+that is true only when `--rules-dir` is passed.)
 
-- `rust/todo-expect-message.yml`
-- `rust/panics/test-expect-todo.yml`
-- `powershell/avoid-write-host.yml`
-- `powershell/prefer-strict-mode.yml`
+The bundled set the cache loop reads is `core` 3, `security` 3, `rust` 15,
+`rust/panics` 16, `csharp` 6, `powershell` 2, `python` 6, `typescript` 5 rule
+files (counted 2026-10-14). `rules-examples/mandate/` is **not** read by this
+cache: those rules belong to the quality mandate scanner (see "Quality mandate"
+below), which loads them itself so that they are never double-reported here.
 
-So `qa_gate.sh` maintains a **validated cache** at `~/.git-hooks/common/qa-rules/`:
-each source rule is checked with `sg scan --rule <f>` and only copied if it
-parses. The cache (currently **52** rules: core 11, security 3, rust 15,
-rust/panics 15, csharp 6, powershell 2) is rebuilt automatically whenever a
-source `.yml` is newer than the cache stamp `qa-rules/.built-from` (a `find
--newer` check, near-free when warm). First build (or after editing rules) costs
-~15s once; steady-state commits pay nothing for it.
+ast-grep's multi-rule loader (`sg scan -c sgconfig.yml`) is ~20× faster than one
+`sg scan --rule` per file, but a rule that fails its strict parse would poison the
+whole batch. So `qa_gate.sh` maintains a **validated cache** at
+`<install>/hooks/common/qa-rules/` (or `$GIT_GUARD_RULE_CACHE`): each source rule
+is checked with `sg scan --rule <f>` and only copied if it parses. The cache is
+rebuilt automatically when a source `.yml` is newer than the stamp
+`qa-rules/.built-from`, or when the stamp names a different source directory.
+First build costs ~15-30 s once; steady-state commits pay nothing for it.
 
 ### Classification (which rule blocks)
 - **BLOCK trio** (by ruleId): `avoid-static-mut`, `no-glob-reexport`,
@@ -291,9 +301,10 @@ day — measure first (`sg scan` the panic set, count findings), fix or defend e
 site, then flip the key so it cannot regress.
 
 ### How to ADD / UPDATE an ast-grep rule
-1. Drop/edit the `.yml` in the appropriate `~/.claude/rules/<lang>/` dir (the
-   source of truth; the cache is derived). Validate it standalone:
-   `sg scan --rule ~/.claude/rules/<lang>/<id>.yml --json=compact <somefile>`
+1. Drop/edit the `.yml` in the resolved rules directory (by default the
+   bundled `rules-examples/<lang>/`; the cache is derived from it). Validate it
+   standalone: `ast-grep scan --rule rules-examples/<lang>/<id>.yml --json=compact <somefile>`,
+   and add its failing/passing row to `tests/27-rule-behaviour.t.sh`.
 2. The next commit auto-rebuilds the cache (source is newer). To force now:
    `rm -rf ~/.git-hooks/common/qa-rules` (rebuilds on next commit).
 3. To make a NEW rule BLOCK: add its ruleId to the trio `case` in
@@ -378,6 +389,9 @@ validate.json=block   validate.yaml=warn
 largefile=warn   largefile_kb=5120
 preserve_exemption=on     # off: preserve/* commits get the normal gates (§11)
 rules_dir=                # unset by default; see §4 (SEVERABLE rule source)
+mandate.enabled=on        # quality mandate master switch (independent of qa.enabled); §13
+mandate.<rule>=…          # off|warn|changed|block per rule; the 20 rules and defaults are in §13
+mandate.vendored=         # comma-separated repo-relative dirs exempt from the mandate; §13
 ```
 
 This list is the literal `QA_KNOWN_KEYS` schema `qa_gate.sh` validates every
@@ -758,3 +772,190 @@ prune the registration of a worktree whose drive is merely offline.
 local, per-host enforcement half. The units differ: `hygiene.maxWorktrees`
 counts every linked worktree of one repo on one host;
 `agent_worktrees_per_repo` and `active_worktrees_per_lane` are lane-attributed.
+
+---
+
+## 13. Quality mandate
+
+**What it is.** The owner's commit-time quality mandate (2026-10-14): pydantic v2
+only, no strings as enumerations, no explicit `Any`, no error path that turns a
+failure into `None`/`False`/an empty value, clearly typed and informative errors,
+no silent failures. The canonical policy text is vigil-ai-tpm
+`templates/strict-python-module/RULES.md` at commit `ecbedf353d4a`; each rule
+below also cites the repo line it comes from. Enforcement lives in
+[`hooks/common/mandate_scan.sh`](../hooks/common/mandate_scan.sh) (a POSIX entry
+point) and [`mandate_scan.py`](../hooks/common/mandate_scan.py) (standard library
+only, run with `python3 -I`). Its ast-grep rules are in
+[`rules-examples/mandate/`](../rules-examples/mandate/), which the §4 rule cache
+does not read, so nothing is reported twice.
+
+**Where it runs.**
+- **pre-commit**, through `qa_gate.sh` (`qa_check_mandate`), on staged `*.py` and
+  `*.rs`. The staged content is exported with `git checkout-index` into a
+  temporary tree; the working tree is never read.
+- **pre-push**, through `hooks/pre-push`, only for a pushed commit that carries
+  `.git-guard/mandate-baseline.json` (the debt register below). A repo without
+  one pushes exactly as before and the scanner prints nothing.
+- **Directly**, from a repo whose own hooks replace git-guard's (vigil-utils,
+  vigil-spark): `sh <git-guard>/hooks/common/mandate_scan.sh --staged`, or
+  `--range origin/main..HEAD` in CI. `qa.enabled=off` does not switch it off;
+  `mandate.enabled=off` does. A direct caller owns the preserve/* decision:
+  the exemption in §11 covers only the hook path.
+
+**Policy comes from the snapshot being checked.** The repo layer of the
+config (`.qa-gate.conf`, else `.git-guard/qa-gate.conf`) is read from the same
+snapshot as the code: from the **index** at pre-commit (`git cat-file blob
+:.qa-gate.conf`), and from **each pushed commit** at pre-push. A multi-ref push
+therefore judges every ref by its own committed policy, a checkout with
+`mandate.enabled=off` cannot switch off a pushed branch whose own conf is on, and
+an unstaged conf edit has no effect on the commit (stage it). The global
+defaults and the machine overlay (`qa-gate.conf.local` beside `qa_gate.sh`)
+still apply on top; every summary line ends with `policy: <snapshot> <file>`,
+naming the overlay when one is present, so the governing policy is never an
+invisible input. (git-guard #72 review; `qa_gate.sh --get-prefix mandate.
+--repo-conf FILE` is the interface.)
+
+**Severities.** One key per rule, `mandate.<rule>=off|warn|changed|block`:
+
+| value | effect |
+|---|---|
+| `off` | the rule does not run |
+| `warn` | findings on added/modified lines are printed; the commit proceeds |
+| `changed` | findings on added/modified lines **block**; old debt in a touched file does not |
+| `block` | any finding anywhere in a staged file blocks |
+
+Changed lines come from `git diff --cached -U0 -M --diff-filter=AMR`, with rename
+detection on so that moving a file does not turn its existing debt into "new"
+lines. A finding counts as changed when any line of its span is an added line.
+
+**The rules.**
+
+| Rule (`mandate.<rule>`) | Policy | Protects against | Tool / code | Default | Source | Fix |
+|---|---|---|---|---|---|---|
+| `pydantic_v1` | PY-01 | v1 APIs in a v2-only fleet | ast-grep `mandate-pydantic-v1` (`pydantic.v1`, `@validator`, `@root_validator`, `class Config:` in a BaseModel, `parse_obj`/`parse_raw`/`parse_file`/`from_orm`) | block | vigil-spark AGENTS.md:188-190; vigil-ai-tpm CLAUDE.md:76 | `field_validator`/`model_validator`, `model_config = ConfigDict(...)`, `model_validate` |
+| `pydantic_v1_ambiguous` | PY-01 | `.dict()` / `.copy(update=)` | ast-grep `mandate-pydantic-v1-ambiguous` | warn | as above | `model_dump()` / `model_copy(update=)` |
+| `bare_except` | PY-06 | Ctrl-C and `sys.exit()` swallowed | ruff `E722` | block | clarius AGENTS.md:653-655 | catch a named exception |
+| `blind_except` | PY-06 | every failure handled alike | ruff `BLE001` | changed | clarius AGENTS.md:653-655; vigil-ai-tpm pyproject.toml:80-87 | catch what you can recover from |
+| `except_pass` | PY-06 | a failure discarded (logging does not count as handling) | ruff `S110` + ast-grep `mandate-except-pass` | changed | clarius AGENTS.md:653-655 | re-raise typed, or `contextlib.suppress(Specific)` |
+| `except_continue` | PY-06 | a skipped item with no record | ruff `S112` + ast-grep `mandate-except-continue` | changed | clarius AGENTS.md:653-655 | record it (`failures.append`) and surface it |
+| `except_sentinel` | PY-05 | failure returned as `None`/`False`/`""`/`[]`/`{}` | ast-grep `mandate-except-sentinel` | changed | clarius CLAUDE.md:422-423 | raise typed, or return a typed outcome |
+| `broad_suppress` | PY-06 | `contextlib.suppress(Exception)` | ast-grep `mandate-broad-suppress` | changed | clarius AGENTS.md:653-655 | name the expected exceptions |
+| `no_any` | PY-03 | the type checker switched off | ruff `ANN401` + ast-grep `mandate-explicit-any` (annotations, generics, aliases, the import) | changed | clarius AGENTS.md:657-658; vigil-ai-tpm RULES.md:10-11; vigil-oto CLAUDE.md:117 | `object`, a Protocol/TypeVar, a JSON alias, a model |
+| `raise_from` | PY-07 | a lost exception chain | ruff `B904` | changed | vigil-ai-tpm RULES.md:48-52 | `raise X(...) from exc` |
+| `bare_exception_raise` | PY-08 | `raise Exception(...)` | ruff `TRY002` | changed | clarius README.md:123-125 | a specific exception class |
+| `raise_without_message` | PY-08 | `raise X()` / `raise XError` with no reason | ast-grep `mandate-raise-without-message` | changed | clarius README.md:123-125 | say what failed and how to fix it |
+| `unchecked_subprocess` | PY-13 | a failing child ignored | ruff `PLW1510` | changed | vigil-ai-tpm RULES.md:123-125 | `check=True`, or `check=False` and branch |
+| `suppression_code` | PY-09 | blanket `# noqa` / `# type: ignore` | ruff `PGH004`, `PGH003` | changed | vigil-ai-tpm RULES.md:83-86 | name the code |
+| `suppression_reason` | PY-09 | a mandate suppression with no reason | text check | changed | vigil-ai-tpm RULES.md:83-86 | add `# SAFETY: <reason>` on the line |
+| `str_enum_param` | PY-04 | `mode: str`, `kind: int` and similar | ast-grep `mandate-str-enum-param` | changed | clarius CLAUDE.md:420-422; vigil-spark AGENTS.md:200 | an Enum, parsed at the boundary |
+| `literal_enum` | PY-04 | `Literal["a", "b"]` as an enum | ast-grep `mandate-literal-enum` | warn | vigil-spark rule (vigil-ai-tpm RULES.md:11 recommends `Literal`) | an Enum |
+| `magic_number` | PY-04 | unexplained numbers in comparisons | ruff `PLR2004` | warn | clarius CLAUDE.md:420-422 | a named constant or IntEnum |
+| `python_syntax` | PY-10 | a file nothing could check | ruff parse errors | changed | git-guard | fix the syntax error |
+| `rust_panic` | RS-01 | `unwrap`/`expect`/`panic!`/`todo!`/`unimplemented!` in non-test Rust | ast-grep `mandate-rust-panic` | changed | clarius CLAUDE.md:57; vigil-audio AGENTS.md:31-38; agent-hub CLAUDE.md:253 | a typed error with `?` |
+
+The whole-file panic set of §4 (`astgrep_panics`, default warn) is unchanged and
+independent of `rust_panic`.
+
+**Exemptions.**
+- Test code (`tests/`/`test/` dirs, `test_*.py`, `*_test.py`, `conftest.py`;
+  Rust `tests/`, `benches/`, `examples/`, `*_test.rs`, `tests.rs`, `build.rs`,
+  and inline `#[cfg(test)]` modules and `#[test]` functions) is exempt from
+  `no_any`, the silent-failure rules (`bare_except`, `blind_except`,
+  `except_*`, `broad_suppress`), `str_enum_param`, `literal_enum`,
+  `magic_number` and `rust_panic`. It is **not** exempt from `pydantic_v1`,
+  `raise_*`, `unchecked_subprocess` or the suppression rules.
+- Vendored trees are exempt from everything: any path with a `vendor`,
+  `_vendor`, `third_party`, `external*`, `node_modules`, `.venv` or
+  `site-packages` directory component, plus any repo-relative directory the
+  repo declares with `mandate.vendored=dir/a,dir/b` (vigil-spark needs
+  `qobi/chumpy`, a vendored copy of chumpy that holds the only whole-file
+  `bare_except` hit measured across four fleet repos). An entry that is absolute
+  or contains `..` is a config TOOL ERROR. `*.pyi` stubs are not scanned.
+
+**Recording justified debt (on the line).** Every finding prints the rule, the
+`file:line`, the offending line, why the rule exists (with its source), how to
+fix it, and the exact suppression to use if the code is right as written:
+```python
+except Exception as exc:  # noqa: BLE001  # SAFETY: collected and re-raised by the caller
+except OSError:  # ast-grep-ignore: mandate-except-pass  # SAFETY: optional probe; absence is the answer
+```
+```rust
+let first = v.first().expect("non-empty");  // ast-grep-ignore: mandate-rust-panic  // SAFETY: len checked above
+```
+A ruff-backed rule accepts its ruff code in `# noqa:` (`S110` also covers
+`mandate-except-pass`, `S112` covers `mandate-except-continue`, `ANN401` covers
+`mandate-explicit-any`); every rule accepts `ast-grep-ignore: <rule-id>` on the
+line or on a comment line directly above it. git-guard applies this
+suppression model itself rather than relying on ast-grep's: ast-grep 0.39.5 (the
+CI pin) ignores a same-line `ast-grep-ignore: id  # SAFETY: ...` that 0.45.3
+honours, so the result would otherwise depend on the installed version. On an
+added line, a mandate suppression without `SAFETY:` or `best-effort:` is itself a
+`suppression_reason` finding. A blanket `# noqa` never suppresses a mandate
+ast-grep rule.
+
+**Outcomes.** The scanner always ends with one determined line:
+`BLOCKED — n finding(s) …: rule (count), …` (exit 1), `PASSED — 0 blocking
+findings …` (exit 0, with warnings and any unevaluated rules counted), or
+`TOOL ERROR` (exit 2). A TOOL ERROR is never read as a clean scan, and it refuses
+the commit:
+- ruff exiting with anything but 0/1, output that is not a JSON list, or an exit
+  code that disagrees with the number of diagnostics;
+- ast-grep exiting non-zero (all mandate rules are `severity: warning`, so a
+  finding never makes it exit non-zero) or printing a line that is not a finding;
+- the rule files under `rules-examples/mandate/` not matching the scanner's table;
+- an executable named `ast-grep` whose `--version` exits non-zero or does not
+  name ast-grep (a broken install is not a missing tool). An `sg` that is not
+  ast-grep, such as util-linux set-group, still just means ast-grep is absent;
+- an invalid `mandate.<rule>` value, or a `.qa-gate.conf` that does not parse;
+- any child process still running after `GIT_GUARD_MANDATE_TIMEOUT` seconds
+  (default 300). It is killed. Measured 2026-10-14: ast-grep 0.39.5 (the CI pin)
+  deadlocked in a futex wait on a one-file `scan --rule` while the host was busy,
+  so a hang would otherwise hold a commit forever.
+
+A scanner that is **not installed** (or a `python3` that cannot start, such as an
+unconfigured version-manager shim) is a WARN that names every rule it left
+unevaluated, then exit 0: the anti-brick rule of §2. ruff is resolved like the
+ruff check in §2 (repo `.venv`, then `$VIRTUAL_ENV`, then `PATH`), ast-grep only
+when the binary identifies itself as ast-grep. ruff runs with `--isolated` and an
+explicit `--select`, so a repo's ruff config cannot turn a mandate rule off; only
+`mandate.<rule>` can. ruff's "syntax added in Python 3.x" version advisories are
+ignored; a real parse failure is `python_syntax`.
+
+**Debt register (pre-push ratchet).** A repo with a backlog it cannot fix at once
+records it per rule **per file** in `.git-guard/mandate-baseline.json`:
+```json
+{
+  "version": 1,
+  "policy_revision": "git-guard-mandate-1",
+  "measured_at_commit": "<sha>",
+  "rules": {
+    "except_pass": {"src/legacy.py": 3},
+    "no_any": {}
+  }
+}
+```
+`--write-baseline` writes it from the index (or `--rev REV`) for every enforced
+(`changed`/`block`) rule, and refuses when a rule could not be evaluated rather
+than record a zero for it. `--check-baseline [--rev REV]` (pre-push runs it for
+each pushed commit carrying the file) counts that commit's tree and blocks on:
+
+| Problem | Meaning | Fix the message gives |
+|---|---|---|
+| MALFORMED | not JSON, wrong `version`, a missing field, a non-positive count | fix the file or regenerate it |
+| REGRESSION | a file's count rose above its ceiling | fix the new finding, or raise that ceiling in the same diff with a reason |
+| UNRATCHETED | a count fell but the ceiling did not | the exact edit: `set rules.<rule>["<path>"] to N` or `delete …` |
+| UNDECLARED | an enforced rule has findings and no entry | fix them, or declare the backlog with `--write-baseline` |
+| STALE | an entry for a rule that is unknown or not enforced | delete the entry |
+
+Ceilings are per file so that fixing a finding in one file cannot pay for a new
+one in another. A `policy_revision` different from the scanner's prints a note
+and the counts are still compared. Whole-tree counts (`--all [--rev REV]`, JSON
+on stdout) are how a repo measures its backlog before adopting the register.
+
+**Not enforced, by decision.** A general ban on `Optional`/`None` (about 16.7k
+fleet lines; no source asks for it): only the error-path reading above
+(`except_sentinel`) is enforced, and returning `None` for a genuinely absent value
+remains fine. Dataclasses and TypedDict are allowed (vigil-oto CLAUDE.md:116-117).
+`Literal[...]` stays at `warn` because vigil-ai-tpm recommends it. vigil-spark's
+`py-no-except-empty-sentinel` exempts `return False` in predicates; the mandate
+does not, so such a predicate records a `SAFETY:` suppression on the except line.

@@ -105,7 +105,12 @@ t_case_python_crlf() {
   # Shell layer on its own: an interpreter whose output is rewritten to CRLF
   # after the fact, so the embedded reconfigure cannot help. Only the
   # `tr -d` in qa_python_scoped_files stands between it and mypy.
-  real_py="$(command -v "$py")"
+  # The interpreter itself, not whatever `command -v` finds: on a host where
+  # `python` is a version-manager shim (mise, pyenv), that shim resolves
+  # `python` again through PATH, finds crlf-bin/python first and calls it, which
+  # calls the shim: an unbounded process chain (measured on asuspro13
+  # 2026-10-15, thousands of processes; it was also why this case failed there).
+  real_py="$("$py" -c 'import sys; print(sys.executable)')"
   mkdir -p "$r/crlf-bin"
   for shim in python python3; do
     {

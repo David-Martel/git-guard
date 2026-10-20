@@ -47,6 +47,7 @@ can soften or disable any check with a per-repo `.qa-gate.conf`.
 | `shellcheck` (staged `*.sh`) | **block** | fast, high-signal |
 | `ruff check` (staged `*.py`) | **block** | repo config if present, else minimal `E,F` |
 | JSON parse (staged `*.json`) | **block** | cheap, real |
+| Quality mandate (staged `*.py` / `*.rs`) | **block on changed lines** | pydantic v2, no `Any`, no silent excepts, typed errors, no Rust panics; old debt in a touched file does not block ([QA_TOOLING.md §13](docs/QA_TOOLING.md#13-quality-mandate)) |
 | ast-grep (everything else), `ruff format`, `cargo fmt`, `clippy`, `mypy`, panic-set, large-file | **warn** / opt-in | never blocks WIP by default; Python type checks honor configured project scope |
 
 Full schema, precedence, and the rule catalog: [`docs/QA_TOOLING.md`](docs/QA_TOOLING.md).
@@ -243,7 +244,7 @@ git-guard/
 │   ├── prepare-commit-msg deterministic agent attribution trailers (Codex, Claude)
 │   ├── commit-msg         Agent trailer vs signing key (warn-only) + preserve/* Preserve-Of: check + downstream chaining
 │   ├── post-commit        landed-SHA feedback (verify before any reset)
-│   ├── pre-push           git-lfs upload + pushed-range attestation (warn-only) + new-branch hygiene limit + downstream chaining
+│   ├── pre-push           git-lfs upload + pushed-range attestation (warn-only) + new-branch hygiene limit + mandate debt register + downstream chaining
 │   ├── post-checkout      backlog hygiene warning after `git worktree add` (never fails)
 │   └── common/            the engine
 │       ├── qa_gate.sh         language-gated, configurable QA gate
@@ -251,10 +252,11 @@ git-guard/
 │       ├── identity.sh        per-agent signing identity + attestation (git-guard identity)
 │       ├── nul-cleanup.{sh,ps1}  reserved-filename hygiene
 │       ├── preserve.sh        preserve/* structural-only exemption (docs/QA_TOOLING.md §11)
+│       ├── mandate_scan.{sh,py}  owner quality mandate: changed-line rules + debt register (docs/QA_TOOLING.md §13)
 │       ├── qa-gate.conf       global defaults (block|warn|off per check)
 │       └── qa-sgconfig.yml    ast-grep rule-category reference
 ├── identity/allowed_signers  versioned key -> principal map (ships empty; see docs/IDENTITY.md)
-├── rules-examples/        curated, public example ast-grep rules (incl. the BLOCK trio)
+├── rules-examples/        curated, public example ast-grep rules (incl. the BLOCK trio; mandate/ = quality-mandate rules)
 ├── bin/git-guard          the CLI
 ├── install.sh             idempotent, reversible installer (symlinks + overlay)
 ├── branch-protection.sh   optional GitHub ruleset applier
