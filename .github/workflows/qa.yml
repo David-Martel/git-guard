@@ -43,9 +43,11 @@ jobs:
   # then exercise doctor/rules and the bundled-rule validation in-container.
   # ---------------------------------------------------------------------------
   self-test-docker:
-    # This distinct label belongs only to the source-qualified native runner on
-    # vigil1's private rootless Docker engine. The Podman-hosted runner has no engine.
-    runs-on: [self-hosted, Linux, X64, vigil1, git-guard-native-docker, "git-guard-run-${{ github.run_id }}-${{ github.run_attempt }}"]
+    # Admit only same-repository PRs to the source-qualified ASUS carrier.
+    # Its private rootless engine and exact invocation label exclude host-socket
+    # runners and other runs; carrier qualification is a separate deployment gate.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, asuspro13, git-guard-native-docker, "git-guard-run-${{ github.run_id }}-${{ github.run_attempt }}"]
     # A hung step on a self-hosted runner holds the runner until GitHub's 24h ceiling —
     # we measured a real 24h00m00s job elsewhere in this fleet. This suite finishes in
     # ~2 min; 20 is generous and still fails fast.
@@ -127,7 +129,8 @@ jobs:
   # Docker and WSL are both unavailable, so manual QA exercises it directly.
   # ---------------------------------------------------------------------------
   self-test-native:
-    runs-on: [self-hosted, Linux, X64, git-guard-local, vigil1]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, git-guard-local, asuspro13]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
