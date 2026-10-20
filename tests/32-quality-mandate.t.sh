@@ -153,6 +153,30 @@ t_case_quality_mandate() {
   _qm_has "$log" "git-guard mandate: PASSED" "the pass is stated, not silent"
   gg_rmrepo "$r"
 
+  # PR #72 actual review: inter-hunk context joined clean edits across old debt.
+  r="$(_qm_repo)"
+  _qm_put "$r" app.py 'value = 1\n\ndef probe():\n    try:\n        connect()\n    except OSError:\n        pass\n\nvalue2 = 1\n'
+  _qm_commit "$r" "existing debt between clean edits"
+  _qm_put "$r" app.py 'value = 2\n\ndef probe():\n    try:\n        connect()\n    except OSError:\n        pass\n\nvalue2 = 2\n'
+  ( cd "$r" && git config diff.interHunkContext 20 )
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 0 "$rc" "inter-hunk context cannot turn unchanged debt into staged findings"
+  gg_rmrepo "$r"
+
+  # PR #72 actual review: Git LF rows and Ruff CR rows disagreed and passed debt.
+  r="$(_qm_repo)"
+  ( cd "$r" && git -c core.hooksPath="$GG_T_TMPROOT/qm-no-hooks" commit --allow-empty -qm "base" )
+  _qm_cr_base="$(git -C "$r" rev-parse HEAD)"
+  _qm_put "$r" app.py 'import subprocess\rsubprocess.run(["false"])\r'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 2 "$rc" "lone-CR staged source is a tool error, never a clean scan"
+  _qm_has "$log" "lone CR line endings" "the staged error explains ambiguous line coordinates"
+  _qm_commit "$r" "CR source"
+  _qm_scan "$r" "$log" --range "$_qm_cr_base..HEAD"; rc=$?
+  t_expect_rc 2 "$rc" "lone-CR range source is a tool error, never a clean scan"
+  _qm_has "$log" "lone CR line endings" "the range error explains ambiguous line coordinates"
+  gg_rmrepo "$r"
+
   # Pure renames have no +++ header, but their destinations still need BLOCK rules.
   r="$(_qm_repo)"
   _qm_put "$r" legacy.txt 'from pydantic.v1 import BaseModel\n'
