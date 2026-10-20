@@ -221,6 +221,16 @@ EOF
   grep -q 'clean tracked HEAD workspace' "$log"; t_assert $? 'hidden dependency has a pushed-source refusal'
   if [ -s "$marker" ]; then t_fail 'hidden dependency invoked provider'; else t_ok 'hidden dependency refused before provider'; fi
   if git --git-dir="$remote" rev-parse --verify refs/heads/submodule-hidden >/dev/null 2>&1; then t_fail 'hidden dependency published a ref'; else t_ok 'hidden dependency did not publish a ref'; fi
+  # The recorded dependency commit can also hide substituted bytes in its own index.
+  git -C "$submodule_repo/dependency" checkout -q --detach "$bad"
+  git -C "$submodule_repo/dependency" update-index --assume-unchanged -- source.txt
+  printf 'good\n' > "$submodule_repo/dependency/source.txt"
+  : > "$marker"
+  (cd "$submodule_repo" && env PATH="$path" git push "$remote" HEAD:refs/heads/submodule-index-hidden) > "$log" 2>&1
+  t_expect_rc 1 "$?" 'submodule live-index flags cannot hide substitute source from real Git push'
+  grep -q 'submodule-backed source is unsupported' "$log"; t_assert $? 'hidden submodule bytes have an explicit unsupported-source refusal'
+  if [ -s "$marker" ]; then t_fail 'hidden submodule bytes invoked provider'; else t_ok 'hidden submodule bytes refused before provider'; fi
+  if git --git-dir="$remote" rev-parse --verify refs/heads/submodule-index-hidden >/dev/null 2>&1; then t_fail 'hidden submodule bytes published a ref'; else t_ok 'hidden submodule bytes did not publish a ref'; fi
   gg_rmrepo "$submodule_repo"
 
   previous="$head"

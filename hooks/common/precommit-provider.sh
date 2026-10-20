@@ -62,6 +62,12 @@ if [ "$stage" = pre-push ]; then
   done < "$refs"
   # Deletions and unchanged sources do not execute software QA.
   [ "$updates" -ne 0 ] || exit 0
+  # Parent comparisons do not seal a submodule's own index and tracked bytes.
+  tree_modes="$(git ls-tree -r --format='%(objectmode)' "$head")" || exit 1
+  if printf '%s\n' "$tree_modes" | grep -qx 160000; then
+    printf '%s\n' 'git-guard BLOCK: pre-commit pre-push needs a clean tracked HEAD workspace; submodule-backed source is unsupported until recursively validated; use an explicit repository gate that qualifies immutable snapshots.' >&2
+    exit 1
+  fi
   # The framework selects its first eligible input record. Replaying unchanged
   # annotated-tag rewrites would let an empty diff conceal the changed release.
   # Keep the admitted record's original object identities and remote ref names.

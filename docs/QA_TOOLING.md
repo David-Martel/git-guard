@@ -112,6 +112,12 @@ sources and multiple changed updates refuse before execution; publish them
 separately from their corresponding checkout or use an explicit repository gate
 that qualifies immutable snapshots. This route does not seal untracked files,
 environments or dependencies and is not a remote/offload qualification receipt.
+The new declared pre-commit pre-push route also refuses any gitlink in the pushed
+HEAD: submodule-backed source is unsupported until recursively validated. This
+includes clean and uninitialized submodules; parent comparisons cannot seal a
+submodule's own index and tracked bytes. Use an explicit repository gate that
+qualifies immutable snapshots for these repositories. Commit-time framework
+dispatch and the other providers retain their existing semantics.
 The explicit/local/lefthook providers retain their own semantics, and the
 documented emergency bypass remains available.
 
