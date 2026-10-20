@@ -589,7 +589,8 @@ def parse_changed_lines(diff: str) -> Dict[str, Set[int]]:
     out: Dict[str, Set[int]] = {}
     current: Optional[str] = None
     in_header = False
-    for line in diff.splitlines():
+    # Git records use LF; Unicode separators inside source are not diff records.
+    for line in diff.split("\n"):
         if line.startswith("diff --git "):
             current = None
             in_header = True

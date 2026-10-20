@@ -196,7 +196,12 @@ t_case_quality_mandate() {
 
   # ---- pydantic v1: blocks, including in test files ----------------------------
   r="$(_qm_repo)"
-  _qm_put "$r" 'vendor\model.py' 'from pydantic.v1 import BaseModel\n'
+  # Exercise changed-line policy: BLOCK would find the violation regardless of hunks.
+  _qm_conf "$r" 'mandate.pydantic_v1=changed\n'
+  # Git records are LF-delimited; a source U+2028 must not reset the later hunk.
+  _qm_put "$r" 'vendor\model.py' 'marker = "old"\n\nfrom pydantic import BaseModel\n'
+  _qm_commit "$r" "clean pydantic fixture"
+  _qm_put "$r" 'vendor\model.py' 'marker = "prefix diff --git a/fake b/fake"\n\nfrom pydantic.v1 import BaseModel\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 1 "$rc" "'from pydantic.v1 import BaseModel' blocks"
   _qm_has "$log" "[pydantic_v1]" "the block names pydantic_v1"
