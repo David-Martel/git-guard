@@ -1123,6 +1123,7 @@ def run_astgrep(
             "--filter",
             pattern,
             "--json=stream",
+            "--",
             *batch,
         ]
         done = run(command, cwd=root, tool="ast-grep")

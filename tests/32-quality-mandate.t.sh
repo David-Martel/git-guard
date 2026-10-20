@@ -230,6 +230,22 @@ t_case_quality_mandate() {
   t_expect_rc 1 "$rc" "'from pydantic.v1 import BaseModel' blocks"
   _qm_has "$log" "[pydantic_v1]" "the block names pydantic_v1"
   gg_rmrepo "$r"
+  # PR #72 actual review: this tracked filename was parsed as an ast-grep option.
+  r="$(_qm_repo)"
+  ( cd "$r" && git -c core.hooksPath="$GG_T_TMPROOT/qm-no-hooks" commit --allow-empty -qm "base" )
+  _qm_option_base="$(git -C "$r" rev-parse HEAD)"
+  _qm_put "$r" './--globs=!*.py' 'from pydantic.v1 import BaseModel\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "an option-shaped filename cannot hide staged pydantic v1"
+  _qm_has "$log" "[pydantic_v1]" "the option-shaped staged file retains its finding"
+  ( cd "$r" && sh "$_QM_SCAN" --all ) >"$log.json" 2>"$log"
+  "$(gg_python)" -c 'import json, sys; sys.exit(json.load(open(sys.argv[1]))["totals"]["pydantic_v1"] != 1)' "$log.json"; rc=$?
+  t_expect_rc 0 "$rc" "whole-tree counts retain pydantic v1 in the option-shaped file"
+  _qm_commit "$r" "option-shaped source"
+  _qm_scan "$r" "$log" --range "$_qm_option_base..HEAD"; rc=$?
+  t_expect_rc 1 "$rc" "an option-shaped filename cannot hide range pydantic v1"
+  _qm_has "$log" "[pydantic_v1]" "the option-shaped range file retains its finding"
+  gg_rmrepo "$r"
   r="$(_qm_repo)"
   _qm_put "$r" tests/test_model.py 'from pydantic.v1 import BaseModel\n'
   _qm_scan "$r" "$log" --staged; rc=$?
