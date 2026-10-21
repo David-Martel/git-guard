@@ -1218,15 +1218,17 @@ Hidden native children have finite execution and output-drain bounds. Normal
 Windows installation runs the existing `hygiene.sh defaults` against the private
 serialized global file in the same transaction; it does not duplicate the
 defaults or write them individually to the live config. Only that child's
-`GIT_CONFIG_GLOBAL` and native-tool PATH binding change. Existing choices remain
-authoritative. `--no-git-defaults` omits that call; Linux and dry-run behavior stay
+`GIT_CONFIG_GLOBAL` and native-tool PATH binding change. Choices read by the
+unchanged defaults command remain authoritative; its native Git global-file
+selection is preserved, rather than redefined by this publisher.
+`--no-git-defaults` omits that call; Linux and dry-run behavior stay
 unchanged. Uninstall configuration behavior is outside this review scope.
 
 ### Config publication review register
 
 Metadata author: `codex-gen9-runner-reliability`. Independent reviewer
 `rootcodex-gen9-fleet` (Codex; did not author this source or metadata) reviewed
-the exact frozen source/test snapshot below and recorded APPROVE. The register
+the initial frozen source/test snapshot below and recorded APPROVE. The register
 covers the two named category 27 groups;
 other legacy suite selectors and fleet deployment are outside this review scope.
 
@@ -1246,7 +1248,8 @@ other legacy suite selectors and fleet deployment are outside this review scope.
 Group hashes cover each complete function body, UTF-8/LF, trailing whitespace
 removed followed by one LF. The config group SHA256 is
 `C44390B031DE77541F1AF755824052C3F344760F2CFA21FA04177FB92142E8BB`.
-Frozen raw and LF-normalized production/test SHA256 values are identical:
+Initial raw and LF-normalized production/test SHA256 values are identical;
+the later dual-global test-only successor is bound separately below:
 
 | Source | SHA256 |
 | --- | --- |
@@ -1370,3 +1373,65 @@ the full run and paired controls; both required current-head CI jobs passed.
 The stale-branch fail-open can matter to native PowerShell callers, where
 `MSYSTEM` is commonly unset. It is a separate real reliability follow-up; this
 ACL qualification is not general acceptance of Windows fleet hygiene.
+
+### Dual-global review successor
+
+The genuine autopilot Claude review of `ceb1148bbc104b467b2042f74638e7b114df6469`
+requested changes because it inferred that staging only the home file newly
+ignored XDG choices. The finding was verified against actual native Git before
+changing production. The qualified runtime is Git `2.55.0.windows.5`, PowerShell
+7.6.7 and .NET 10.0.13. With both real global files present, native
+`git config --global --get fetch.prune` returned 1 when the home file lacked the
+key, and `--global --show-origin --list` showed only the home file. In the same
+inert directory/environment, `git config --show-origin --get fetch.prune`
+returned the XDG choice. Home precedence and explicit-global isolation also
+passed their positive controls. This distinction matters because the unchanged
+maintained defaults use `--global`; a normal all-scope read is not their baseline.
+The [Git documentation](https://git-scm.com/docs/git-config) describes both global
+files, so the test records actual command equivalence rather than declaring the
+observed one-file selection a permanent policy.
+
+The first new controls used a POSIX HOME for native Git launched directly from
+PowerShell, overlooking MSYS's child-environment translation. That fixture error
+was corrected before interpreting the result. The subsequent scope capture is
+receipt `E0E9F76CB4F3AC9A6034D5A7DD4548DFDD4D543C8F708EACBBF5D91E020C81FC`.
+Its failed expectations assumed both files participated in `--global`; they are
+not an installer-regression RED. No production source changed in this successor.
+
+The maintained dual-file controls now execute the unchanged `hygiene.sh defaults`
+directly against a private duplicate with the original HOME/XDG/global binding.
+They compare its actual exit codes, all six default-key outputs and ordered Git
+serialization with the publisher's result. Real all-scope origins prove that
+both files are functional; multi-value order, a literal `~/` value, home choice,
+explicit override and explicit empty-override refusal are detecting controls.
+The XDG bytes and descriptor must remain unchanged, and repeated installation
+must not rewrite the resulting home config. A runtime whose global selection
+differs must still produce equivalent original/publisher results; the test does
+not hardcode that XDG is always excluded. This preserves baseline behavior and
+does not certify all global-file semantics or resolve a pre-existing Git/defaults
+policy concern.
+
+The actual maintained config group passed 1 aggregate check, 0 failed, 0 skipped,
+including 190 inner native assertions, in 41534ms. All five source pins stayed
+unchanged, with no cleanup warning. Receipt SHA256:
+`56226BC8BBB259EADFC9E9125300CDE630F9768E9CFAAAC482B79D31A89F7FCC`.
+The successor test-file raw/LF SHA256 is
+`203750E10C332A8660135E1BC6032C467856864D38EB74DE7FD7B81525264002`;
+config-group SHA256 is
+`E4098BA785DBC92885097B1E9DD07E780CE3468CAAE50D51D74583F24575B5B1`.
+The legacy group and all production/runner pins above are unchanged.
+
+| Successor controls | Protects; weakening permits | Hash-bound review |
+| --- | --- | --- |
+| `default-dual-xdg`, `default-dual-home-wins`, `default-explicit-over-xdg`, `empty-global-refused` | Original defaults read/write semantics, functional XDG/home origins, ordered multi-values, literal tilde, explicit override isolation/refusal and repeat-install identity. Requires actual native Git, Windows and the fixture token described above. Weakening can invent a regression from a different Git scope, hide an actual selection regression or mutate operator XDG data. | Root component APPROVE; test `203750E10C332A8660135E1BC6032C467856864D38EB74DE7FD7B81525264002`, config group `E4098BA785DBC92885097B1E9DD07E780CE3468CAAE50D51D74583F24575B5B1`. |
+
+Independent reviewer `rootcodex-gen9-fleet` read the complete test-only diff and
+successor documentation, then actually replayed the canonical config group in
+41505ms: 1 aggregate passed, 0 failed, 0 skipped and 190 inner native assertions
+passed. All five source pins were stable, and the real global config bytes and
+SDDL stayed unchanged. Root recorded component APPROVE for this exact test/group
+binding; no production source changed. Independent receipt SHA256:
+`42CE2E0084A0DBDFABE1D56F575AA08A54679E3D97A4E0E5C774D0D6848D34A4`.
+Normal new-head CI and full-PR autopilot disposition remain pending. Neither
+component approval is relabeled as an outside-family or full-PR approval, and
+the broader Windows run above remains 1056/28/39 with its stated limitations.

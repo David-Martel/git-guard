@@ -381,6 +381,10 @@ $cases = @(
     @{ Name = 'changed-xdg-only'; Changed = $true; Protected = $true; Xdg = $true },
     @{ Name = 'default-missing'; Changed = $false; Protected = $true; Defaults = $true },
     @{ Name = 'default-kept'; Changed = $true; Protected = $true; Defaults = $true; Keep = $true },
+    @{ Name = 'default-dual-xdg'; Changed = $true; Protected = $true; Defaults = $true; Dual = $true },
+    @{ Name = 'default-dual-home-wins'; Changed = $true; Protected = $true; Defaults = $true; Dual = $true; HomeWins = $true },
+    @{ Name = 'default-explicit-over-xdg'; Changed = $true; Protected = $true; Defaults = $true; Dual = $true; Explicit = $true },
+    @{ Name = 'empty-global-refused'; Changed = $true; Protected = $true; Defaults = $true; Empty = $true },
     @{ Name = 'foreign-lock'; Changed = $true; Protected = $true; Locked = $true },
     @{ Name = 'absent-default'; Absent = $true },
     @{ Name = 'absent-normal-defaults'; Absent = $true; Defaults = $true }
@@ -395,14 +399,30 @@ foreach ($case in $cases) {
     $xdg = $case.ContainsKey('Xdg')
     $defaults = $case.ContainsKey('Defaults')
     $keep = $case.ContainsKey('Keep')
-    $config = Join-Path $homePath $(if ($absent) { '.gitconfig' } elseif ($xdg) { '.config/git/config' } else { 'explicit-global.config' })
+    $dual = $case.ContainsKey('Dual')
+    $explicit = $case.ContainsKey('Explicit')
+    $homeWins = $case.ContainsKey('HomeWins')
+    $emptyGlobal = $case.ContainsKey('Empty')
+    $config = Join-Path $homePath $(if ($absent -or ($dual -and -not $explicit)) { '.gitconfig' } elseif ($xdg) { '.config/git/config' } else { 'explicit-global.config' })
     $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($config))
     $posixHome = '/' + $homePath.Substring(0, 1).ToLowerInvariant() + $homePath.Substring(2).Replace('\', '/')
     $environmentValues = @{
         HOME = $posixHome
-        GIT_CONFIG_GLOBAL = $(if ($absent -or $xdg) { $null } else { $config })
+        GIT_CONFIG_GLOBAL = $(if ($emptyGlobal) { '' } elseif ($absent -or $xdg -or ($dual -and -not $explicit)) { $null } else { $config })
         GIT_CONFIG_NOSYSTEM = '1'
         XDG_CONFIG_HOME = $null
+    }
+    if ($dual) {
+        # Both real global files participate unless an explicit override exists.
+        # XDG-only coverage cannot detect the private-stage read-scope regression.
+        $xdgDirectory = Join-Path $homePath 'operator-xdg'
+        $xdgConfig = Join-Path $xdgDirectory 'git/config'
+        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($xdgConfig))
+        [IO.File]::WriteAllText($xdgConfig, "[fetch]`n prune = false`n[worktree]`n guessRemote = false`n[rerere]`n enabled = false`n[hygiene]`n maxWorktrees = 7`n maxStaleBranches = 9`n exemptLockPrefix = operator-one/`n exemptLockPrefix = ~/operator-two/`n")
+        $environmentValues.XDG_CONFIG_HOME = $xdgDirectory
+        if ($explicit) { [IO.File]::WriteAllText((Join-Path $homePath '.gitconfig'), "[fetch]`n prune = false`n") }
+        $xdgBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($xdgConfig))
+        $xdgSddl = (Get-Acl -LiteralPath $xdgConfig).Sddl
     }
     $beforeSddl = $null
     $beforeBytes = $null
@@ -418,6 +438,12 @@ foreach ($case in $cases) {
             foreach ($pair in @(@('fetch.prune', 'false'), @('hygiene.maxWorktrees', '7'), @('hygiene.exemptLockPrefix', 'operator-choice/'))) {
                 $seed = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--file', $config, $pair[0], $pair[1]) @{}
                 if ($seed.Exit -ne 0) { throw 'Operator-choice fixture configuration failed' }
+            }
+        }
+        if ($homeWins) {
+            foreach ($pair in @(@('fetch.prune', 'true'), @('hygiene.maxWorktrees', '11'), @('hygiene.exemptLockPrefix', 'home-choice/'))) {
+                $seed = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--file', $config, $pair[0], $pair[1]) @{}
+                if ($seed.Exit -ne 0) { throw 'Home precedence fixture configuration failed' }
             }
         }
         if (-not $legacy) {
@@ -440,10 +466,53 @@ foreach ($case in $cases) {
         $beforeTime = [IO.File]::GetLastWriteTimeUtc($config)
     }
     $locked = $case.ContainsKey('Locked')
+    if ($dual) {
+        # PowerShell launches native Git directly here; MSYS translates HOME
+        # only for the installer's shell child, not this native invocation.
+        $nativeGlobalEnvironment = $environmentValues.Clone()
+        $nativeGlobalEnvironment.HOME = $homePath
+        $baselinePrune = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--global', '--get', 'fetch.prune') $nativeGlobalEnvironment
+        $baselineOrigins = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('-C', $homePath, 'config', '--global', '--show-origin', '--list') $nativeGlobalEnvironment
+        $baselineAllScopes = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('-C', $homePath, 'config', '--show-origin', '--get', 'fetch.prune') $nativeGlobalEnvironment
+        Write-Output "GLOBAL-SCOPE $($case.Name): get_exit=$($baselinePrune.Exit) get=$($baselinePrune.Out.Trim()) origins=$($baselineOrigins.Out.Trim()) all_exit=$($baselineAllScopes.Exit) all=$($baselineAllScopes.Out.Trim())"
+        $expectedOrigin = if ($homeWins) { '.gitconfig' } else { 'operator-xdg' }
+        Assert-Actual ($baselineAllScopes.Exit -eq $(if ($explicit) { 1 } else { 0 }) -and
+            $(if ($explicit) { [string]::IsNullOrEmpty($baselineAllScopes.Out) } else {
+                $baselineAllScopes.Out.Contains($expectedOrigin) -and $baselineAllScopes.Out.Trim().EndsWith($(if ($homeWins) { 'true' } else { 'false' }))
+            })) "$($case.Name): real all-scope origin proves XDG/home precedence or explicit isolation"
+        $originalPrefixes = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('-C', $homePath, 'config', '--get-all', 'hygiene.exemptLockPrefix') $nativeGlobalEnvironment
+        $expectedOriginalPrefixes = if ($explicit) { @() } elseif ($homeWins) {
+            @('operator-one/', '~/operator-two/', 'home-choice/')
+        } else { @('operator-one/', '~/operator-two/') }
+        Assert-Actual ($originalPrefixes.Exit -eq $(if ($explicit) { 1 } else { 0 }) -and
+            ($originalPrefixes.Out.Trim() -split '\r?\n' -join '|') -ceq ($expectedOriginalPrefixes -join '|')) "$($case.Name): effective multi-value order and literal tilde fixture are genuine"
+
+        # Run the unchanged maintained defaults directly on a private duplicate.
+        # This is the original installer path, not a new interpretation of --global.
+        # Some native Git versions select one file for --global despite reading
+        # both in ordinary scope; compare actual command results on this runtime.
+        $baselineHome = Join-Path $env:GG_CONFIG_ACL_ROOT ($case.Name + '-original-defaults')
+        $null = [IO.Directory]::CreateDirectory($baselineHome)
+        $baselineConfig = Join-Path $baselineHome $(if ($explicit) { 'explicit-global.config' } else { '.gitconfig' })
+        [IO.File]::WriteAllBytes($baselineConfig, [IO.File]::ReadAllBytes($config))
+        $baselineEnvironment = $environmentValues.Clone()
+        $baselineEnvironment.HOME = '/' + $baselineHome.Substring(0, 1).ToLowerInvariant() + $baselineHome.Substring(2).Replace('\', '/')
+        if ($explicit) { $baselineEnvironment.GIT_CONFIG_GLOBAL = $baselineConfig }
+        $originalDefaults = Invoke-InertNative $env:GG_CONFIG_ACL_SH @((Join-Path $env:GG_CONFIG_ACL_SOURCE 'hooks/common/hygiene.sh'), 'defaults') $baselineEnvironment
+        Assert-Actual ($originalDefaults.Exit -eq 0 -and [string]::IsNullOrWhiteSpace($originalDefaults.Error)) "$($case.Name): actual original maintained defaults succeed on duplicate globals"
+        $baselineNativeEnvironment = $baselineEnvironment.Clone()
+        $baselineNativeEnvironment.HOME = $baselineHome
+    }
     if ($locked) { [IO.File]::WriteAllText($config + '.lock', 'foreign fixture lock') }
     $installArguments = @((Join-Path $env:GG_CONFIG_ACL_SOURCE 'install.sh'), '--to', 'v0.2.14')
     if (-not $defaults) { $installArguments += '--no-git-defaults' }
     $run = Invoke-InertNative $env:GG_CONFIG_ACL_SH $installArguments $environmentValues
+    if ($emptyGlobal) {
+        Assert-Actual ($run.Exit -eq 2 -and $run.Error.Contains('empty global config destination')) 'explicit empty GLOBAL remains refused rather than falling through to HOME/XDG'
+        Assert-Actual ([Convert]::ToBase64String([IO.File]::ReadAllBytes($config)) -ceq $beforeBytes -and
+            (Get-Acl -LiteralPath $config).Sddl -ceq $beforeSddl) 'explicit empty GLOBAL refusal never rewrites existing config'
+        continue
+    }
     if ($locked) {
         Assert-Actual ($run.Exit -eq 2) "$($case.Name): installer refuses another writer's lock"
         Assert-Actual ((Get-Acl -LiteralPath $config).Sddl -ceq $beforeSddl) "$($case.Name): descriptor remains original"
@@ -479,12 +548,26 @@ foreach ($case in $cases) {
     Assert-Actual (@([IO.Directory]::GetFiles([IO.Path]::GetDirectoryName($config), '.git-guard-config-original.*')).Count -eq 0) "$($case.Name): no retained validated sibling original"
     $prune = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--file', $config, '--get', 'fetch.prune') @{}
     if ($defaults) {
+        if ($dual) {
+            foreach ($key in @('fetch.prune', 'hygiene.maxWorktrees', 'hygiene.maxStaleBranches', 'worktree.guessRemote', 'rerere.enabled', 'hygiene.exemptLockPrefix')) {
+                $effective = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--global', '--get-all', $key) $nativeGlobalEnvironment
+                $originalEffective = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--global', '--get-all', $key) $baselineNativeEnvironment
+                Assert-Actual ($effective.Exit -eq $originalEffective.Exit -and $effective.Out -ceq $originalEffective.Out -and
+                    [string]::IsNullOrWhiteSpace($effective.Error) -and [string]::IsNullOrWhiteSpace($originalEffective.Error)) "$($case.Name): global $key matches actual original defaults"
+            }
+            $homeDefaults = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--file', $config, '--get-regexp', '^(fetch|worktree|rerere|hygiene)\.') @{}
+            $originalHomeDefaults = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--file', $baselineConfig, '--get-regexp', '^(fetch|worktree|rerere|hygiene)\.') @{}
+            Assert-Actual ($homeDefaults.Exit -eq $originalHomeDefaults.Exit -and $homeDefaults.Out -ceq $originalHomeDefaults.Out) "$($case.Name): published home defaults match exact native serialization and value order"
+            Assert-Actual ([Convert]::ToBase64String([IO.File]::ReadAllBytes($xdgConfig)) -ceq $xdgBytes -and
+                (Get-Acl -LiteralPath $xdgConfig).Sddl -ceq $xdgSddl) "$($case.Name): original XDG bytes and descriptor remain untouched"
+        } else {
         Assert-Actual ($prune.Exit -eq 0 -and $prune.Out.Trim() -ceq $(if ($keep) { 'false' } else { 'true' })) "$($case.Name): missing default is added or operator choice retained"
         $limit = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--file', $config, '--get', 'hygiene.maxWorktrees') @{}
         Assert-Actual ($limit.Exit -eq 0 -and $limit.Out.Trim() -ceq $(if ($keep) { '7' } else { '3' })) "$($case.Name): existing numeric choice wins over default"
         $prefix = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--file', $config, '--get-all', 'hygiene.exemptLockPrefix') @{}
         $expectedPrefixes = if ($keep) { @('operator-choice/') } else { @('vigil.operator-release/', 'vigil.fleet-build/') }
         Assert-Actual ($prefix.Exit -eq 0 -and (($prefix.Out.Trim() -split '\r?\n') -join '|') -ceq ($expectedPrefixes -join '|')) "$($case.Name): existing multi-value choice wins over defaults"
+        }
         $defaultBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($config))
         $defaultDescriptor = (Get-Acl -LiteralPath $config).Sddl
         [IO.File]::SetLastWriteTimeUtc($config, [DateTime]::UtcNow.AddDays(-2))
