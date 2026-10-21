@@ -1474,3 +1474,46 @@ and `ADFAD3C2455179CE7097A06DD950B45E12C5C562488E22BBB6D2818A72774CE9`.
 | `test_positive_preserves_binary_output_and_argv` | `888a82da5bb8d829e21c1531fa2f8476a5b4f7b744e8b1850a18ebfa53847504` | W | keep |
 | `test_signal_during_launch_still_reaps_child` | `d28d6428867790b231bdbf7432a2c4c45030fe9cf997681e8cf23acc6d0be058` | W | keep |
 | `test_timeout_also_retires_descendant` | `f2ca811722bcb52e4fbf55ac56bc9a65cf6a5d9300b851e7a7d47b95e6b7f8c6` | W | keep |
+
+### Repository-independent signature runtime correction
+
+The correction at commit `64226a55e0894d56b3ce3a2d74b19fbf8e0275dc`
+supersedes the identity and installer target bindings above. Independent agent
+`rootcodex-gen9-fleet` reviewed its six-file source/test/documentation diff on
+2026-10-21 (`2a0888`, `80c2ec`) and kept the final rationale-only docstring binding
+`7112B2D5C5963F4FE36A2A2047C55AF069FF9BE190BC4F50A49EE650BA22560D`
+after reading it separately (`3bc336`). No worker implementation changed.
+
+The new assertions protect real signature verification and the actual installer
+readiness gate from an unavailable caller `.python-version` and invalid `uv.toml`.
+Weakening them permits attestation to be skipped in warn mode, rejected in enforce
+mode, or a compatible installation to fail because of its caller's directory.
+The author ran these assertions before the correction: two real-verification
+controls and the installer's positive readiness control failed (`169362`).
+Afterward, the maintained Windows and Linux identity suites each passed 56 outer
+controls (`6be535`, `37ea5c`). Windows worker execution passed nine tests with its
+one explicit POSIX-only skip; Linux passed all ten. Ruff and ShellCheck passed.
+These are author executions, not independent reviewer executions.
+
+Root independently executed the worker suite before the rationale-only change:
+nine passed and the POSIX-only case skipped (`14254c`, `e53165`), including the
+actual install gate under the hostile caller files. Root did not repeat the real
+SSH-signature controls for this correction. Outside-family PR review, exact-head
+CI and fleet installation remain separate gates.
+
+| Reviewed selector or group | Selector SHA256 | Target binding | Disposition |
+| --- | --- | --- | --- |
+| `WorkerTests::test_install_runtime_failure_prevents_promotion_gate` | `e6ecb9a342b12a460f49c6dee12f766321aace7ade08a45869128071fb31309a` | normalized installer target `e9afedd44b6babb0e74f11a8b5e78401a2b0daa2f30b0a31960ad19230e7739d` | keep |
+| `WorkerTests::test_identity_deadline_discards_partial_attestation` | `c79d1156c9dab6265b0d5a5d401ddda811737ace22750f3c40180babf02ec642` | normalized identity target `38ba5ef05b0fd298e3134a5213d357653549982704e6a841cda0c1b64a4ee52b` | keep |
+| `t_case_identity_verify`, including both caller-isolation assertions | `47AADF3250214C77510E0CEE382F93F4EAAE30436E338BC51481B7E636C3E109` | identity raw file `42ACE5A5810CF888B7C840FD1905D2B25B5992D53FBA4BB195D8F321E5EDDB10` | keep |
+| `t_case_identity_worker`, runtime-selection launcher | `007BBC52EF7E156E3E21B55F3B1964578C31242C7E779F84AD27B56B97634D86` | Python test raw file `7112B2D5C5963F4FE36A2A2047C55AF069FF9BE190BC4F50A49EE650BA22560D` | keep |
+
+The first two rows use the shared doc-checker's AST/target hashes (`ce4436`).
+The manually registered shell selectors bind their function text with CRLF
+normalized to LF, from the function declaration through its closing brace
+(`56e3f2`). Full shell test file pins are respectively
+`D734DC3E508841FF28381BA1E0873D37484428A221ED5E9B2EA6C62CB9510483`
+and `7A1D59EF7BDC1ABE8DC9F65488FCAAFBB994E1B1854BD01062A2786B910E0157`;
+the installer raw file pin is
+`9E430B7B3F19E150614BD36F1E7AA057D8060D7D27D95CA403E26A9BB78BB442`.
+The unchanged worker-only selector/target bindings above remain applicable.
