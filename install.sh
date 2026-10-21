@@ -311,7 +311,10 @@ qa_verify_materialized_tree() {
       return 2
     fi
     if command -v cygpath >/dev/null 2>&1; then identity_worker="$(cygpath -aw "$identity_worker")"; fi
-    if ! uv run --offline --no-project --no-python-downloads python -I -S -B "$identity_worker" --check-runtime; then
+    identity_python_request='>=3.10'
+    case "$(uname -s 2>/dev/null || :)" in Darwin) identity_python_request='>=3.13' ;; esac
+    if ! uv run --offline --no-project --no-config --no-python-downloads \
+         --python "$identity_python_request" python -I -S -B "$identity_worker" --check-runtime; then
       echo 'git-guard install: VERIFY FAILED — offline signature containment runtime unavailable; current is untouched.' >&2
       return 2
     fi

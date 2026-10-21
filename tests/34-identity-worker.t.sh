@@ -11,6 +11,9 @@ t_case_identity_worker() {
   fi
   test_file="$GG_ROOT/tests/test_identity_worker.py"
   if command -v cygpath >/dev/null 2>&1; then test_file="$(cygpath -aw "$test_file")"; fi
-  uv run --offline --no-project --no-python-downloads python -I -S -B "$test_file"
+  python_request='>=3.10'
+  case "$(uname -s 2>/dev/null || :)" in Darwin) python_request='>=3.13' ;; esac
+  uv run --offline --no-project --no-config --no-python-downloads \
+    --python "$python_request" python -I -S -B "$test_file"
   t_expect_rc 0 "$?" "identity worker containment, deadline and attestation controls"
 }

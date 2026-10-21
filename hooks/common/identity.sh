@@ -425,7 +425,11 @@ gg_verify_rows() {
   fi
   # log.showSignature would splice raw ssh-keygen output into the format.
   # Offline means no package resolution/downloads; missing runtime fails closed.
-  if ! uv run --offline --no-project --no-python-downloads python -I -S -B "$worker" \
+  # An explicit request and no-config isolate tool runtime from caller pins.
+  python_request='>=3.10'
+  case "$(uname -s 2>/dev/null || :)" in Darwin) python_request='>=3.13' ;; esac
+  if ! uv run --offline --no-project --no-config --no-python-downloads \
+       --python "$python_request" python -I -S -B "$worker" \
        --timeout-seconds "$deadline" --output "$worker_out" --error "$worker_err" -- \
        "$git_exe" -c "gpg.ssh.allowedSignersFile=$signers" -c log.showSignature=false \
        log --no-show-signature "--format=$GG_VERIFY_FMT" "$@" 2>"$supervisor"; then

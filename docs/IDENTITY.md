@@ -124,7 +124,10 @@ The query in [`gg_verify_rows`](../hooks/common/identity.sh) preserves Git's
 already installed Python 3.10+ on Windows/Linux**. macOS needs Python 3.13+
 for `os.waitid` and remains unqualified by native execution here. The invocation
 is offline and disables Python
-downloads; an absent runtime is a configuration error, never an unbounded fallback.
+downloads. An explicit minimum-version request (`--python '>=3.10'`, or
+`'>=3.13'` on macOS) and `--no-config` keep repository `.python-version` pins and
+uv configuration from selecting this tool's interpreter. An absent compatible
+runtime is a configuration error, never an unbounded fallback.
 The [installer](../install.sh) runs the worker's offline `--check-runtime` probe
 before promoting a candidate release, reusing an installed candidate or linking
 a development checkout. Failed readiness leaves the active links untouched; it

@@ -75,8 +75,8 @@ class WorkerTests(unittest.TestCase):
             self.assertFalse(marker.exists(), "launch cancellation left child running")
 
     def test_install_runtime_failure_prevents_promotion_gate(self):
-        """Protects: missing runtime cannot strand an active hook installation.
-        Detects: candidate passes promotion gate despite failed offline runtime.
+        """Protects: offline readiness before promotion and caller isolation.
+        Detects: failed readiness admitted or compatible runtime rejected by pins.
         Needs: Python and POSIX sh; extracted real gate avoids global config.
         Breadcrumb: install.sh
         """
@@ -119,6 +119,9 @@ class WorkerTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(b"VERIFY FAILED", result.stderr)
             # Positive control: the same actual gate admits offline containment.
+            # Repository pins/config must not choose the installer's runtime.
+            (root / ".python-version").write_text("99.99.99\n", encoding="utf-8")
+            (root / "uv.toml").write_text("not valid TOML = [\n", encoding="utf-8")
             uv = require_tool("uv")
             unavailable.write_text(
                 "#!/bin/sh\nexec " + shlex.quote(uv.replace("\\", "/")) + ' "$@"\n',
@@ -126,6 +129,7 @@ class WorkerTests(unittest.TestCase):
             )
             result = subprocess.run(
                 [require_tool("sh"), str(harness), str(source)],
+                cwd=root,
                 env=environment,
                 capture_output=True,
                 timeout=10,

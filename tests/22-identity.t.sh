@@ -206,6 +206,18 @@ t_case_identity_verify() {
   grep -q "^ok   .* G claude Agent=claude" "$lab/v.out"
   t_assert "$?" "%GS names the agent principal (claude), not the shared email"
 
+  # Protects: caller Python pins/configuration cannot disable real attestation.
+  # Detects: uv chooses an unavailable repo interpreter or parses its config.
+  # Needs: the existing signed lab, uv and an installed compatible Python.
+  # Breadcrumb: hooks/common/identity.sh gg_verify_rows.
+  printf '99.99.99\n' > "$r/.python-version"
+  v "$clean"
+  t_expect_rc 0 "$?" "real signature verification ignores unavailable repository Python pin"
+  printf 'not valid TOML = [\n' > "$r/uv.toml"
+  v "$clean"
+  t_expect_rc 0 "$?" "real signature verification ignores caller uv configuration"
+  rm -f "$r/.python-version" "$r/uv.toml"
+
   gg_id_commit "$r" "$K/claude@testhost" codex "feat: mislabeled"
   v HEAD~1..HEAD
   t_expect_rc 1 "$?" "POSITIVE: claude key + Agent: codex -> exit 1"
