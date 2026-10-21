@@ -168,6 +168,13 @@ function Assert-Equal($actual, $expected, [string]$why) {
 }
 Assert-Equal (Get-FileHash $js).Hash '46D2615192CB8EBAADBF2FA43DAB8B1C93FEFE79260F61FB8571FDBAFE7A2EF1' 'fixture legacy JS pin'
 $before = (Get-FileHash $js).Hash
+# Distinguish in-place preservation from a same-directory delete/recreate.
+# Only this owned temporary fixture receives an explicit, protected descriptor.
+$descriptor = Get-Acl -LiteralPath $js
+$descriptor.SetAccessRuleProtection($true, $true)
+$readSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
+$descriptor.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($readSid, [Security.AccessControl.FileSystemRights]::Read, [Security.AccessControl.AccessControlType]::Allow))
+Set-Acl -LiteralPath $js -AclObject $descriptor
 $acl = (Get-Acl -LiteralPath $js).Sddl
 # plan_only_retains_legacy_bytes
 $plan = & $script -SourceRoot $source -BinDirectory $bin
@@ -240,7 +247,7 @@ $childInfo.ArgumentList.Add('-e')
 $childInfo.ArgumentList.Add('Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1200)')
 $clock = [Diagnostics.Stopwatch]::StartNew()
 $rejected = $false
-try { Invoke-WrapperSyntaxCheck -StartInfo $childInfo -TimeoutMilliseconds 80 } catch { $rejected = $_.Exception.Message -match 'timed out' }
+try { Invoke-WrapperSyntaxCheck -StartInfo $childInfo -TimeoutMilliseconds 80 } catch { $rejected = $_.Exception.Message -eq 'Node syntax validation timed out before any target write.' }
 $clock.Stop()
 Assert-Equal $rejected $true 'owned child timeout must fail'
 if ($clock.ElapsedMilliseconds -gt 700) { throw "Timeout cleanup exceeded test bound: $($clock.ElapsedMilliseconds)ms" }

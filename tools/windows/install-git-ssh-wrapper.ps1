@@ -93,7 +93,8 @@ if ((Get-FileHash -LiteralPath $sourceCmd -Algorithm SHA256).Hash -ne $launcherH
 }
 
 # Check the actual source without a shell, visible console or network connection.
-$node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+$node = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+if ([IO.Path]::GetExtension($node) -ine '.exe') { throw 'Node syntax validation requires a native node.exe executable.' }
 $start = [Diagnostics.ProcessStartInfo]::new($node)
 $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
@@ -139,7 +140,7 @@ try {
     }
     try {
         $jsStream.Position = 0
-        $jsStream.Write($sourceBytes)
+        $jsStream.Write($sourceBytes, 0, $sourceBytes.Length)
         $jsStream.SetLength($sourceBytes.Length)
         $jsStream.Flush($true)
         $jsStream.Position = 0
@@ -149,7 +150,7 @@ try {
     } catch {
         # Known legacy bytes stay only in memory, never as a redundant backup file.
         $jsStream.Position = 0
-        $jsStream.Write($original)
+        $jsStream.Write($original, 0, $original.Length)
         $jsStream.SetLength($original.Length)
         $jsStream.Flush($true)
         throw
