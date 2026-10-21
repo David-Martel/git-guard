@@ -996,7 +996,9 @@ observed legacy launcher (SHA256
 The accepted legacy JavaScript SHA256 is
 `46D2615192CB8EBAADBF2FA43DAB8B1C93FEFE79260F61FB8571FDBAFE7A2EF1`.
 The script checks source syntax in a hidden, shell-free Node child with a 10s
-validation limit before opening targets. It locks both existing wrapper files
+execution limit, at most 1s for post-kill reaping and at most 1s for output drain,
+before opening targets. Cleanup and pipe reads never use an unbounded wait.
+It locks both existing wrapper files
 against concurrent writers while validating the legacy pins, writes only the
 existing JavaScript file and verifies readback. Its ACL survives an in-place
 write. A caught write/readback failure restores known bytes from memory; there
@@ -1034,7 +1036,14 @@ test executable boundary to 80ms; a 1s self-exiting child bounds the RED control
 This qualifies timeout wiring without waiting 5min or opening an SSH session.
 The installer group uses a temporary release and wrapper pair on native Windows,
 with actual writes, ACL/readback/config preservation, idempotency, and rejection
-controls. Linux runs the Node group and reports the Windows installer as skipped.
+controls. The exact private production lifecycle helper also runs a short
+inert Node child: its timeout must terminate that child. The production drain
+helper consumes real pending StreamReader tasks from a held local named pipe;
+a 1.2s writer closure bounds the old unbounded-read RED control using .NET APIs
+available on the installer's supported PowerShell versions.
+The tests pass internal short wait budgets to these helpers; public installer
+parameters and environment configuration are unchanged. Linux runs the Node group
+and reports the Windows installer as skipped.
 Neither group qualifies a physical SSH connection or an installed fleet rollout.
 
 ### Adapter test review register
@@ -1046,4 +1055,4 @@ will be bound to the reviewed PR head before integration.
 | Selectors | Protects / weakening permits | Reviewer / disposition |
 | --- | --- | --- |
 | `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_keeps_existing_normalization`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit contract; weakening admits visible children, broken interactive convenience or unbounded headless children. | Unreviewed; source and selector pins pending independent review. |
-| `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets` | Opt-in migration and target preservation; weakening permits unknown-content replacement or configuration/ACL drift. | Unreviewed; source and selector pins pending independent review. |
+| `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets`, `timeout_cleanup_terminates_real_owned_child`, `held_pipe_drain_is_bounded` | Opt-in migration and target preservation; weakening permits unknown-content replacement, configuration/ACL drift or unbounded validation cleanup. | Unreviewed; source and selector pins pending independent review. |

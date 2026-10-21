@@ -219,6 +219,69 @@ $rejected = $false
 try { & $script -SourceRoot $source -BinDirectory $bin -Apply | Out-Null } catch { $rejected = $_.Exception.Message -match 'materialized|commit' }
 Assert-Equal $rejected $true 'invalid source must fail'
 Assert-Equal (Get-FileHash $js).Hash $uniqueHash 'invalid source target preservation'
+# timeout_cleanup_terminates_real_owned_child
+$tokens = $null
+$errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors)
+if ($errors.Count -ne 0) { throw 'Installer did not parse for helper isolation' }
+$drainHelper = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Receive-WrapperSyntaxOutput' }, $true)
+if ($null -eq $drainHelper) { throw 'Missing production output-drain lifecycle helper' }
+. ([scriptblock]::Create($drainHelper.Extent.Text))
+$helper = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-WrapperSyntaxCheck' }, $true)
+if ($null -eq $helper) { throw 'Missing production syntax-check lifecycle helper' }
+. ([scriptblock]::Create($helper.Extent.Text))
+$nodeExe = (Get-Command node -CommandType Application | Select-Object -First 1).Source
+$childInfo = [Diagnostics.ProcessStartInfo]::new($nodeExe)
+$childInfo.UseShellExecute = $false
+$childInfo.CreateNoWindow = $true
+$childInfo.RedirectStandardOutput = $true
+$childInfo.RedirectStandardError = $true
+$childInfo.ArgumentList.Add('-e')
+$childInfo.ArgumentList.Add('Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1200)')
+$clock = [Diagnostics.Stopwatch]::StartNew()
+$rejected = $false
+try { Invoke-WrapperSyntaxCheck -StartInfo $childInfo -TimeoutMilliseconds 80 } catch { $rejected = $_.Exception.Message -match 'timed out' }
+$clock.Stop()
+Assert-Equal $rejected $true 'owned child timeout must fail'
+if ($clock.ElapsedMilliseconds -gt 700) { throw "Timeout cleanup exceeded test bound: $($clock.ElapsedMilliseconds)ms" }
+# held_pipe_drain_is_bounded
+# Real pending pipe read, not an assumed Windows inheritance behavior. A finite
+# writer closure bounds the old GetResult RED, including older supported .NET.
+Add-Type -TypeDefinition @'
+using System.IO;
+using System.Threading;
+public static class GitGuardPipeFixture {
+    public static void CloseAfter(Stream stream, int milliseconds) {
+        ThreadPool.QueueUserWorkItem(_ => {
+            Thread.Sleep(milliseconds);
+            stream.Dispose();
+        });
+    }
+}
+'@
+$pipeName = 'git-guard-drain-' + [Guid]::NewGuid().ToString('N')
+$server = [IO.Pipes.NamedPipeServerStream]::new($pipeName, [IO.Pipes.PipeDirection]::In, 1, [IO.Pipes.PipeTransmissionMode]::Byte, [IO.Pipes.PipeOptions]::Asynchronous)
+$client = [IO.Pipes.NamedPipeClientStream]::new('.', $pipeName, [IO.Pipes.PipeDirection]::Out, [IO.Pipes.PipeOptions]::Asynchronous)
+$connected = $server.WaitForConnectionAsync()
+$client.Connect(1000)
+if (-not $connected.Wait(1000)) { throw 'Local pipe fixture connection failed' }
+$pipeReader = [IO.StreamReader]::new($server)
+$pending = $pipeReader.ReadToEndAsync()
+[GitGuardPipeFixture]::CloseAfter($client, 1200)
+$complete = [Threading.Tasks.Task]::FromResult([string]'')
+$clock.Restart()
+$rejected = $false
+$lastDiagnostic = ''
+try {
+    try { Receive-WrapperSyntaxOutput -Stdout $pending -Stderr $complete -TimeoutMilliseconds 80 } catch { $lastDiagnostic = $_.Exception.Message; $rejected = $lastDiagnostic -match 'drain' }
+} finally {
+    $client.Dispose()
+    $pipeReader.Dispose()
+}
+$clock.Stop()
+Assert-Equal $rejected $true "held pipe must fail finite drain ($lastDiagnostic, $($clock.ElapsedMilliseconds)ms)"
+if ($clock.ElapsedMilliseconds -gt 700) { throw "Pipe drain exceeded test bound: $($clock.ElapsedMilliseconds)ms" }
+Assert-Equal (Get-FileHash $js).Hash $uniqueHash 'lifecycle failures preserve targets'
 'PASS installer plan/apply/ACL/config/idempotency/unknown/source/syntax controls'
 PWSH
   pwsh -NoLogo -NoProfile -NonInteractive -File "$fixture"

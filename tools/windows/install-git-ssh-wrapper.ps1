@@ -26,6 +26,45 @@ param(
     [switch]$Apply
 )
 
+function Receive-WrapperSyntaxOutput {
+    param(
+        [Parameter(Mandatory)][Threading.Tasks.Task[string]]$Stdout,
+        [Parameter(Mandatory)][Threading.Tasks.Task[string]]$Stderr,
+        [Parameter(Mandatory)][ValidateRange(1, 2147483647)][int]$TimeoutMilliseconds
+    )
+    # Exited parent does not imply EOF: another process may retain a pipe handle.
+    if (-not [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($Stdout, $Stderr), $TimeoutMilliseconds)) {
+        throw 'Node syntax validation output drain timed out before any target write.'
+    }
+    # Completed tasks cannot wait for handles; faults surface before any target opens.
+    $null = $Stdout.GetAwaiter().GetResult()
+    $Stderr.GetAwaiter().GetResult()
+}
+
+function Invoke-WrapperSyntaxCheck {
+    param(
+        [Parameter(Mandatory)][Diagnostics.ProcessStartInfo]$StartInfo,
+        [Parameter(Mandatory)][ValidateRange(1, 2147483647)][int]$TimeoutMilliseconds
+    )
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $StartInfo
+    try {
+        if (-not $process.Start()) { throw 'Node syntax validation did not start.' }
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        $cleanupMilliseconds = [Math]::Min(1000, $TimeoutMilliseconds)
+        if (-not $process.WaitForExit($TimeoutMilliseconds)) {
+            $process.Kill($true)
+            if (-not $process.WaitForExit($cleanupMilliseconds)) {
+                throw 'Node syntax validation timed out; owned child did not exit within bounded cleanup.'
+            }
+            throw 'Node syntax validation timed out before any target write.'
+        }
+        $diagnostic = Receive-WrapperSyntaxOutput -Stdout $stdout -Stderr $stderr -TimeoutMilliseconds $cleanupMilliseconds
+        if ($process.ExitCode -ne 0) { throw "Materialized JavaScript failed syntax validation: $diagnostic" }
+    } finally { $process.Dispose() }
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'This optional adapter installer requires native Windows.' }
@@ -54,21 +93,7 @@ $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
 $start.ArgumentList.Add('--check')
 $start.ArgumentList.Add($sourceJs)
-$process = [Diagnostics.Process]::new()
-$process.StartInfo = $start
-try {
-    if (-not $process.Start()) { throw 'Node syntax validation did not start.' }
-    $stdout = $process.StandardOutput.ReadToEndAsync()
-    $stderr = $process.StandardError.ReadToEndAsync()
-    if (-not $process.WaitForExit(10000)) {
-        $process.Kill($true)
-        $process.WaitForExit()
-        throw 'Node syntax validation timed out before any target write.'
-    }
-    $null = $stdout.GetAwaiter().GetResult()
-    $diagnostic = $stderr.GetAwaiter().GetResult()
-    if ($process.ExitCode -ne 0) { throw "Materialized JavaScript failed syntax validation: $diagnostic" }
-} finally { $process.Dispose() }
+Invoke-WrapperSyntaxCheck -StartInfo $start -TimeoutMilliseconds 10000
 
 $targetCmd = Join-Path $BinDirectory 'git-ssh-wrapper.cmd'
 $targetJs = Join-Path $BinDirectory 'git-ssh-wrapper.js'
