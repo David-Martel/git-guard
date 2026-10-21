@@ -206,6 +206,39 @@ finish_windows_link_transaction() {
   return 0
 }
 
+publish_windows_hooks_config() {
+  # Match Git's documented --global destination choice, including an explicit
+  # GIT_CONFIG_GLOBAL and the XDG-only case. An included read origin is not
+  # necessarily the global file to which Git writes.
+  config_destination="${GIT_CONFIG_GLOBAL-$HOME/.gitconfig}"
+  if [ "${GIT_CONFIG_GLOBAL+x}" != x ] && [ ! -e "$config_destination" ]; then
+    xdg_destination="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
+    [ ! -f "$xdg_destination" ] || config_destination="$xdg_destination"
+  fi
+  [ -n "$config_destination" ] || { echo 'git-guard install: empty global config destination.' >&2; return 2; }
+  if ! command -v pwsh >/dev/null 2>&1 || ! command -v cygpath >/dev/null 2>&1; then
+    echo 'git-guard install: PowerShell7 and cygpath required to preserve Windows config security.' >&2
+    return 2
+  fi
+  config_git="$(command -v git)"
+  [ ! -f "$config_git.exe" ] || config_git="$config_git.exe"
+  config_git="$(cygpath -am "$config_git")" || return 2
+  config_destination="$(cygpath -am "$config_destination")" || return 2
+  config_hooks="$(cygpath -am "$HOME_HOOKS")" || return 2
+  if [ "$DRY" = "1" ]; then
+    echo "  DRY: publish core.hooksPath with preserved Windows config security"
+    return 0
+  fi
+  set -- -NoLogo -NoProfile -NonInteractive -File "$GG_ROOT/tools/windows/set-hooks-config.ps1" \
+    -GitExecutable "$config_git" -ConfigPath "$config_destination" -HooksPath "$config_hooks"
+  if [ "$GIT_DEFAULTS" = "1" ] && [ -f "$GG_HOOKS/common/hygiene.sh" ]; then
+    config_defaults="$(cygpath -am "$GG_HOOKS/common/hygiene.sh")" || return 2
+    config_shell="$(cygpath -am /usr/bin/sh.exe)" || return 2
+    set -- "$@" -DefaultsScript "$config_defaults" -GitShell "$config_shell"
+  fi
+  pwsh "$@"
+}
+
 if [ "$UNINSTALL" = "1" ]; then
   echo "git-guard uninstall"
   # Remove our symlink, restore the backup if present.
@@ -439,7 +472,7 @@ done
 # On Windows, configuration is published only after every native link succeeds.
 # A late hooks/docs failure restores the previous current/link snapshots.
 if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then
-  run "git config --global core.hooksPath \"$HOME_HOOKS\"" || exit 2
+  publish_windows_hooks_config || exit 2
   echo "  core.hooksPath = $HOME_HOOKS"
   finish_windows_link_transaction || exit 2
 fi
@@ -447,7 +480,8 @@ fi
 # Recommended global git defaults (fetch pruning, rerere, hygiene.* limits).
 # Only keys that are UNSET are written, so an operator's choice always wins;
 # --no-git-defaults skips the step. See docs/QA_TOOLING.md §12.
-if [ "$GIT_DEFAULTS" = "1" ] && [ -f "$GG_HOOKS/common/hygiene.sh" ]; then
+if [ "$GIT_DEFAULTS" = "1" ] && [ -f "$GG_HOOKS/common/hygiene.sh" ] && \
+    { [ "$WINDOWS_NATIVE_LINKS" = "0" ] || [ "$DRY" = "1" ]; }; then
   echo "  global git defaults (unset keys only):"
   if [ "$DRY" = "1" ]; then
     sh "$GG_HOOKS/common/hygiene.sh" defaults --dry-run
