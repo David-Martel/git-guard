@@ -132,6 +132,10 @@ or an assessment of installed fleet software. See the
 
 ## Quick start
 
+Existing Windows `~/bin/git-ssh-wrapper.cmd` users can opt into the
+[hidden, bounded SSH adapter](docs/QA_TOOLING.md#optional-windows-git-ssh-adapter).
+It preserves interactive behavior and does not enable or change `core.sshCommand`.
+
 ```sh
 git clone https://github.com/<owner>/git-guard ~/git-guard
 sh ~/git-guard/install.sh                 # materializes v<VERSION> into

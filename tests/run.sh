@@ -149,6 +149,8 @@ t_case_reserved_path_nested_scope
 t_case_preserve_exemption
 t_case_gate_controls
 t_case_hygiene
+t_case_windows_ssh_adapter
+t_case_windows_ssh_adapter_install
 t_case_precommit_provider
 "
 
