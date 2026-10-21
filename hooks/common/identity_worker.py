@@ -50,6 +50,8 @@ def check_cancelled() -> None:
 
 
 def posix_run(command: list[str], timeout: int, output: Path, error: Path) -> int:
+    if sys.platform == "win32":
+        raise RuntimeError("POSIX containment is unavailable on Windows")
     if not all(hasattr(os, name) for name in ("waitid", "WNOWAIT", "WEXITED")):
         raise RuntimeError("this POSIX runtime lacks waitid/WNOWAIT containment")
     if sys.platform.startswith("linux"):
@@ -107,6 +109,8 @@ def posix_run(command: list[str], timeout: int, output: Path, error: Path) -> in
 
 def windows_run(command: list[str], timeout: int, output: Path, error: Path) -> int:
     """Assign the process to a kill-on-close Job before its first instruction."""
+    if sys.platform != "win32":
+        raise RuntimeError("Windows containment is unavailable on this platform")
     import msvcrt
     from ctypes import wintypes as w
 
@@ -276,6 +280,8 @@ def windows_run(command: list[str], timeout: int, output: Path, error: Path) -> 
                 ]
             )
             for handle in handles:
+                if handle is None:
+                    raise RuntimeError("signature stdio handle is unavailable")
                 os.set_handle_inheritable(handle, True)
             checked(
                 kernel.UpdateProcThreadAttribute(

@@ -68,6 +68,7 @@ class WorkerTests(unittest.TestCase):
                 capture_output=True,
                 timeout=5,
                 check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             self.assertEqual(result.returncode, 125, result.stderr)
             time.sleep(0.9)
@@ -113,6 +114,7 @@ class WorkerTests(unittest.TestCase):
                 capture_output=True,
                 timeout=10,
                 check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(b"VERIFY FAILED", result.stderr)
@@ -128,6 +130,7 @@ class WorkerTests(unittest.TestCase):
                 capture_output=True,
                 timeout=10,
                 check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             (common / WORKER.name).unlink()
@@ -137,6 +140,7 @@ class WorkerTests(unittest.TestCase):
                 capture_output=True,
                 timeout=10,
                 check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             self.assertNotEqual(result.returncode, 0, result.stderr)
 
@@ -167,7 +171,11 @@ class WorkerTests(unittest.TestCase):
             ]
             started = time.monotonic()
             result = subprocess.run(
-                command, capture_output=True, timeout=8, check=False
+                command,
+                capture_output=True,
+                timeout=8,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             elapsed = time.monotonic() - started
             output = (root / "out").read_bytes() if (root / "out").exists() else b""
@@ -186,13 +194,15 @@ class WorkerTests(unittest.TestCase):
 
     def test_positive_preserves_binary_output_and_argv(self):
         """Protects: exact binary output and argument boundaries.
-        Detects: shell reparsing corrupts empty, quoted or Unicode arguments.
+        Detects: shell reparsing corrupts arguments or Windows allocates a console.
         Needs: Python, supported Windows or POSIX containment.
         Breadcrumb: hooks/common/identity_worker.py
         """
         args = ("", "with spaces", 'a"quote', "Unicode-λ")
         result, output, error, _ = self.run_worker(
-            "import json,os,sys; os.write(1,json.dumps(sys.argv[1:]).encode()); "
+            "import ctypes,json,os,sys; "
+            "assert os.name != 'nt' or ctypes.windll.kernel32.GetConsoleWindow() == 0; "
+            "os.write(1,json.dumps(sys.argv[1:]).encode()); "
             "os.write(2,b'error\\x00bytes')",
             args=args,
         )
@@ -226,7 +236,8 @@ class WorkerTests(unittest.TestCase):
             )
             script = (
                 "import subprocess,sys; "
-                f"subprocess.Popen([sys.executable,'-c',{leaf!r}])"
+                f"subprocess.Popen([sys.executable,'-c',{leaf!r}],"
+                "creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))"
             )
             result, _, _, _ = self.run_worker(script)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -247,7 +258,8 @@ class WorkerTests(unittest.TestCase):
             )
             script = (
                 "import subprocess,sys,time; "
-                f"subprocess.Popen([sys.executable,'-c',{leaf!r}]); time.sleep(60)"
+                f"subprocess.Popen([sys.executable,'-c',{leaf!r}],"
+                "creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0));time.sleep(60)"
             )
             result, _, _, _ = self.run_worker(script)
             self.assertEqual(result.returncode, 124, result.stderr)
@@ -292,6 +304,7 @@ class WorkerTests(unittest.TestCase):
                         input=data,
                         capture_output=True,
                         check=True,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                     )
                     .stdout.decode()
                     .strip()
@@ -353,7 +366,12 @@ class WorkerTests(unittest.TestCase):
                 sha,
             ]
             result = subprocess.run(
-                command, cwd=root, capture_output=True, timeout=10, check=False
+                command,
+                cwd=root,
+                capture_output=True,
+                timeout=10,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             self.assertEqual(
                 result.returncode,
