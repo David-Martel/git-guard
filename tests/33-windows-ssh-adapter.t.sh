@@ -2,19 +2,23 @@
 # Optional transport adapter; operational contract and scoped review register:
 # ../docs/QA_TOOLING.md#optional-windows-git-ssh-adapter
 
-# Protects: hidden children, explicit headless bounds, legacy argument/exit behavior.
+# Protects: hidden children, headless bounds, Git remote quoting and exit behavior.
 # Detects: missing Windows hide, CI-only restrictions, dropped/rewritten arguments,
-# an inert timeout, or false success. Needs: Node; no SSH/network/device.
+# remote-shell splitting/injection, an inert timeout, or false success.
+# Needs: Node and the suite's POSIX shell; no SSH/network/device.
 # Breadcrumb: tools/windows/git-ssh-wrapper.js. Named Node selectors form this group.
 t_case_windows_ssh_adapter() {
   t_begin "33 Windows SSH adapter process contract"
   if ! have node; then t_skip "Windows SSH adapter: Node unavailable"; return 0; fi
-  node <<'NODE'
+  probe_shell=$(command -v sh)
+  if gg_is_windows && have cygpath; then probe_shell=$(cygpath -w "$probe_shell"); fi
+  node - "$probe_shell" <<'NODE'
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
+const probeShell = process.argv[2];
 const source = fs.readFileSync(path.join(process.env.GG_ROOT, 'tools/windows/git-ssh-wrapper.js'), 'utf8');
 let failures = 0;
 function check(name, fn) {
@@ -49,7 +53,7 @@ check('interactive_hides_without_restricting_prompt_or_lifetime', () => {
   assert.equal(result.actual.options.windowsHide, true);
   assert.equal(result.actual.options.stdio, 'inherit');
   assert.equal(result.actual.options.timeout, undefined);
-  assert.deepEqual(result.actual.argv, ['git@host', 'git-upload-pack repo name.git']);
+  assert.deepEqual(result.actual.argv, ['git@host', "git-upload-pack 'repo name.git'"]);
   assert.equal(result.exit, 0);
 });
 check('ci_alone_retains_interactive_options', () => {
@@ -77,10 +81,52 @@ check('real_child_roundtrips_arguments_and_exit_status', () => {
   assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), args);
   assert.equal(result.exit, 23);
 });
-check('split_pack_command_keeps_existing_normalization', () => {
+check('split_pack_command_preserves_git_encoded_fragment', () => {
   const result = invoke({}, ['-p', '443', 'host', 'git-upload-pack', "'owner/repo.git'"]);
-  assert.deepEqual(result.actual.argv, ['-p', '443', 'host', 'git-upload-pack owner/repo.git']);
+  assert.deepEqual(result.actual.argv, ['-p', '443', 'host', "git-upload-pack 'owner/repo.git'"]);
   assert.equal(result.actual.file, 'C:\\Windows\\System32\\OpenSSH\\ssh.exe');
+});
+// Hand-encoded Git remote-shell fragments. Stripping quotes must fail both
+// transport forms, including apostrophes and harmless command substitutions.
+const remotePaths = [
+  { encoded: "'owner/repo; printf INERT_SIDE_EFFECT.git'", literal: 'owner/repo; printf INERT_SIDE_EFFECT.git' },
+  { encoded: "'owner/space repo.git'", literal: 'owner/space repo.git' },
+  { encoded: "'owner/$(printf INERT_SUBSTITUTION).git'", literal: 'owner/$(printf INERT_SUBSTITUTION).git' },
+  { encoded: "'owner/`printf INERT_BACKTICK`.git'", literal: 'owner/`printf INERT_BACKTICK`.git' },
+  { encoded: "'owner/it'\\''s repo.git'", literal: "owner/it's repo.git" },
+  { encoded: "'owner/back\\slash \"double\".git'", literal: 'owner/back\\slash "double".git' },
+];
+function expectLiteralRemotePath(argv, literal) {
+  const command = argv.at(-1);
+  assert.match(command, /^(git-upload-pack|git-upload-archive|git-receive-pack)\s/);
+  // Replace only the fixed pack executable with a shell builtin. The real,
+  // hidden, bounded shell parses the adapter's untouched remote fragment;
+  // no Git server or SSH is started, and every probe uses only inert printf.
+  const script = command.replace(/^(git-upload-pack|git-upload-archive|git-receive-pack)/, 'set --')
+    + '; printf \'%s\\n\' "$#"; printf \'%s\\0\' "$@"';
+  const child = spawnSync(probeShell, ['-c', script], {
+    encoding: 'utf8', windowsHide: true, timeout: 2000,
+  });
+  assert.ifError(child.error);
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stderr, '');
+  assert.equal(child.stdout, '1\n' + literal + '\0');
+}
+check('combined_remote_shell_paths_are_literal', () => {
+  for (const verb of ['git-upload-pack', 'git-upload-archive', 'git-receive-pack']) {
+    for (const fixture of remotePaths) {
+      const result = invoke({}, ['host', verb + ' ' + fixture.encoded]);
+      expectLiteralRemotePath(result.actual.argv, fixture.literal);
+    }
+  }
+});
+check('split_remote_shell_paths_are_literal', () => {
+  for (const verb of ['git-upload-pack', 'git-upload-archive', 'git-receive-pack']) {
+    for (const fixture of remotePaths) {
+      const result = invoke({}, ['host', verb, fixture.encoded]);
+      expectLiteralRemotePath(result.actual.argv, fixture.literal);
+    }
+  }
 });
 check('real_child_timeout_is_finite_and_reports_failure', () => {
   const started = Date.now();

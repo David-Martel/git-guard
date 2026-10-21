@@ -10,9 +10,9 @@ if (args.length > 1) {
   const previousArg = args[lastIndex - 1];
 
   if (packCommands.has(previousArg)) {
-    args.splice(lastIndex - 1, 2, `${previousArg} ${lastArg.replace(/'/g, '')}`);
-  } else if (/^(git-upload-pack|git-upload-archive|git-receive-pack)\s/.test(lastArg)) {
-    args[lastIndex] = lastArg.replace(/'/g, '');
+    // Git supplies a remote-shell-encoded fragment, not a local filesystem path.
+    // Join the split transport form verbatim; stripping quotes changes its meaning.
+    args.splice(lastIndex - 1, 2, `${previousArg} ${lastArg}`);
   }
 }
 

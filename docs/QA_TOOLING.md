@@ -1005,9 +1005,13 @@ write. A caught write/readback failure restores known bytes from memory; there
 are no redundant backup files. This does not claim atomic recovery from a host
 power loss during that in-place write.
 
-The [JavaScript adapter](../tools/windows/git-ssh-wrapper.js) preserves the old
-argument array, Git pack-command normalization, inherited terminal streams and
-exit-code handling. Its SSH child always requests `windowsHide:true`. This closes
+The [JavaScript adapter](../tools/windows/git-ssh-wrapper.js) preserves Git's
+already encoded remote-shell command. A combined command passes through
+unchanged; a split pack verb and encoded path fragment are joined verbatim with
+one space. Quotes are never stripped or interpreted as local path decoration:
+doing so splits spaced paths and can expose shell metacharacters. Other arguments,
+inherited terminal streams and exit-code handling retain their existing behavior.
+Its SSH child always requests `windowsHide:true`. This closes
 a missing child-launch option; it does not establish that this wrapper caused
 the fleet's reported Git Bash popups or hide a console created by its caller.
 The option follows Node's
@@ -1037,6 +1041,12 @@ group executes real inert children for exact argument/exit propagation and a
 finite timeout. It asserts the production 300000ms value, then shortens only the
 test executable boundary to 80ms; a 1s self-exiting child bounds the RED control.
 This qualifies timeout wiring without waiting 5min or opening an SSH session.
+Two remote-command selectors also run real hidden POSIX shell probes, each
+bounded to 2s. They replace only the fixed pack executable with the `set` builtin
+and use inert `printf` to observe argument count and bytes. Six literal fixtures
+cover spaces, semicolons, command substitutions, backticks, apostrophes and
+backslashes/double quotes across all three pack verbs and both transport forms.
+These probes parse the adapter's actual output; no SSH or Git server is started.
 The installer group uses a temporary release and wrapper pair on native Windows,
 with actual writes, ACL/readback/config preservation, idempotency, and rejection
 controls. The exact private production lifecycle helper also runs a short
@@ -1082,24 +1092,52 @@ gives only the temporary fixture a protected explicit ACL and matches the exact
 successful child-termination disposition. It also uses three-argument stream
 writes and resolves native `node.exe` explicitly. Root independently reviewed
 KEEP and actually replayed both groups in receipt `810cab`: 2 passed, 0 failed,
-0 skipped in 3301ms, PowerShell 7.6.7. The final hashes below were stable across
-that replay. The commit adding this successor record changes documentation only;
-source/test review carries by these exact hashes, not a future metadata commit ID.
+0 skipped in 3301ms, PowerShell 7.6.7. That historical replay covered JavaScript
+`5A1E7889C812F38E409F15AB4166AE5607ABA42B8ACCAF293C9943E169CA6500`
+and test file `64553C1BF70C5057E52213AAADB8C9855AB0EADFAFA0146E9D828468581516DE`.
+The installer selector group and production installer remain byte-identical;
+the quoting successor below needs its own review binding.
+
+The autopilot's actual [current-head P1 review](https://github.com/David-Martel/git-guard/pull/80#issuecomment-6310497619)
+at `f1c6d5ce` correctly identified unsafe apostrophe removal inherited from the
+external legacy wrapper. It supersedes the earlier instruction to retain that
+normalization. Two actual failing-first runs against unchanged `f1c6` production
+source recorded four named failures and five passing controls: spaced paths split
+into two arguments, and a quoted semicolon executed an inert `printf` in both
+combined and split forms. Logs are `git-ssh-adapter-quoting-red.log` (SHA256
+`BA57191C6EDB71B1016FB69ABC7F1898FA2689AB3CAB47A574409F386F53DAD7`)
+and `git-ssh-adapter-quoting-metachar-red.log`
+(`A1F2173843AD0D7E9DCBDF3A7BB347C9D2D2952CB45571025B6DDBD24A32BBFE`)
+in the preparer's Windows TEMP directory.
+The minimal successor removes combined-command rewriting and preserves the
+encoded fragment when joining split commands. Preparer replay `ed8f9c` passed
+both groups, 2 passed/0 failed/0 skipped on PowerShell 7.6.7; its log SHA256 is
+`DF0EAC321E95A64858C9E23B6C8FD565C552B686388CCEFE2CC2382315BD56F3`.
+The canonical Windows runner also emitted a post-suite temporary-directory
+cleanup lock warning; this is disclosed separately from its test assertions and
+exit code. The old head's now-green Linux CI does not qualify this successor.
+Root independently reviewed the exact JavaScript/test delta and recorded KEEP
+for the changed Node selectors. Actual independent replay `79ef3b` ran both
+canonical groups through a hidden native shell on PowerShell 7.6.7: 2 passed,
+0 failed, 0 skipped in 4581ms, exit 0, with all three production/test pins below
+stable before and after. That independent run emitted no cleanup warning.
+The metadata author is the preparer; Root did not author these tests.
+Genuine outside-family review and current-head CI remain separate gates.
 
 | Selectors | Protects / weakening permits | Reviewer / disposition |
 | --- | --- | --- |
-| `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_keeps_existing_normalization`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit contract; weakening admits visible children, broken interactive convenience or unbounded headless children. | Root independent review: KEEP; final replay `810cab`; group SHA256 `4C801BB9A5BC1F4048F03A9902833BB43FB0C69DEDA6A7E3EFCA3D0770A038F3`. |
+| `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_preserves_git_encoded_fragment`, `combined_remote_shell_paths_are_literal`, `split_remote_shell_paths_are_literal`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit and remote-shell contract; weakening admits visible children, split paths, shell execution, broken interactive convenience or unbounded headless children. | Root independent review: KEEP; actual replay `79ef3b`; group SHA256 `7E9ECE45F8158E6B796F25E918C194E98FAFCCF809A5DD2C9B50D3A1524A7646`. Historical `810cab` covered the prior seven-selector group only. |
 | `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets`, `timeout_cleanup_terminates_real_owned_child`, `held_pipe_drain_is_bounded` | Opt-in migration and target preservation; weakening permits unknown-content replacement, configuration/ACL drift or unbounded validation cleanup. | Root independent review: KEEP; final replay `810cab`; group SHA256 `F2C84516919DC57C980A8CB05D7789AB6846C2530598F1DDF14C27FEA7A471FB`. |
 
 Group hashes cover the exact UTF-8 source from each group's `Protects` comment
 through the byte preceding the next group's comment (or EOF for the final group).
 The full test file SHA256 is
-`64553C1BF70C5057E52213AAADB8C9855AB0EADFAFA0146E9D828468581516DE`.
+`E6E340CC46ECDAC28587FE48DD90E0E1D5F6DEE7F68C648FCA306389C905660D`.
 Raw and LF-normalized production SHA256 values are identical:
 
 | Code under test | SHA256 |
 | --- | --- |
-| [JavaScript](../tools/windows/git-ssh-wrapper.js) | `5A1E7889C812F38E409F15AB4166AE5607ABA42B8ACCAF293C9943E169CA6500` |
+| [JavaScript](../tools/windows/git-ssh-wrapper.js) | `27758C691F894F76EEFCFC59ED2939E90D15993682C872F1F464B0195B678183` |
 | [Installer](../tools/windows/install-git-ssh-wrapper.ps1) | `65D496BED7B17A5C4FF25CA6F4170CF82AC3D391B70540634A4B545B7C20412E` |
 | [Legacy launcher](../tools/windows/git-ssh-wrapper.cmd) | `A7C81A417092D46D2F4F56F57E36B679B15A451F6C0A44F973A66DAA96ED542B` |
 
