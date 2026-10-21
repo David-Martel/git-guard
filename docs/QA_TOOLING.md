@@ -1026,6 +1026,9 @@ and the explicit fetch in
 A caller can end the whole operation sooner as before. Unusually long
 noninteractive transfers now fail after 5min, even if actively transferring;
 this is a finite automation lifetime, not a claim that every repository fits it.
+BatchMode suppresses authentication prompts. GUI callers that combine this
+explicit trigger with an askpass dependency can fail fast and need assessment
+before migration, even though interactive calls without the trigger are unchanged.
 The installer adds no environment or timeout configuration steps.
 
 The [category 33 tests](../tests/33-windows-ssh-adapter.t.sh) run through the
@@ -1045,6 +1048,9 @@ The tests pass internal short wait budgets to these helpers; public installer
 parameters and environment configuration are unchanged. Linux runs the Node group
 and reports the Windows installer as skipped.
 Neither group qualifies a physical SSH connection or an installed fleet rollout.
+The tests do not inject a write/readback failure into the rollback path or qualify
+all lock-acquisition ordering; those source paths are reviewed, not executed
+fault qualifications.
 
 ### Adapter test review register
 
@@ -1060,26 +1066,41 @@ Root then independently reviewed KEEP for the compatibility-only successor
 disposable `SHA256.Create().ComputeHash(Stream)` replaces three stream calls,
 because the official [.NET5 SHA256 source](https://github.com/dotnet/runtime/blob/v5.0.0/src/libraries/System.Security.Cryptography.Algorithms/src/System/Security/Cryptography/SHA256.cs)
 has no `HashData(Stream)` overload. The [.NET5 HashAlgorithm source](https://github.com/dotnet/runtime/blob/v5.0.0/src/libraries/System.Security.Cryptography.Primitives/src/System/Security/Cryptography/HashAlgorithm.cs)
-provides `ComputeHash(Stream)`. Root's final actual replay `766663` ran both
-groups: 2 passed, 0 failed, 0 skipped in 2949ms on Windows with PowerShell 7.6.7.
-The source/test hashes below were stable across that replay. This is an API
-compatibility correction, not an executed PowerShell 7.1 qualification.
+provides `ComputeHash(Stream)`. Historical replay `766663` covered installer
+`9E01AC345BF4EFC0D1A8CC2704F10A79EC75874EF0BDD0BBC2FDB5C7FD214969`:
+2 passed, 0 failed, 0 skipped in 2949ms on Windows with PowerShell 7.6.7.
+This is an API compatibility correction, not an executed PowerShell 7.1 qualification.
+
+The genuine outside-Claude review at `235e4848` returned
+[REQUEST_CHANGES](https://github.com/David-Martel/git-guard/pull/80#issuecomment-6310319307)
+for two test gaps: an inherited-only ACL fixture could miss recreate drift, and
+a generic timeout-message match could accept failure to terminate the child.
+That actual verdict remains historical; it is not converted into an approval.
+The successor source
+[`05c39b5181e4cdcfec0b512f3a9d35e8b39e9d06`](https://github.com/David-Martel/git-guard/commit/05c39b5181e4cdcfec0b512f3a9d35e8b39e9d06)
+gives only the temporary fixture a protected explicit ACL and matches the exact
+successful child-termination disposition. It also uses three-argument stream
+writes and resolves native `node.exe` explicitly. Root independently reviewed
+KEEP and actually replayed both groups in receipt `810cab`: 2 passed, 0 failed,
+0 skipped in 3301ms, PowerShell 7.6.7. The final hashes below were stable across
+that replay. The commit adding this successor record changes documentation only;
+source/test review carries by these exact hashes, not a future metadata commit ID.
 
 | Selectors | Protects / weakening permits | Reviewer / disposition |
 | --- | --- | --- |
-| `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_keeps_existing_normalization`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit contract; weakening admits visible children, broken interactive convenience or unbounded headless children. | Root independent review: KEEP; final replay `766663`; group SHA256 `4C801BB9A5BC1F4048F03A9902833BB43FB0C69DEDA6A7E3EFCA3D0770A038F3`. |
-| `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets`, `timeout_cleanup_terminates_real_owned_child`, `held_pipe_drain_is_bounded` | Opt-in migration and target preservation; weakening permits unknown-content replacement, configuration/ACL drift or unbounded validation cleanup. | Root independent review: KEEP; final replay `766663`; group SHA256 `D5AFE98827EC2A82DB8F980E67632360EF36BA1DE766B20D418D638F793F895A`. |
+| `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_keeps_existing_normalization`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit contract; weakening admits visible children, broken interactive convenience or unbounded headless children. | Root independent review: KEEP; final replay `810cab`; group SHA256 `4C801BB9A5BC1F4048F03A9902833BB43FB0C69DEDA6A7E3EFCA3D0770A038F3`. |
+| `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets`, `timeout_cleanup_terminates_real_owned_child`, `held_pipe_drain_is_bounded` | Opt-in migration and target preservation; weakening permits unknown-content replacement, configuration/ACL drift or unbounded validation cleanup. | Root independent review: KEEP; final replay `810cab`; group SHA256 `F2C84516919DC57C980A8CB05D7789AB6846C2530598F1DDF14C27FEA7A471FB`. |
 
 Group hashes cover the exact UTF-8 source from each group's `Protects` comment
 through the byte preceding the next group's comment (or EOF for the final group).
 The full test file SHA256 is
-`2F982ACA5893733612785F01283E868B8429032B6A4701ADBAF1D31CBE643F41`.
+`64553C1BF70C5057E52213AAADB8C9855AB0EADFAFA0146E9D828468581516DE`.
 Raw and LF-normalized production SHA256 values are identical:
 
 | Code under test | SHA256 |
 | --- | --- |
 | [JavaScript](../tools/windows/git-ssh-wrapper.js) | `5A1E7889C812F38E409F15AB4166AE5607ABA42B8ACCAF293C9943E169CA6500` |
-| [Installer](../tools/windows/install-git-ssh-wrapper.ps1) | `9E01AC345BF4EFC0D1A8CC2704F10A79EC75874EF0BDD0BBC2FDB5C7FD214969` |
+| [Installer](../tools/windows/install-git-ssh-wrapper.ps1) | `65D496BED7B17A5C4FF25CA6F4170CF82AC3D391B70540634A4B545B7C20412E` |
 | [Legacy launcher](../tools/windows/git-ssh-wrapper.cmd) | `A7C81A417092D46D2F4F56F57E36B679B15A451F6C0A44F973A66DAA96ED542B` |
 
 The actual original-wrapper RED had four named Node failures and three passing
@@ -1089,6 +1110,13 @@ isolated mutation removing only the finite drain: the old read waited 1218ms for
 the writer closure and failed the expected finite-drain disposition. The earlier
 Node-descendant inheritance experiment did not retain pipes on this Windows host
 and is not counted as a valid RED control.
+Two actual private follow-up controls qualify the new assertions: deleting and
+recreating the installed fixture fails its protected SDDL comparison (receipt
+SHA256 `A5D37C4577BE95FAB86B04A86CA1942C62C8FFDF327E1E38D85AF6E2097537F9`);
+removing the child-kill call fails the exact successful-termination assertion
+(`51C1552F833D611C9F1F219B372288EE509646D3C5905C545D93550CBB192C44`).
+These controls change only private fixture/mutant files, never live ACLs or
+canonical production source. The canonical successor passes both groups.
 
 The broad Windows run reported 1040 passed, 43 failed and 39 skipped. A clean
 baseline at `bf6258594973a404e93ad21b91cce66f715dd564` reran the three failing
