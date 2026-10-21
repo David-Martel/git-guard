@@ -1332,3 +1332,41 @@ global config bytes and SDDL were unchanged. Independent receipt SHA256:
 The outside-family review, current-head CI, full Windows suite disposition and
 supported tagged fleet rollout remain separate gates; this source/selector
 approval does not certify them.
+
+The final full Windows run completed in 909048ms: 1056 passed, 28 failed,
+39 skipped, exit 1, no timeout. Receipt SHA256:
+`642A3B92092FA9DD35BB75ACBAF7D6F81B16373D028D114A40AC92EB99D66B66`.
+Nineteen failure labels match the original baseline log byte-for-byte, without
+normalization: 16 quality-mandate and three provider-dispatch failures. The
+original log SHA256 is
+`25A6FAD22F527F3CB641E7D848F5E2A6D6C1F0C653703491DD5B080A9E2CE9DB`;
+the exact comparison receipt is
+`A1F31B57CBD0207D02D3D726A52BA51137A73C77760C080E1FB9204178FCE269`.
+The old 24 native-link failures no longer occur.
+
+Nine additional labels occurred in the direct native-shell caller: seven
+configured-lefthook and two stale-branch controls. Under the original Git
+`bin/sh.exe` launcher with identical inherited environments, selected downstream
+and hygiene tests passed 109/0/6 on both baseline and current source. All 145
+baseline archive files were authenticated against the original
+`bf6258594973a404e93ad21b91cce66f715dd564` Git blobs, with no extra overlay files;
+the archive is not described as a clean Git checkout. Binding receipt:
+`66B67F4F308103F04C4DB9AFB9843B45ABEE28F373309C8C69AF300C94B5C761`.
+Paired replay receipt:
+`A69E252418DC05800A7E91B6AC440786652BE45C4307CABEF1EBAD80B9A1D9AC`.
+All 145 archive files were unchanged afterward; postcheck:
+`D3CA7FF3E055DF06FCB9238B1452F17693A0C51FFDBB6C48E284B0E29CAA662C`.
+
+One bounded real precommit/stale-branch fixture varied only `MSYSTEM`. The inert
+precommit hook ran and refused in both contexts, and its unhooked positive
+committed in both. With `MSYSTEM` unset, the stale-branch push succeeded and
+reached the remote; with `MINGW64`, it was correctly refused. This establishes
+the two stale labels' caller dependence, not a general hook-dispatch failure or
+the cause of all seven lefthook labels. Receipt:
+`C2329E77670267A80F7C0140091DF41777B185CF6CAEAD1E7A10BAE4BEFA57F5`.
+These are disclosed local limitations, not a full Windows pass or weakened
+assertions. The installer source and selected tests remained frozen throughout
+the full run and paired controls; both required current-head CI jobs passed.
+The stale-branch fail-open can matter to native PowerShell callers, where
+`MSYSTEM` is commonly unset. It is a separate real reliability follow-up; this
+ACL qualification is not general acceptance of Windows fleet hygiene.
