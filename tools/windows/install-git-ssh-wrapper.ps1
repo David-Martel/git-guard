@@ -26,6 +26,14 @@ param(
     [switch]$Apply
 )
 
+function Get-WrapperStreamHash {
+    param([Parameter(Mandatory)][IO.Stream]$Stream)
+    # HashData(Stream) is newer than .NET5; ComputeHash preserves PowerShell7.1.
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try { [Convert]::ToHexString($algorithm.ComputeHash($Stream)) }
+    finally { $algorithm.Dispose() }
+}
+
 function Receive-WrapperSyntaxOutput {
     param(
         [Parameter(Mandatory)][Threading.Tasks.Task[string]]$Stdout,
@@ -110,10 +118,10 @@ try {
     $cmdStream = [IO.File]::Open($targetCmd, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     $access = if ($Apply) { [IO.FileAccess]::ReadWrite } else { [IO.FileAccess]::Read }
     $jsStream = [IO.File]::Open($targetJs, [IO.FileMode]::Open, $access, [IO.FileShare]::None)
-    if ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($cmdStream)) -ne $launcherHash) {
+    if ((Get-WrapperStreamHash -Stream $cmdStream) -ne $launcherHash) {
         throw 'Existing CMD has unknown bytes; preserving local work.'
     }
-    $targetHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($jsStream))
+    $targetHash = Get-WrapperStreamHash -Stream $jsStream
     if ($targetHash -eq $sourceHash) {
         return [pscustomobject]@{ Status = 'Current'; Commit = $commit; SHA256 = $sourceHash }
     }
@@ -135,7 +143,7 @@ try {
         $jsStream.SetLength($sourceBytes.Length)
         $jsStream.Flush($true)
         $jsStream.Position = 0
-        if ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($jsStream)) -ne $sourceHash) {
+        if ((Get-WrapperStreamHash -Stream $jsStream) -ne $sourceHash) {
             throw 'Installed JavaScript readback failed.'
         }
     } catch {
