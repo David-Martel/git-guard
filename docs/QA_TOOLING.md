@@ -1166,3 +1166,272 @@ baseline failures, not a full-suite pass or a waiver. The broad run loaded the
 earlier adapter test body; the final adapter snapshot is qualified by the focused
 replays above and its own current-head CI. This register does not certify legacy
 selectors, an SSH connection, or fleet deployment.
+
+## Windows global configuration
+
+The [native installer](../install.sh) uses
+[set-hooks-config.ps1](../tools/windows/set-hooks-config.ps1) for Windows global
+`core.hooksPath` publication. Windows installation requires PowerShell 7.1+,
+Git Bash `cygpath`, and the existing symlink capability described in the
+[README](../README.md). The helper does not require elevation; it refuses before
+publication if the caller cannot preserve the existing owner, group and DACL.
+The security fixture needs an elevated token only to create deliberately distinct
+owner/group values. A missing fixture prerequisite produces an explicit skip.
+
+An equivalent absolute hooks path with no missing requested defaults leaves the
+config bytes, timestamp and security untouched. Otherwise native Git serializes
+the payload inside a private staging
+directory. The helper acquires Git's ordinary exclusive `.lock`, qualifies the
+stage's owner/group/DACL, checks the captured preimage, and atomically replaces the
+config. Its unpredictable sibling original stays in the original inheritance
+context: moving that original into the private staging directory changes legacy
+inheritance flags on Windows. Actual displaced bytes and descriptor must match
+the captured preimage exactly before cleanup, including a second check immediately
+before deletion. Unexpected displaced data is retained and the operation fails.
+Validated successful transactions retain no original or staging copy.
+The intended hooks value is recomputed from the captured serialized preimage
+under the lock; an earlier global read cannot suppress a required update.
+
+Windows can add `SE_DACL_AUTO_INHERITED` when assigning a stage descriptor or
+publishing a replacement. At those copy boundaries only, the full returned binary
+descriptor must be identical or differ solely by forward addition of that bit.
+Owner, group, ACE order, opaque data, null versus empty DACL and all other flags
+remain significant. The captured scope is owner/group/DACL from ordinary
+`Get-Acl`; no privileged audit/SACL inspection is claimed or required. In-memory
+represented-SACL controls protect the generic comparer from discarding fields
+that are present. The displaced-original check permits no normalization.
+
+Run the maintained controls through the [canonical suite](../tests/run.sh):
+
+```sh
+sh tests/run.sh install_native_links install_native_config_acl
+```
+
+The [category 27 fixture](../tests/27-install-native-links.t.sh) performs real
+native Git serialization and actual temporary Windows file operations. The
+legacy fixture clears AI only on its temporary parent with a test-only native
+API; production has no obsolete API or post-publication ACL rewrite. Two exact
+private source copies inject a real noncooperating edit immediately before the
+actual replacement. This bounds and reproduces the race without a production
+test switch, mock filesystem, timing sleeps or a live configuration write.
+Hidden native children have finite execution and output-drain bounds. Normal
+Windows installation runs the existing `hygiene.sh defaults` against the private
+serialized global file in the same transaction; it does not duplicate the
+defaults or write them individually to the live config. Only that child's
+`GIT_CONFIG_GLOBAL` and native-tool PATH binding change. Choices read by the
+unchanged defaults command remain authoritative; its native Git global-file
+selection is preserved, rather than redefined by this publisher.
+`--no-git-defaults` omits that call; Linux and dry-run behavior stay
+unchanged. Uninstall configuration behavior is outside this review scope.
+
+### Config publication review register
+
+Metadata author: `codex-gen9-runner-reliability`. Independent reviewer
+`rootcodex-gen9-fleet` (Codex; did not author this source or metadata) reviewed
+the initial frozen source/test snapshot below and recorded APPROVE. The register
+covers the two named category 27 groups;
+other legacy suite selectors and fleet deployment are outside this review scope.
+
+| Selectors / controls | Protects; weakening permits | Hash-bound review |
+| --- | --- | --- |
+| `t_case_install_native_links` | Existing native links, failure rollback and immutable releases; weakening can hide copied directories or loss of the previous installation. The only production-integration fixture change copies the maintained helper into the historical clone. | Root APPROVE; group `606085F527BEC0C006F746EFB65C4CF5577DC6E6C647E9A1B7E5ABFAC0976284`. |
+| `unchanged-protected`, `unchanged-inherited` | Exact config bytes, modification time and owner/group/DACL; weakening permits gratuitous Git rewrites or descriptor loss on an already equivalent value. | Root APPROVE; config group binding below. |
+| `changed-protected`, `changed-inherited`, `changed-legacy-no-ai` | Intended Git value, unrelated content, original security and successful transaction removal; weakening permits custom ACL loss or false refusal on a real legacy descriptor. | Root APPROVE; config group binding below. |
+| `changed-xdg-only`, `absent-default`, `foreign-lock` | Supported global config routing, first creation and another writer's lock; weakening permits writes to the wrong file or deletion of foreign work. | Root APPROVE; config group binding below. |
+| `default-missing`, `default-kept`, opt-out and private binding | Normal/default and repeated installation retain security and unchanged bytes/mtime; existing boolean, numeric and multi-value choices win; an actual child observation proves the maintained defaults use only the private global file. Weakening permits live defaults writes to recreate the same ACL bug. | Root APPROVE; config group binding below. |
+| Binary descriptor controls | Exact/forward-AI positives; reverse AI, another flag, owner, group, ordered ACEs, opaque bytes, represented SACL and null-to-empty DACL negatives. Weakening permits unrelated security changes under an AI exception. | Root APPROVE; config group binding below. |
+| Trailing-space/dot destinations | Refusal before normalization with canonical bytes/security and no stage/lock; weakening permits an ambiguous path to modify its canonical neighbor. | Root APPROVE; config group binding below. |
+| Actual displaced bytes/descriptor races | Exact-source instrumented real replacement preserves unique displaced data and fails explicitly; weakening permits concurrent work to be deleted after a stale precheck. | Root APPROVE; config group binding below. |
+| Cooperative pre-lock hooks change | A real native Git writer between the early read and lock acquisition cannot cause successful publication of stale hooksPath; weakening trusts an obsolete equality decision. | Root APPROVE; config group binding below. |
+| Relative-include baseline equivalence | An actual `--includes` positive proves the relative fixture resolves; ordinary global reads at the original/private locations must agree, and included bytes stay untouched. Weakening can change the maintained defaults policy or hide a future Git include-default change. | Root APPROVE; config group binding below. |
+
+Group hashes cover each complete function body, UTF-8/LF, trailing whitespace
+removed followed by one LF. The config group SHA256 is
+`C44390B031DE77541F1AF755824052C3F344760F2CFA21FA04177FB92142E8BB`.
+Initial raw and LF-normalized production/test SHA256 values are identical;
+the later dual-global test-only successor is bound separately below:
+
+| Source | SHA256 |
+| --- | --- |
+| `install.sh` | `4F5EAAF555E4C59B34A010DC62DC397159FBEF504B517BE8CE3DC5B1719A6B8D` |
+| `tools/windows/set-hooks-config.ps1` | `F2BFAC4EB591A58C073BE6459F8EEA7B14FC68AD196F45E9792B50F6FA408731` |
+| `tests/27-install-native-links.t.sh` | `01A6575C8F8CF442A37461A711FA5743A2C4202F070D436D9EB4A047790F2053` |
+| `tests/run.sh` | `EFB5FD149DDD59C89D66F3413D6C04ECC8A7384A8EE91B6A1D805581DC4E1627` |
+| Unchanged `hooks/common/hygiene.sh` | `572362FE1B254A11FFA23F3A09A1C307B076C9BE60337379C8E0879EF7BCC848` |
+
+The actual initial RED against the unchanged installer produced four descriptor
+losses and two equivalent-path rewrite failures. Receipt SHA256:
+`576BB9848CCD8C06D86E06306DB90E5E1B24DD24CE1AECC717A24B890762E337`.
+The later controls were validated by an actual source mutation removing the
+new displaced, ambiguous-path and AI defenses: 11 named failures, exit 1 in
+18056ms, production restored byte-exact in `finally`; receipt
+`20E334082FF82BAB98E832FDBB13BED38CC6031ECC57198481FA02A9AE165679`.
+That is a mutation RED, not a claim that those controls preceded all new code.
+The historical hooks-path-only snapshot passed 44 suite checks, 0 failed, 0 skipped in 40055ms
+on Windows/PowerShell 7.6.7/.NET 10.0.13, source pins stable before/after, no
+cleanup warning; receipt
+`EDB0F0CC258B4E958E78DDA3180E01DF77073B4209615FA4B23AE02CF71DDE04`.
+The later normal-default controls then reproduced two genuine descriptor losses
+against that unchanged source, including already-canonical hooksPath; receipt
+`45B88FB467E39464D8F15CBE731693D918DE3C89BF115DA84DA0148C66588759`.
+The historical first integrated default-path successor passed both groups: 44 suite checks,
+0 failed, 0 skipped in 43868ms, including 116 internal native assertions;
+receipt `A3865692E94676A957D3B5A4DBA96972950AC93643F8099EB0E0CD7BE65CA3A8`.
+Its source pins above were measured after that run, not retroactively recorded
+as before/after pins. An initial direct-shell run inherited home tool shadows
+and skipped; it is not counted as a RED or qualification. The qualified run uses
+native Git tool directories before inherited PATH, matching the production
+defaults child's binding. PowerShell parsing/PSScriptAnalyzer and ShellCheck
+reported no findings.
+
+Independent review then identified the pre-lock stale equality race. The new
+actual cooperative-writer control reproduced one named failure before the fix,
+receipt `F999984B23279AD46DFB10821D3C471CEFA09A3AEE30E14C2E1136FC561FF9E1`.
+The pre-lock successor recomputes hooksPath from the captured file under lock and
+names the actual sibling original in failure diagnostics. Both canonical groups
+pass: 44 suite checks, 0 failed, 0 skipped in 49328ms, including 128 internal
+native assertions and absent-config normal-default installation. All five source
+pins above are stable before and after; no cleanup warning was emitted. Receipt:
+`2E556F4430517E47CF624F81EADAEC17DF0769A33D0A1A6743564ACD2D7ACE86`.
+PSScriptAnalyzer, ShellCheck and whitespace checks are clean for this snapshot.
+This is not an executed PowerShell 7.1 qualification.
+
+A subsequent relative-include concern was withdrawn after actual native Git
+2.55.0.windows.5 controls showed ordinary `--global` and `--file` reads both
+exclude includes, while explicit `--includes` resolves the fixture. The installed
+Git manual documents this specific-file default. Production semantics and the
+private directory remain unchanged. The final maintained control compares actual
+original/private ordinary-read exit codes and output instead of making includes
+OFF a future policy. Final exact-source replay passed 44 suite checks, 0 failed,
+0 skipped in 49889ms, including 131 internal assertions; all five pins were stable
+before/after and no cleanup warning was emitted. Receipt:
+`A028DC7F19803E6B54FE221FC692BF3757CB06C83F90F08ED1C1C09B185B4FD8`.
+
+The hooks-path-only broad Windows attempt reached its 600000ms harness bound
+before completion. The owned test tree was terminated; the original harness did
+not retain partial stdout/stderr. Timeout receipt:
+`6D0ECA864C6D54D6683EBF51536313E6C1CEC396026252E70AB9973676301814`.
+The prior full Windows log took approximately 930s, so that incomplete run
+cannot classify current baseline failures or establish a full-suite pass.
+The shared Markdown link check examined seven files with zero broken links or
+anchor warnings. Its test-rationale scanner discovered zero `t_case_*` selectors
+and failed its zero-files guard; no automated rationale coverage is claimed.
+The named controls above require actual independent review against their hash.
+
+The first combined run's 24 native-link failures came from absent historical
+objects in this partial clone, before the unchanged v0.2.7 seed installer could
+run. Bounded hydration of only v0.2.7/v0.2.8 restored the missing tree/blob;
+the clone configuration was byte-identical afterward. Hydration receipt:
+`32FFE1B2425DF216D91A4DF66012CA2269557C4934C07C08E89C21B38DB37039`.
+The successor actually passes the 43 legacy checks plus the new aggregate group.
+The earlier adapter register's Windows baseline is historical, not a current
+classification of these resolved historical-object failures.
+
+Root independently replayed the two maintained groups at these exact five pins
+in actual run `d2fabc`: 44 passed, 0 failed, 0 skipped, including 131 internal
+assertions, 48862ms, no cleanup warning. Source pins were stable and the real
+global config bytes and SDDL were unchanged. Independent receipt SHA256:
+`784B18228272934CD4379FF8F8A87688ED201654CDF33F03ABD3C9E6996B5D30`.
+The outside-family review, current-head CI, full Windows suite disposition and
+supported tagged fleet rollout remain separate gates; this source/selector
+approval does not certify them.
+
+The final full Windows run completed in 909048ms: 1056 passed, 28 failed,
+39 skipped, exit 1, no timeout. Receipt SHA256:
+`642A3B92092FA9DD35BB75ACBAF7D6F81B16373D028D114A40AC92EB99D66B66`.
+Nineteen failure labels match the original baseline log byte-for-byte, without
+normalization: 16 quality-mandate and three provider-dispatch failures. The
+original log SHA256 is
+`25A6FAD22F527F3CB641E7D848F5E2A6D6C1F0C653703491DD5B080A9E2CE9DB`;
+the exact comparison receipt is
+`A1F31B57CBD0207D02D3D726A52BA51137A73C77760C080E1FB9204178FCE269`.
+The old 24 native-link failures no longer occur.
+
+Nine additional labels occurred in the direct native-shell caller: seven
+configured-lefthook and two stale-branch controls. Under the original Git
+`bin/sh.exe` launcher with identical inherited environments, selected downstream
+and hygiene tests passed 109/0/6 on both baseline and current source. All 145
+baseline archive files were authenticated against the original
+`bf6258594973a404e93ad21b91cce66f715dd564` Git blobs, with no extra overlay files;
+the archive is not described as a clean Git checkout. Binding receipt:
+`66B67F4F308103F04C4DB9AFB9843B45ABEE28F373309C8C69AF300C94B5C761`.
+Paired replay receipt:
+`A69E252418DC05800A7E91B6AC440786652BE45C4307CABEF1EBAD80B9A1D9AC`.
+All 145 archive files were unchanged afterward; postcheck:
+`D3CA7FF3E055DF06FCB9238B1452F17693A0C51FFDBB6C48E284B0E29CAA662C`.
+
+One bounded real precommit/stale-branch fixture varied only `MSYSTEM`. The inert
+precommit hook ran and refused in both contexts, and its unhooked positive
+committed in both. With `MSYSTEM` unset, the stale-branch push succeeded and
+reached the remote; with `MINGW64`, it was correctly refused. This establishes
+the two stale labels' caller dependence, not a general hook-dispatch failure or
+the cause of all seven lefthook labels. Receipt:
+`C2329E77670267A80F7C0140091DF41777B185CF6CAEAD1E7A10BAE4BEFA57F5`.
+These are disclosed local limitations, not a full Windows pass or weakened
+assertions. The installer source and selected tests remained frozen throughout
+the full run and paired controls; both required current-head CI jobs passed.
+The stale-branch fail-open can matter to native PowerShell callers, where
+`MSYSTEM` is commonly unset. It is a separate real reliability follow-up; this
+ACL qualification is not general acceptance of Windows fleet hygiene.
+
+### Dual-global review successor
+
+The genuine autopilot Claude review of `ceb1148bbc104b467b2042f74638e7b114df6469`
+requested changes because it inferred that staging only the home file newly
+ignored XDG choices. The finding was verified against actual native Git before
+changing production. The qualified runtime is Git `2.55.0.windows.5`, PowerShell
+7.6.7 and .NET 10.0.13. With both real global files present, native
+`git config --global --get fetch.prune` returned 1 when the home file lacked the
+key, and `--global --show-origin --list` showed only the home file. In the same
+inert directory/environment, `git config --show-origin --get fetch.prune`
+returned the XDG choice. Home precedence and explicit-global isolation also
+passed their positive controls. This distinction matters because the unchanged
+maintained defaults use `--global`; a normal all-scope read is not their baseline.
+The [Git documentation](https://git-scm.com/docs/git-config) describes both global
+files, so the test records actual command equivalence rather than declaring the
+observed one-file selection a permanent policy.
+
+The first new controls used a POSIX HOME for native Git launched directly from
+PowerShell, overlooking MSYS's child-environment translation. That fixture error
+was corrected before interpreting the result. The subsequent scope capture is
+receipt `E0E9F76CB4F3AC9A6034D5A7DD4548DFDD4D543C8F708EACBBF5D91E020C81FC`.
+Its failed expectations assumed both files participated in `--global`; they are
+not an installer-regression RED. No production source changed in this successor.
+
+The maintained dual-file controls now execute the unchanged `hygiene.sh defaults`
+directly against a private duplicate with the original HOME/XDG/global binding.
+They compare its actual exit codes, all six default-key outputs and ordered Git
+serialization with the publisher's result. Real all-scope origins prove that
+both files are functional; multi-value order, a literal `~/` value, home choice,
+explicit override and explicit empty-override refusal are detecting controls.
+The XDG bytes and descriptor must remain unchanged, and repeated installation
+must not rewrite the resulting home config. A runtime whose global selection
+differs must still produce equivalent original/publisher results; the test does
+not hardcode that XDG is always excluded. This preserves baseline behavior and
+does not certify all global-file semantics or resolve a pre-existing Git/defaults
+policy concern.
+
+The actual maintained config group passed 1 aggregate check, 0 failed, 0 skipped,
+including 190 inner native assertions, in 41534ms. All five source pins stayed
+unchanged, with no cleanup warning. Receipt SHA256:
+`56226BC8BBB259EADFC9E9125300CDE630F9768E9CFAAAC482B79D31A89F7FCC`.
+The successor test-file raw/LF SHA256 is
+`203750E10C332A8660135E1BC6032C467856864D38EB74DE7FD7B81525264002`;
+config-group SHA256 is
+`E4098BA785DBC92885097B1E9DD07E780CE3468CAAE50D51D74583F24575B5B1`.
+The legacy group and all production/runner pins above are unchanged.
+
+| Successor controls | Protects; weakening permits | Hash-bound review |
+| --- | --- | --- |
+| `default-dual-xdg`, `default-dual-home-wins`, `default-explicit-over-xdg`, `empty-global-refused` | Original defaults read/write semantics, functional XDG/home origins, ordered multi-values, literal tilde, explicit override isolation/refusal and repeat-install identity. Requires actual native Git, Windows and the fixture token described above. Weakening can invent a regression from a different Git scope, hide an actual selection regression or mutate operator XDG data. | Root component APPROVE; test `203750E10C332A8660135E1BC6032C467856864D38EB74DE7FD7B81525264002`, config group `E4098BA785DBC92885097B1E9DD07E780CE3468CAAE50D51D74583F24575B5B1`. |
+
+Independent reviewer `rootcodex-gen9-fleet` read the complete test-only diff and
+successor documentation, then actually replayed the canonical config group in
+41505ms: 1 aggregate passed, 0 failed, 0 skipped and 190 inner native assertions
+passed. All five source pins were stable, and the real global config bytes and
+SDDL stayed unchanged. Root recorded component APPROVE for this exact test/group
+binding; no production source changed. Independent receipt SHA256:
+`42CE2E0084A0DBDFABE1D56F575AA08A54679E3D97A4E0E5C774D0D6848D34A4`.
+Normal new-head CI and full-PR autopilot disposition remain pending. Neither
+component approval is relabeled as an outside-family or full-PR approval, and
+the broader Windows run above remains 1056/28/39 with its stated limitations.

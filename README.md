@@ -275,6 +275,12 @@ absent: [`ast-grep`](https://ast-grep.github.io/) (structural rules),
 `shellcheck`, `ruff`, `python`, `pwsh`, `dotnet`, `cargo`. On Git-Bash/MSYS,
 `cygpath` is used to hand native paths to ast-grep.
 
+Native Windows installation also requires PowerShell7.1+ and Git Bash's
+`cygpath` for [atomic global-config publication](docs/QA_TOOLING.md#windows-global-configuration).
+Existing equivalent hook paths leave the config untouched. Changed paths retain
+its original owner, group and DACL. The installed hooks continue to run in POSIX
+`sh`.
+
 ## Containerized / cross-backend runs
 
 `bin/git-guard-run` runs the gate or self-test through the best available
