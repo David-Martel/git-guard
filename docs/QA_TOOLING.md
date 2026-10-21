@@ -1049,10 +1049,46 @@ Neither group qualifies a physical SSH connection or an installed fleet rollout.
 ### Adapter test review register
 
 The two explicit selector groups below cover only category 33. Existing tests are
-outside this new review scope. The source hashes and independent dispositions
-will be bound to the reviewed PR head before integration.
+outside this new review scope. Independent reviewer `/root` (Codex; did not author
+these tests) recorded KEEP on 2026-10-21 for the exact source snapshot committed as
+[`c0123722dde76bcd9e77ec70ed0333e29c4c13b9`](https://github.com/David-Martel/git-guard/commit/c0123722dde76bcd9e77ec70ed0333e29c4c13b9).
+The metadata author is `codex-gen9-runner-reliability`. Root's actual final replay
+receipt `5ae4f5` ran both groups: 2 passed, 0 failed, 0 skipped in 3399ms on
+Windows with PowerShell 7.6.7; this is not a claim of an executed PowerShell 7.1
+qualification. The source/test hashes were stable across that replay.
 
 | Selectors | Protects / weakening permits | Reviewer / disposition |
 | --- | --- | --- |
-| `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_keeps_existing_normalization`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit contract; weakening admits visible children, broken interactive convenience or unbounded headless children. | Unreviewed; source and selector pins pending independent review. |
-| `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets`, `timeout_cleanup_terminates_real_owned_child`, `held_pipe_drain_is_bounded` | Opt-in migration and target preservation; weakening permits unknown-content replacement, configuration/ACL drift or unbounded validation cleanup. | Unreviewed; source and selector pins pending independent review. |
+| `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_keeps_existing_normalization`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit contract; weakening admits visible children, broken interactive convenience or unbounded headless children. | Root independent review: KEEP; replay `5ae4f5`; group SHA256 `4C801BB9A5BC1F4048F03A9902833BB43FB0C69DEDA6A7E3EFCA3D0770A038F3`. |
+| `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets`, `timeout_cleanup_terminates_real_owned_child`, `held_pipe_drain_is_bounded` | Opt-in migration and target preservation; weakening permits unknown-content replacement, configuration/ACL drift or unbounded validation cleanup. | Root independent review: KEEP; replay `5ae4f5`; group SHA256 `D5AFE98827EC2A82DB8F980E67632360EF36BA1DE766B20D418D638F793F895A`. |
+
+Group hashes cover the exact UTF-8 source from each group's `Protects` comment
+through the byte preceding the next group's comment (or EOF for the final group).
+The full test file SHA256 is
+`2F982ACA5893733612785F01283E868B8429032B6A4701ADBAF1D31CBE643F41`.
+Raw and LF-normalized production SHA256 values are identical:
+
+| Code under test | SHA256 |
+| --- | --- |
+| [JavaScript](../tools/windows/git-ssh-wrapper.js) | `5A1E7889C812F38E409F15AB4166AE5607ABA42B8ACCAF293C9943E169CA6500` |
+| [Installer](../tools/windows/install-git-ssh-wrapper.ps1) | `BD25FEB9824A1859D42C648310D89FE86A4FAC5D6C58CB1636FEE4B133683A1F` |
+| [Legacy launcher](../tools/windows/git-ssh-wrapper.cmd) | `A7C81A417092D46D2F4F56F57E36B679B15A451F6C0A44F973A66DAA96ED542B` |
+
+The actual original-wrapper RED had four named Node failures and three passing
+compatibility controls; an initial malformed legacy fixture was corrected before
+counting that result. The final compatible held-pipe fixture also rejected an
+isolated mutation removing only the finite drain: the old read waited 1218ms for
+the writer closure and failed the expected finite-drain disposition. The earlier
+Node-descendant inheritance experiment did not retain pipes on this Windows host
+and is not counted as a valid RED control.
+
+The broad Windows run reported 1040 passed, 43 failed and 39 skipped. A clean
+baseline at `bf6258594973a404e93ad21b91cce66f715dd564` reran the three failing
+groups: 241 passed, 43 failed and 4 skipped. Both have 16 quality-mandate failures,
+24 native-link installer failures and 3 provider-dispatch failures. After fixture
+path normalization, 42 failure labels match; one native installer failure appears
+at a different cascading seed/reproduction stage. These are unresolved Windows
+baseline failures, not a full-suite pass or a waiver. The broad run loaded the
+earlier adapter test body; the final adapter snapshot is qualified by the focused
+replays above and its own current-head CI. This register does not certify legacy
+selectors, an SSH connection, or fleet deployment.
