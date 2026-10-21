@@ -1052,15 +1052,23 @@ The two explicit selector groups below cover only category 33. Existing tests ar
 outside this new review scope. Independent reviewer `/root` (Codex; did not author
 these tests) recorded KEEP on 2026-10-21 for the exact source snapshot committed as
 [`c0123722dde76bcd9e77ec70ed0333e29c4c13b9`](https://github.com/David-Martel/git-guard/commit/c0123722dde76bcd9e77ec70ed0333e29c4c13b9).
-The metadata author is `codex-gen9-runner-reliability`. Root's actual final replay
-receipt `5ae4f5` ran both groups: 2 passed, 0 failed, 0 skipped in 3399ms on
-Windows with PowerShell 7.6.7; this is not a claim of an executed PowerShell 7.1
-qualification. The source/test hashes were stable across that replay.
+The metadata author is `codex-gen9-runner-reliability`. Root's historical replay
+`5ae4f5` covered installer SHA256
+`BD25FEB9824A1859D42C648310D89FE86A4FAC5D6C58CB1636FEE4B133683A1F`.
+Root then independently reviewed KEEP for the compatibility-only successor
+[`eba7172d01d1f6fc598e826149bf391820cc5570`](https://github.com/David-Martel/git-guard/commit/eba7172d01d1f6fc598e826149bf391820cc5570):
+disposable `SHA256.Create().ComputeHash(Stream)` replaces three stream calls,
+because the official [.NET5 SHA256 source](https://github.com/dotnet/runtime/blob/v5.0.0/src/libraries/System.Security.Cryptography.Algorithms/src/System/Security/Cryptography/SHA256.cs)
+has no `HashData(Stream)` overload. The [.NET5 HashAlgorithm source](https://github.com/dotnet/runtime/blob/v5.0.0/src/libraries/System.Security.Cryptography.Primitives/src/System/Security/Cryptography/HashAlgorithm.cs)
+provides `ComputeHash(Stream)`. Root's final actual replay `766663` ran both
+groups: 2 passed, 0 failed, 0 skipped in 2949ms on Windows with PowerShell 7.6.7.
+The source/test hashes below were stable across that replay. This is an API
+compatibility correction, not an executed PowerShell 7.1 qualification.
 
 | Selectors | Protects / weakening permits | Reviewer / disposition |
 | --- | --- | --- |
-| `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_keeps_existing_normalization`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit contract; weakening admits visible children, broken interactive convenience or unbounded headless children. | Root independent review: KEEP; replay `5ae4f5`; group SHA256 `4C801BB9A5BC1F4048F03A9902833BB43FB0C69DEDA6A7E3EFCA3D0770A038F3`. |
-| `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets`, `timeout_cleanup_terminates_real_owned_child`, `held_pipe_drain_is_bounded` | Opt-in migration and target preservation; weakening permits unknown-content replacement, configuration/ACL drift or unbounded validation cleanup. | Root independent review: KEEP; replay `5ae4f5`; group SHA256 `D5AFE98827EC2A82DB8F980E67632360EF36BA1DE766B20D418D638F793F895A`. |
+| `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_keeps_existing_normalization`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit contract; weakening admits visible children, broken interactive convenience or unbounded headless children. | Root independent review: KEEP; final replay `766663`; group SHA256 `4C801BB9A5BC1F4048F03A9902833BB43FB0C69DEDA6A7E3EFCA3D0770A038F3`. |
+| `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets`, `timeout_cleanup_terminates_real_owned_child`, `held_pipe_drain_is_bounded` | Opt-in migration and target preservation; weakening permits unknown-content replacement, configuration/ACL drift or unbounded validation cleanup. | Root independent review: KEEP; final replay `766663`; group SHA256 `D5AFE98827EC2A82DB8F980E67632360EF36BA1DE766B20D418D638F793F895A`. |
 
 Group hashes cover the exact UTF-8 source from each group's `Protects` comment
 through the byte preceding the next group's comment (or EOF for the final group).
@@ -1071,7 +1079,7 @@ Raw and LF-normalized production SHA256 values are identical:
 | Code under test | SHA256 |
 | --- | --- |
 | [JavaScript](../tools/windows/git-ssh-wrapper.js) | `5A1E7889C812F38E409F15AB4166AE5607ABA42B8ACCAF293C9943E169CA6500` |
-| [Installer](../tools/windows/install-git-ssh-wrapper.ps1) | `BD25FEB9824A1859D42C648310D89FE86A4FAC5D6C58CB1636FEE4B133683A1F` |
+| [Installer](../tools/windows/install-git-ssh-wrapper.ps1) | `9E01AC345BF4EFC0D1A8CC2704F10A79EC75874EF0BDD0BBC2FDB5C7FD214969` |
 | [Legacy launcher](../tools/windows/git-ssh-wrapper.cmd) | `A7C81A417092D46D2F4F56F57E36B679B15A451F6C0A44F973A66DAA96ED542B` |
 
 The actual original-wrapper RED had four named Node failures and three passing
