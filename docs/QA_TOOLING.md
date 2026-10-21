@@ -965,3 +965,85 @@ remains fine. Dataclasses and TypedDict are allowed (vigil-oto CLAUDE.md:116-117
 `Literal[...]` stays at `warn` because vigil-ai-tpm recommends it. vigil-spark's
 `py-no-except-empty-sentinel` exempts `return False` in predicates; the mandate
 does not, so such a predicate records a `SAFETY:` suppression on the except line.
+
+## Optional Windows Git SSH adapter
+
+Install/build/test/run: first install a reviewed git-guard release using the
+[normal versioned installer](../README.md#quick-start); no adapter build is needed.
+Run `sh tests/run.sh windows_ssh_adapter windows_ssh_adapter_install` from a clone
+to test the adapter. Then invoke the installed
+[migration script](../tools/windows/install-git-ssh-wrapper.ps1) with PowerShell 7.1 or later:
+
+```powershell
+$adapter = Join-Path $HOME '.local/share/git-guard/current/tools/windows/install-git-ssh-wrapper.ps1'
+& $adapter         # Read-only plan against the existing ~/bin wrapper pair
+& $adapter -Apply  # Apply only after reviewing that installed release
+```
+
+This is an optional migration for existing wrapper consumers. It never writes
+Git configuration, enables an unset `core.sshCommand`, changes the global hook
+installer, registers a service, or starts an SSH connection. The source must be
+an already-materialized release carrying `VERSION` and a full commit marker;
+the marker identifies the release, and is not a cryptographic authenticity check.
+The operator still obtains that release through the normal reviewed/tagged path.
+The script refuses missing wrappers, links, an altered launcher, or JavaScript
+other than the exact known legacy bytes or its own installed source bytes.
+There is no general replacement of custom or older unrelated wrappers.
+
+The [CMD launcher](../tools/windows/git-ssh-wrapper.cmd) is byte-identical to the
+observed legacy launcher (SHA256
+`A7C81A417092D46D2F4F56F57E36B679B15A451F6C0A44F973A66DAA96ED542B`).
+The accepted legacy JavaScript SHA256 is
+`46D2615192CB8EBAADBF2FA43DAB8B1C93FEFE79260F61FB8571FDBAFE7A2EF1`.
+The script checks source syntax in a hidden, shell-free Node child with a 10s
+validation limit before opening targets. It locks both existing wrapper files
+against concurrent writers while validating the legacy pins, writes only the
+existing JavaScript file and verifies readback. Its ACL survives an in-place
+write. A caught write/readback failure restores known bytes from memory; there
+are no redundant backup files. This does not claim atomic recovery from a host
+power loss during that in-place write.
+
+The [JavaScript adapter](../tools/windows/git-ssh-wrapper.js) preserves the old
+argument array, Git pack-command normalization, inherited terminal streams and
+exit-code handling. Its SSH child always requests `windowsHide:true`. This closes
+a missing child-launch option; it does not establish that this wrapper caused
+the fleet's reported Git Bash popups or hide a console created by its caller.
+The option follows Node's
+[child-process contract](https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options).
+Interactive calls retain prompts and have no added timeout or SSH options.
+`CI` alone does not change this behavior.
+
+Only the explicit value `GIT_TERMINAL_PROMPT=0` opts into `BatchMode=yes`,
+`ConnectTimeout=15`, `ServerAliveInterval=30`, `ServerAliveCountMax=3`, and a
+300000ms child timeout. Connect/keepalive values match the existing fleet SSH
+[qualification](https://github.com/David-Martel/vigil-utils/blob/main/docs/fleet-ssh-performance-2026-07-30.md);
+the 5min lifetime matches the existing automation budgets in
+[clone_git](https://github.com/David-Martel/vigil-utils/blob/main/tools/merge-autopilot/autopilot.py)
+and the explicit fetch in
+[hygiene_report](https://github.com/David-Martel/vigil-utils/blob/main/tools/merge-autopilot/hygiene_report.py).
+A caller can end the whole operation sooner as before. Unusually long
+noninteractive transfers now fail after 5min, even if actively transferring;
+this is a finite automation lifetime, not a claim that every repository fits it.
+The installer adds no environment or timeout configuration steps.
+
+The [category 33 tests](../tests/33-windows-ssh-adapter.t.sh) run through the
+[canonical suite runner](../tests/run.sh), including its orphan guard. The Node
+group executes real inert children for exact argument/exit propagation and a
+finite timeout. It asserts the production 300000ms value, then shortens only the
+test executable boundary to 80ms; a 1s self-exiting child bounds the RED control.
+This qualifies timeout wiring without waiting 5min or opening an SSH session.
+The installer group uses a temporary release and wrapper pair on native Windows,
+with actual writes, ACL/readback/config preservation, idempotency, and rejection
+controls. Linux runs the Node group and reports the Windows installer as skipped.
+Neither group qualifies a physical SSH connection or an installed fleet rollout.
+
+### Adapter test review register
+
+The two explicit selector groups below cover only category 33. Existing tests are
+outside this new review scope. The source hashes and independent dispositions
+will be bound to the reviewed PR head before integration.
+
+| Selectors | Protects / weakening permits | Reviewer / disposition |
+| --- | --- | --- |
+| `interactive_hides_without_restricting_prompt_or_lifetime`, `ci_alone_retains_interactive_options`, `explicit_noninteractive_has_existing_fleet_bounds`, `real_child_roundtrips_arguments_and_exit_status`, `split_pack_command_keeps_existing_normalization`, `real_child_timeout_is_finite_and_reports_failure`, `spawn_error_and_signal_do_not_become_success` | Child launch/argument/exit contract; weakening admits visible children, broken interactive convenience or unbounded headless children. | Unreviewed; source and selector pins pending independent review. |
+| `plan_only_retains_legacy_bytes`, `apply_promotes_validated_source_without_config_or_acl_change`, `idempotent_install_has_no_redundant_backup`, `unknown_launcher_is_preserved_and_refused`, `invalid_javascript_fails_before_target_writes`, `unknown_work_is_preserved_and_refused`, `invalid_release_marker_does_not_touch_targets` | Opt-in migration and target preservation; weakening permits unknown-content replacement or configuration/ACL drift. | Unreviewed; source and selector pins pending independent review. |

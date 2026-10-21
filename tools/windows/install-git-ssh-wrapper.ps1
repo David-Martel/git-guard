@@ -1,0 +1,128 @@
+#Requires -Version 7.1
+<#
+.SYNOPSIS
+Updates known legacy Windows Git SSH wrappers from an installed git-guard release.
+.DESCRIPTION
+Default is a read-only plan. Apply changes only the existing JavaScript file,
+preserving its ACL and the legacy CMD launcher. Git configuration is never changed.
+See docs/QA_TOOLING.md#optional-windows-git-ssh-adapter and tests/33-windows-ssh-adapter.t.sh.
+.PARAMETER SourceRoot
+Already-materialized git-guard release; defaults to the installed current release.
+.PARAMETER BinDirectory
+Directory containing both existing, known legacy wrapper files.
+.PARAMETER Apply
+Promotes validated source bytes after exclusive target revalidation.
+.EXAMPLE
+./tools/windows/install-git-ssh-wrapper.ps1
+Shows the planned migration without changing wrappers or Git configuration.
+.EXAMPLE
+./tools/windows/install-git-ssh-wrapper.ps1 -Apply
+Updates known legacy JavaScript from the installed current release.
+#>
+[CmdletBinding()]
+param(
+    [string]$SourceRoot = (Join-Path $HOME '.local/share/git-guard/current'),
+    [string]$BinDirectory = (Join-Path $HOME 'bin'),
+    [switch]$Apply
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+if (-not $IsWindows) { throw 'This optional adapter installer requires native Windows.' }
+$legacyJsHash = '46D2615192CB8EBAADBF2FA43DAB8B1C93FEFE79260F61FB8571FDBAFE7A2EF1'
+$launcherHash = 'A7C81A417092D46D2F4F56F57E36B679B15A451F6C0A44F973A66DAA96ED542B'
+$marker = Join-Path $SourceRoot '.git-guard-commit'
+if (-not [IO.File]::Exists($marker) -or -not [IO.File]::Exists((Join-Path $SourceRoot 'VERSION'))) {
+    throw 'SourceRoot must be an already-materialized git-guard release with a commit marker and VERSION.'
+}
+$commit = [IO.File]::ReadAllText($marker).Trim()
+if ($commit -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid materialized release commit marker.' }
+$sourceJs = Join-Path $SourceRoot 'tools/windows/git-ssh-wrapper.js'
+$sourceCmd = Join-Path $SourceRoot 'tools/windows/git-ssh-wrapper.cmd'
+$sourceBytes = [IO.File]::ReadAllBytes($sourceJs)
+$sourceHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($sourceBytes))
+if ((Get-FileHash -LiteralPath $sourceCmd -Algorithm SHA256).Hash -ne $launcherHash) {
+    throw 'Materialized launcher differs from the known legacy launcher; refusing migration.'
+}
+
+# Check the actual source without a shell, visible console or network connection.
+$node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+$start = [Diagnostics.ProcessStartInfo]::new($node)
+$start.UseShellExecute = $false
+$start.CreateNoWindow = $true
+$start.RedirectStandardOutput = $true
+$start.RedirectStandardError = $true
+$start.ArgumentList.Add('--check')
+$start.ArgumentList.Add($sourceJs)
+$process = [Diagnostics.Process]::new()
+$process.StartInfo = $start
+try {
+    if (-not $process.Start()) { throw 'Node syntax validation did not start.' }
+    $stdout = $process.StandardOutput.ReadToEndAsync()
+    $stderr = $process.StandardError.ReadToEndAsync()
+    if (-not $process.WaitForExit(10000)) {
+        $process.Kill($true)
+        $process.WaitForExit()
+        throw 'Node syntax validation timed out before any target write.'
+    }
+    $null = $stdout.GetAwaiter().GetResult()
+    $diagnostic = $stderr.GetAwaiter().GetResult()
+    if ($process.ExitCode -ne 0) { throw "Materialized JavaScript failed syntax validation: $diagnostic" }
+} finally { $process.Dispose() }
+
+$targetCmd = Join-Path $BinDirectory 'git-ssh-wrapper.cmd'
+$targetJs = Join-Path $BinDirectory 'git-ssh-wrapper.js'
+foreach ($path in @($targetCmd, $targetJs)) {
+    $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+    if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Existing wrapper must be a regular file; unknown link/directory preserved.'
+    }
+}
+$cmdStream = $null
+$jsStream = $null
+try {
+    # Hold both targets against concurrent writers/deletion; preserve their existing ACLs.
+    $cmdStream = [IO.File]::Open($targetCmd, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    $access = if ($Apply) { [IO.FileAccess]::ReadWrite } else { [IO.FileAccess]::Read }
+    $jsStream = [IO.File]::Open($targetJs, [IO.FileMode]::Open, $access, [IO.FileShare]::None)
+    if ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($cmdStream)) -ne $launcherHash) {
+        throw 'Existing CMD has unknown bytes; preserving local work.'
+    }
+    $targetHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($jsStream))
+    if ($targetHash -eq $sourceHash) {
+        return [pscustomobject]@{ Status = 'Current'; Commit = $commit; SHA256 = $sourceHash }
+    }
+    if ($targetHash -ne $legacyJsHash) { throw 'Existing JavaScript has unknown bytes; only the exact legacy wrapper is accepted.' }
+    if (-not $Apply) {
+        return [pscustomobject]@{ Status = 'Planned'; Commit = $commit; SHA256 = $sourceHash }
+    }
+    $jsStream.Position = 0
+    $original = [byte[]]::new([int]$jsStream.Length)
+    $read = 0
+    while ($read -lt $original.Length) {
+        $count = $jsStream.Read($original, $read, $original.Length - $read)
+        if ($count -eq 0) { throw 'Legacy JavaScript ended unexpectedly before any write.' }
+        $read += $count
+    }
+    try {
+        $jsStream.Position = 0
+        $jsStream.Write($sourceBytes)
+        $jsStream.SetLength($sourceBytes.Length)
+        $jsStream.Flush($true)
+        $jsStream.Position = 0
+        if ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($jsStream)) -ne $sourceHash) {
+            throw 'Installed JavaScript readback failed.'
+        }
+    } catch {
+        # Known legacy bytes stay only in memory, never as a redundant backup file.
+        $jsStream.Position = 0
+        $jsStream.Write($original)
+        $jsStream.SetLength($original.Length)
+        $jsStream.Flush($true)
+        throw
+    }
+    [pscustomobject]@{ Status = 'Installed'; Commit = $commit; SHA256 = $sourceHash }
+} finally {
+    if ($null -ne $jsStream) { $jsStream.Dispose() }
+    if ($null -ne $cmdStream) { $cmdStream.Dispose() }
+}

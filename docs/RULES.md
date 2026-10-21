@@ -1,5 +1,9 @@
 # git-guard rules
 
+Optional transport migration is separate from the hook engine. Its
+[contract and scoped test review register](QA_TOOLING.md#optional-windows-git-ssh-adapter)
+link to the adapter source and the category33 failing/passing controls.
+
 One row per rule git-guard enforces: hook steps, QA-gate checks, CLI and install checks, and every bundled ast-grep rule. **Blocks** is the default behaviour; per-repo `.qa-gate.conf` keys change it ([QA_TOOLING.md](QA_TOOLING.md) section 5). **Failing test** links the assertion that feeds the rule an input it must refuse (or flag); **passing test** links the assertion that feeds it an input it must accept. **Weakening permits** says what a looser rule would let through, which is review question 3 of the [documentation and test standard](https://github.com/David-Martel/dtm-claude/blob/main/docs/reference/DOCUMENTATION_AND_TEST_STANDARD.md).
 
 `none` in a test column is an open gap. For ast-grep rules, `none: cannot fire` means the rule as written matches nothing (measured with ast-grep 0.45.3 and 0.39.5, the version CI pins); [tests/27-rule-behaviour.t.sh](../tests/27-rule-behaviour.t.sh) prints each one as a `[skip]` on every run. Rules with no sound failing/passing pair are also explicit skips; a safe fixed-size array is not asserted to be a panic hazard. A new bundled rule fails that file's completeness check until it has a row.

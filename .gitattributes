@@ -12,3 +12,5 @@ hooks/pre-push     text eol=lf
 hooks/post-checkout text eol=lf
 bin/git-guard      text eol=lf
 bin/git-guard-run  text eol=lf
+tools/windows/git-ssh-wrapper.cmd text eol=lf
+tools/windows/git-ssh-wrapper.js text eol=lf
