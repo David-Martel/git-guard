@@ -161,9 +161,10 @@ results, binary/argument preservation, output overflow and descendant cleanup.
 Its synthetic signature backend proves orchestration only; `identity_verify`
 uses real throwaway SSH signatures for cryptographic positive/negative controls.
 Native Windows and Linux exercise their different containment implementations.
-The [selector review register](../TEST_REVIEW.csv) binds independent source
-reviews to selector and target hashes; its [reviewer configuration](test-review.toml)
-is advisory for the [shared checker](https://github.com/David-Martel/vigil-utils/tree/main/tools/doc_checks).
+The [maintained review register](QA_TOOLING.md#bounded-signature-worker-review)
+binds independent source reviews to selector and target hashes. Combine platform
+coverage only from the same source snapshot; shifted line numbers from older
+revisions can falsely increase measured coverage.
 API contracts: [Windows process attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
 [Job objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
 and [Python waitid](https://docs.python.org/3/library/os.html#os.waitid).

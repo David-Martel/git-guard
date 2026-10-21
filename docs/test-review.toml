@@ -1,7 +1,0 @@
-# Advisory hash-bound test review lookup; no new CI gate or runtime policy.
-# Run the shared checker as documented in IDENTITY.md.
-reviewers = ["codex-gen9-pcai-route-review"]
-
-[tests]
-dirs = ["tests"]
-require_labels = ["Protects", "Detects", "Needs", "Breadcrumb"]

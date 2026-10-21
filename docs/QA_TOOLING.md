@@ -1435,3 +1435,42 @@ binding; no production source changed. Independent receipt SHA256:
 Normal new-head CI and full-PR autopilot disposition remain pending. Neither
 component approval is relabeled as an outside-family or full-PR approval, and
 the broader Windows run above remains 1056/28/39 with its stated limitations.
+
+### Bounded signature worker review
+
+Independent agent `rootcodex-gen9-fleet` reviewed the final source at commit
+`5e3e114c90bdee48f2c18891e45c167968e7146c` on 2026-10-21 and recorded
+**APPROVE / keep** for each selector below. Scope: finite verification,
+owned-process cleanup, offline installation readiness and hidden Windows
+fixtures. Weakening these controls permits indefinite hooks, surviving child
+processes, accepted partial results or activation without a working runtime.
+This component review does not replace outside-family PR approval or current-head CI.
+Root independently ran the Windows controls: 9 passed and the POSIX-only signal
+injection was explicitly skipped, including a passing native console-absence
+positive control (receipt `397b7f`). Native Linux execution is recorded separately
+by the author; no Linux execution is attributed to this review.
+
+Selectors are in [test_identity_worker.py](../tests/test_identity_worker.py).
+Hashes below are the shared doc-checker's AST selector hashes and normalized
+target hashes. Targets: **W** = [identity_worker.py](../hooks/common/identity_worker.py),
+`fd1d1735192f0200aa0d34fbd0cc2a3dc9da9eb5772f31bd859cde840f76f1c2`;
+**I** = [identity.sh](../hooks/common/identity.sh),
+`4fc270867d25f490037798da97af86682940fdedefc804dd039f83aa478986a1`;
+**P** = [install.sh](../install.sh),
+`d0c0c23b0bf53d6d70474e1e560f9ebec11b6a01d91ea47c6c1d3c3920800f12`.
+Worker/test raw Windows SHA256 bindings are respectively
+`3258664CB41F2622E7D303D4C8E5A797E245F65C15955952136E3D729EF7563A`
+and `ADFAD3C2455179CE7097A06DD950B45E12C5C562488E22BBB6D2818A72774CE9`.
+
+| Selector (`WorkerTests`) | Selector SHA256 | Target | Disposition |
+| --- | --- | --- | --- |
+| `test_descendant_is_retired_after_leader_exit` | `7baf0c227859c306fd5621e0ea6b4b523e8b8cea4cee9697f85b87666b68d587` | W | keep |
+| `test_failure_does_not_become_success` | `a1f2876c3d522e58bc1e4dde27620cb9f9cc812859b4ae58fc0d17f74516d9f8` | W | keep |
+| `test_hang_fails_finitely` | `32bcffb8b2a3ade6ac9afd6a4c4ffe8ecaa9ab52671e9426fa09482953bafeab` | W | keep |
+| `test_identity_deadline_discards_partial_attestation` | `c79d1156c9dab6265b0d5a5d401ddda811737ace22750f3c40180babf02ec642` | I | keep |
+| `test_install_runtime_failure_prevents_promotion_gate` | `7aeeb2f36120786466918794ffe4c672cebfce059916c453a5f3e99f03b0e93d` | P | keep |
+| `test_invalid_budget_is_rejected` | `69bd1bf4ec86f9e4349eb58a4d89008e5c35d77c020381ec18d7726e0cdfe8e5` | W | keep |
+| `test_output_overflow_fails_closed` | `0f5d34b58ee1e4e9d75188d6371210a1b090701ddad01f21400a5e5782dd835c` | W | keep |
+| `test_positive_preserves_binary_output_and_argv` | `888a82da5bb8d829e21c1531fa2f8476a5b4f7b744e8b1850a18ebfa53847504` | W | keep |
+| `test_signal_during_launch_still_reaps_child` | `d28d6428867790b231bdbf7432a2c4c45030fe9cf997681e8cf23acc6d0be058` | W | keep |
+| `test_timeout_also_retires_descendant` | `f2ca811722bcb52e4fbf55ac56bc9a65cf6a5d9300b851e7a7d47b95e6b7f8c6` | W | keep |
