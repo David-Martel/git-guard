@@ -261,6 +261,7 @@ t_case_identity_hooks() {
   mkdir -p "$r/test-hooks/common" "$r/.git-guard"
   for h in prepare-commit-msg commit-msg pre-push; do cp "$GG_ROOT/hooks/$h" "$r/test-hooks/$h"; chmod +x "$r/test-hooks/$h"; done
   cp "$GG_ROOT/hooks/common/identity.sh" "$r/test-hooks/common/identity.sh"
+  cp "$GG_ROOT/hooks/common/identity_worker.py" "$r/test-hooks/common/identity_worker.py"
   git -C "$r" config core.hooksPath "$r/test-hooks"
   git -C "$r" config gpg.ssh.allowedSignersFile "$as"
   git -C "$r" config gpg.format ssh

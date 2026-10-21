@@ -118,6 +118,56 @@ Some properties of this block, each of them deliberate and tested:
 
 ### `verify` (CI and manual)
 
+The query in [`gg_verify_rows`](../hooks/common/identity.sh) preserves Git's
+`%G?`, `%GS` and `%GF` signature checks and runs them through
+[`identity_worker.py`](../hooks/common/identity_worker.py). It needs **uv and an
+already installed Python 3.10+ on Windows/Linux**. macOS needs Python 3.13+
+for `os.waitid` and remains unqualified by native execution here. The invocation
+is offline and disables Python
+downloads; an absent runtime is a configuration error, never an unbounded fallback.
+The [installer](../install.sh) runs the worker's offline `--check-runtime` probe
+before promoting a candidate release, reusing an installed candidate or linking
+a development checkout. Failed readiness leaves the active links untouched; it
+does not install a runtime or alter host configuration.
+
+The default query deadline is 30 seconds. A repository can set
+`git config gitGuard.identityTimeoutSeconds 60` (integer 1–300).
+The default and range are adjustable operator policy; the small regression
+fixtures do not establish throughput for the maximum 500-commit pre-push range.
+Choose the repository setting from representative workload measurements.
+Deadline, startup, cleanup or output-limit failures discard partial rows and
+return exit 3. Output
+is captured into regular temporary files with a 1 MiB rejection threshold per
+stream; diagnostics printed on failure are capped at 4096 bytes per stream. The
+threshold is checked periodically, rather than being a disk quota. Existing
+pre-push warn/enforce policy still determines whether that error blocks a push.
+
+On Windows 10+ the worker assigns Git to an unnamed Job **during process
+creation**, inherits only its three stdio handles and requests no console. It
+terminates that Job and checks zero active members before success. POSIX retains
+the leader with `waitid(WNOWAIT)` until its new process group is killed; Linux
+also adopts and reaps orphan descendants. Unsupported containment fails closed.
+This covers ordinary Git/verifier descendants, not programs deliberately escaping
+their session on POSIX. The deadline begins after process creation; uv startup,
+uninterruptible OS calls and externally killed workers are outside a hard wall
+clock guarantee. Catchable SIGINT/SIGTERM cancellation is deferred until owned
+cleanup is armed; uncatchable termination such as POSIX SIGKILL cannot run that
+cleanup. Each cleanup wait has a two-second budget.
+
+Run `sh tests/run.sh identity_verify identity_hooks identity_worker`. The
+[`worker selector`](../tests/34-identity-worker.t.sh) and its
+[`stdlib controls`](../tests/test_identity_worker.py) protect deadlines, partial
+results, binary/argument preservation, output overflow and descendant cleanup.
+Its synthetic signature backend proves orchestration only; `identity_verify`
+uses real throwaway SSH signatures for cryptographic positive/negative controls.
+Native Windows and Linux exercise their different containment implementations.
+The [selector review register](../TEST_REVIEW.csv) binds independent source
+reviews to selector and target hashes; its [reviewer configuration](test-review.toml)
+is advisory for the [shared checker](https://github.com/David-Martel/vigil-utils/tree/main/tools/doc_checks).
+API contracts: [Windows process attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
+[Job objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
+and [Python waitid](https://docs.python.org/3/library/os.html#os.waitid).
+
 `verify` checks the **real** signatures of a range:
 
 | Exit | Meaning |

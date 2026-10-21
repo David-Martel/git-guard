@@ -301,6 +301,21 @@ qa_verify_materialized_tree() {
     return 2
   fi
   rm -f /tmp/gg-verify-err.$$
+  # A candidate using bounded attestation must prove offline runtime and actual
+  # OS containment before promotion. Old releases have no such prerequisite.
+  if [ -f "$t/hooks/common/identity.sh" ] &&
+     grep -q 'identity_worker.py' "$t/hooks/common/identity.sh"; then
+    identity_worker="$t/hooks/common/identity_worker.py"
+    if [ ! -f "$identity_worker" ] || ! command -v uv >/dev/null 2>&1; then
+      echo 'git-guard install: VERIFY FAILED — identity_worker.py, uv and existing Python are required; current is untouched.' >&2
+      return 2
+    fi
+    if command -v cygpath >/dev/null 2>&1; then identity_worker="$(cygpath -aw "$identity_worker")"; fi
+    if ! uv run --offline --no-project --no-python-downloads python -I -S -B "$identity_worker" --check-runtime; then
+      echo 'git-guard install: VERIFY FAILED — offline signature containment runtime unavailable; current is untouched.' >&2
+      return 2
+    fi
+  fi
   if [ ! -e "$t/hooks/common/qa_gate.sh" ]; then
     echo "git-guard install: VERIFY FAILED — $t/hooks/common/qa_gate.sh is missing." >&2
     return 2
@@ -417,6 +432,7 @@ flip_current() {  # $1 = version dir to point `current` at
 
 if [ "$DEV_SYMLINK" = "1" ]; then
   echo "  mode: --dev-symlink (LEGACY, live checkout — see header comment)"
+  qa_verify_materialized_tree "$GG_ROOT" || exit 2
   begin_windows_link_transaction || exit 2
   backup_once "$HOME_HOOKS"
   ln_symlink "$GG_HOOKS" "$HOME_HOOKS" || { if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then exit 2; fi; }
