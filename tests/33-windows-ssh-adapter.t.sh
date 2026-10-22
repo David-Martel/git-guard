@@ -71,6 +71,41 @@ check('explicit_noninteractive_has_existing_fleet_bounds', () => {
     '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3', 'host', 'command',
   ]);
 });
+check('headless_push_forms_have_finite_pre_push_allowance', () => {
+  for (const command of [
+    ["git-receive-pack 'owner/repo.git'"],
+    ['git-receive-pack', "'owner/repo.git'"],
+  ]) {
+    const result = invoke({ GIT_TERMINAL_PROMPT: '0' }, ['host', ...command]);
+    assert.equal(result.actual.options.timeout, 3600000);
+    assert.equal(result.actual.options.windowsHide, true);
+    assert.equal(result.actual.options.stdio, 'inherit');
+    assert.deepEqual(result.actual.argv, [
+      '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+      '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
+      'host', "git-receive-pack 'owner/repo.git'",
+    ]);
+  }
+});
+check('headless_fetch_and_other_commands_keep_five_minute_budget', () => {
+  for (const command of [
+    ["git-upload-pack 'owner/repo.git'"],
+    ['git-upload-pack', "'owner/repo.git'"],
+    ["git-upload-archive 'owner/repo.git'"],
+    ['git-upload-archive', "'owner/repo.git'"],
+    ["git-upload-pack 'owner/git-receive-pack repo.git'"],
+    ["git-receive-pack-extra 'owner/repo.git'"],
+    ["printf 'git-receive-pack owner/repo.git'"],
+    ['git-receive-pack'],
+  ]) {
+    const result = invoke({ GIT_TERMINAL_PROMPT: '0' }, ['host', ...command]);
+    assert.equal(result.actual.options.timeout, 300000, JSON.stringify(command));
+    assert.deepEqual(result.actual.argv.slice(0, 8), [
+      '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+      '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
+    ]);
+  }
+});
 check('real_child_roundtrips_arguments_and_exit_status', () => {
   const output = path.join(process.env.GG_T_TMPROOT, 'ssh-argv.json');
   const args = ['space value', 'quote"value', 'unicode-é', 'back\\slash', '', 'semi;$(literal)'];
@@ -115,7 +150,8 @@ function expectLiteralRemotePath(argv, literal) {
 check('combined_remote_shell_paths_are_literal', () => {
   for (const verb of ['git-upload-pack', 'git-upload-archive', 'git-receive-pack']) {
     for (const fixture of remotePaths) {
-      const result = invoke({}, ['host', verb + ' ' + fixture.encoded]);
+      const result = invoke({ GIT_TERMINAL_PROMPT: '0' }, ['host', verb + ' ' + fixture.encoded]);
+      assert.equal(result.actual.options.timeout, verb === 'git-receive-pack' ? 3600000 : 300000);
       expectLiteralRemotePath(result.actual.argv, fixture.literal);
     }
   }
@@ -123,23 +159,29 @@ check('combined_remote_shell_paths_are_literal', () => {
 check('split_remote_shell_paths_are_literal', () => {
   for (const verb of ['git-upload-pack', 'git-upload-archive', 'git-receive-pack']) {
     for (const fixture of remotePaths) {
-      const result = invoke({}, ['host', verb, fixture.encoded]);
+      const result = invoke({ GIT_TERMINAL_PROMPT: '0' }, ['host', verb, fixture.encoded]);
+      assert.equal(result.actual.options.timeout, verb === 'git-receive-pack' ? 3600000 : 300000);
       expectLiteralRemotePath(result.actual.argv, fixture.literal);
     }
   }
 });
 check('real_child_timeout_is_finite_and_reports_failure', () => {
   const started = Date.now();
-  const result = invoke({ GIT_TERMINAL_PROMPT: '0' }, ['host'], (_file, _argv, options) => {
-    assert.equal(options.timeout, 300000);
-    // Production duration checked above; shorten only at the executable boundary.
-    // Child self-terminates after 1s even if the timeout regresses: RED cannot hang.
-    return spawnSync(process.execPath, ['-e', 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1000)'], {
-      ...options, timeout: 80,
+  for (const [args, budget] of [
+    [['host'], 300000],
+    [['host', "git-receive-pack 'owner/repo.git'"], 3600000],
+  ]) {
+    const result = invoke({ GIT_TERMINAL_PROMPT: '0' }, args, (_file, _argv, options) => {
+      assert.equal(options.timeout, budget);
+      // Production duration checked above; shorten only at the executable boundary.
+      // Child self-terminates after 1s even if the timeout regresses: RED cannot hang.
+      return spawnSync(process.execPath, ['-e', 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1000)'], {
+        ...options, timeout: 80,
+      });
     });
-  });
-  assert.equal(result.exit, 1);
-  assert.ok(result.messages.some(message => /ETIMEDOUT/.test(message)));
+    assert.equal(result.exit, 1);
+    assert.ok(result.messages.some(message => /ETIMEDOUT/.test(message)));
+  }
   assert.ok(Date.now() - started < 2000);
 });
 check('spawn_error_and_signal_do_not_become_success', () => {
@@ -240,6 +282,23 @@ Assert-Equal (Get-FileHash $gitConfig).Hash $configHash 'Git config unchanged'
 $again = & $script -SourceRoot $source -BinDirectory $bin -Apply
 Assert-Equal $again.Status 'Current' 'repeat install'
 Assert-Equal @(Get-ChildItem -LiteralPath $bin).Count 2 'no backup/extra files'
+# known_push_baseline_upgrades_without_config_or_acl_change
+# Exact predecessor bytes from 8a9fe8e0, not synthesized from the successor.
+$pushBaseline = Join-Path $env:GG_ROOT 'tests/fixtures/windows-ssh-wrapper-push-baseline.js'
+Assert-Equal (Get-FileHash $pushBaseline).Hash '27758C691F894F76EEFCFC59ED2939E90D15993682C872F1F464B0195B678183' 'push predecessor fixture pin'
+[IO.File]::WriteAllBytes($js, [IO.File]::ReadAllBytes($pushBaseline))
+$pushBaselineHash = (Get-FileHash $js).Hash
+$plan = & $script -SourceRoot $source -BinDirectory $bin
+Assert-Equal $plan.Status 'Planned' 'push predecessor plan'
+Assert-Equal (Get-FileHash $js).Hash $pushBaselineHash 'push predecessor plan must not write'
+$upgraded = & $script -SourceRoot $source -BinDirectory $bin -Apply
+Assert-Equal $upgraded.Status 'Installed' 'push predecessor upgrade'
+Assert-Equal (Get-FileHash $js).Hash (Get-FileHash (Join-Path $adapter 'git-ssh-wrapper.js')).Hash 'push predecessor installed JS'
+Assert-Equal (Get-Acl -LiteralPath $js).Sddl $acl 'push predecessor ACL'
+Assert-Equal (Get-FileHash $gitConfig).Hash $configHash 'push predecessor Git config unchanged'
+$again = & $script -SourceRoot $source -BinDirectory $bin -Apply
+Assert-Equal $again.Status 'Current' 'push predecessor repeat install'
+Assert-Equal @(Get-ChildItem -LiteralPath $bin).Count 2 'push predecessor no backup/extra files'
 # unknown_launcher_is_preserved_and_refused
 [IO.File]::WriteAllText($js, $legacyJs, [Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText($cmd, 'unique launcher work')

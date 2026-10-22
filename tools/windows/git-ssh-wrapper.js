@@ -16,14 +16,19 @@ if (args.length > 1) {
   }
 }
 
+// Classify only the final remote command after the verbatim split-form join.
+const isPush = args.length > 1 && /^git-receive-pack[ \t]/.test(args[args.length - 1]);
+
 // Optional Windows adapter contract/tests: docs/QA_TOOLING.md, tests/33-windows-ssh-adapter.t.sh.
 // Keep interactive prompts/arguments unchanged. CI alone does not opt into headless restrictions.
 const options = { stdio: 'inherit', windowsHide: true };
 if (process.env.GIT_TERMINAL_PROMPT === '0') {
   args.unshift('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
     '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3');
-  // Matches the fleet autopilot/hygiene fetch budget; callers can end sooner.
-  options.timeout = 300000;
+  // Push SSH stays open during local pre-push QA. Allow a finite, provisional
+  // 60min total push lifetime; other commands retain the 5min automation budget.
+  // Callers can end either operation sooner.
+  options.timeout = isPush ? 3600000 : 300000;
 }
 const result = spawnSync(sshExe, args, options);
 

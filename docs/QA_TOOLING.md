@@ -1002,7 +1002,7 @@ an already-materialized release carrying `VERSION` and a full commit marker;
 the marker identifies the release, and is not a cryptographic authenticity check.
 The operator still obtains that release through the normal reviewed/tagged path.
 The script refuses missing wrappers, links, an altered launcher, or JavaScript
-other than the exact known legacy bytes or its own installed source bytes.
+other than the exact known predecessor bytes or its own installed source bytes.
 There is no general replacement of custom or older unrelated wrappers.
 
 The [CMD launcher](../tools/windows/git-ssh-wrapper.cmd) is byte-identical to the
@@ -1010,11 +1010,16 @@ observed legacy launcher (SHA256
 `A7C81A417092D46D2F4F56F57E36B679B15A451F6C0A44F973A66DAA96ED542B`).
 The accepted legacy JavaScript SHA256 is
 `46D2615192CB8EBAADBF2FA43DAB8B1C93FEFE79260F61FB8571FDBAFE7A2EF1`.
+The quoting-preserving predecessor with the former 5min push timeout is also
+accepted, pinned at SHA256
+`27758C691F894F76EEFCFC59ED2939E90D15993682C872F1F464B0195B678183`.
+Its byte-authentic [fixture](../tests/fixtures/windows-ssh-wrapper-push-baseline.js)
+comes from commit `8a9fe8e0c0844edb09fabb7efb1725b269348ba4`.
 The script checks source syntax in a hidden, shell-free Node child with a 10s
 execution limit, at most 1s for post-kill reaping and at most 1s for output drain,
 before opening targets. Cleanup and pipe reads never use an unbounded wait.
 It locks both existing wrapper files
-against concurrent writers while validating the legacy pins, writes only the
+against concurrent writers while validating the predecessor pins, writes only the
 existing JavaScript file and verifies readback. Its ACL survives an in-place
 write. A caught write/readback failure restores known bytes from memory; there
 are no redundant backup files. This does not claim atomic recovery from a host
@@ -1036,15 +1041,25 @@ Interactive calls retain prompts and have no added timeout or SSH options.
 
 Only the explicit value `GIT_TERMINAL_PROMPT=0` opts into `BatchMode=yes`,
 `ConnectTimeout=15`, `ServerAliveInterval=30`, `ServerAliveCountMax=3`, and a
-300000ms child timeout. Connect/keepalive values match the existing fleet SSH
+finite total child timeout. Explicit `git-receive-pack` commands receive
+3600000ms (60min), in both combined and split transport forms. Classification
+checks the final remote command's exact verb followed by a space or tab, after
+the existing verbatim split-form join; a verb occurring only inside a path or
+another command does not qualify. All other commands retain 300000ms (5min).
+Connect/keepalive values match the existing fleet SSH
 [qualification](https://github.com/David-Martel/vigil-utils/blob/main/docs/fleet-ssh-performance-2026-07-30.md);
-the 5min lifetime matches the existing automation budgets in
+the non-push 5min lifetime matches the existing automation budgets in
 [clone_git](https://github.com/David-Martel/vigil-utils/blob/main/tools/merge-autopilot/autopilot.py)
 and the explicit fetch in
 [hygiene_report](https://github.com/David-Martel/vigil-utils/blob/main/tools/merge-autopilot/hygiene_report.py).
-A caller can end the whole operation sooner as before. Unusually long
-noninteractive transfers now fail after 5min, even if actively transferring;
-this is a finite automation lifetime, not a claim that every repository fits it.
+A caller can end the whole operation sooner as before. Push SSH remains open
+while local pre-push QA runs. Two actual Windows pushes finished all normal QA
+gates in 718.75s and 384.03s, but the previous wrapper emitted `ETIMEDOUT` during
+both runs because their 5min total transport lifetime expired first. The 60min
+push allowance is provisional operational policy, not a measured upper bound
+or a guarantee that every repository fits it. Both budgets include connection,
+local gate time and transfer; they are not inactivity timeouts. A transfer that
+outlives its applicable total budget still fails even while active.
 BatchMode suppresses authentication prompts. GUI callers that combine this
 explicit trigger with an askpass dependency can fail fast and need assessment
 before migration, even though interactive calls without the trigger are unchanged.
@@ -1053,18 +1068,23 @@ The installer adds no environment or timeout configuration steps.
 The [category 33 tests](../tests/33-windows-ssh-adapter.t.sh) run through the
 [canonical suite runner](../tests/run.sh), including its orphan guard. The Node
 group executes real inert children for exact argument/exit propagation and a
-finite timeout. It asserts the production 300000ms value, then shortens only the
-test executable boundary to 80ms; a 1s self-exiting child bounds the RED control.
-This qualifies timeout wiring without waiting 5min or opening an SSH session.
+finite timeout. It asserts production 300000ms and 3600000ms values, then shortens
+only the test executable boundary to 80ms for generic and push children; a 1s
+self-exiting child bounds each RED control. Combined/split push probes verify
+the unchanged SSH options, and fetch/generic probes reject verb-prefix and
+path-content false positives. This qualifies timeout wiring without waiting
+5min or 60min or opening an SSH session.
 Two remote-command selectors also run real hidden POSIX shell probes, each
 bounded to 2s. They replace only the fixed pack executable with the `set` builtin
 and use inert `printf` to observe argument count and bytes. Six literal fixtures
 cover spaces, semicolons, command substitutions, backticks, apostrophes and
 backslashes/double quotes across all three pack verbs and both transport forms.
-These probes parse the adapter's actual output; no SSH or Git server is started.
+These probes parse the adapter's actual headless output and check the applicable
+budget; no SSH or Git server is started.
 The installer group uses a temporary release and wrapper pair on native Windows,
 with actual writes, ACL/readback/config preservation, idempotency, and rejection
-controls. The exact private production lifecycle helper also runs a short
+controls. Both exact predecessor fixtures receive real plan/apply/readback,
+ACL/config-preservation and idempotency checks. The exact private production lifecycle helper also runs a short
 inert Node child: its timeout must terminate that child. The production drain
 helper consumes real pending StreamReader tasks from a held local named pipe;
 a 1.2s writer closure bounds the old unbounded-read RED control using .NET APIs
@@ -1078,6 +1098,10 @@ all lock-acquisition ordering; those source paths are reviewed, not executed
 fault qualifications.
 
 ### Adapter test review register
+
+The review bindings and hashes below are historical snapshots. They do not
+approve the later push-budget or predecessor-upgrade changes; fresh independent
+review of those changes is pending.
 
 The two explicit selector groups below cover only category 33. Existing tests are
 outside this new review scope. Independent reviewer `/root` (Codex; did not author
@@ -1110,8 +1134,8 @@ KEEP and actually replayed both groups in receipt `810cab`: 2 passed, 0 failed,
 0 skipped in 3301ms, PowerShell 7.6.7. That historical replay covered JavaScript
 `5A1E7889C812F38E409F15AB4166AE5607ABA42B8ACCAF293C9943E169CA6500`
 and test file `64553C1BF70C5057E52213AAADB8C9855AB0EADFAFA0146E9D828468581516DE`.
-The installer selector group and production installer remain byte-identical;
-the quoting successor below needs its own review binding.
+For that quoting successor, the installer selector group and production installer
+remained byte-identical; the quoting successor needed its own review binding.
 
 The autopilot's actual [current-head P1 review](https://github.com/David-Martel/git-guard/pull/80#issuecomment-6310497619)
 at `f1c6d5ce` correctly identified unsafe apostrophe removal inherited from the
@@ -1146,9 +1170,9 @@ Genuine outside-family review and current-head CI remain separate gates.
 
 Group hashes cover the exact UTF-8 source from each group's `Protects` comment
 through the byte preceding the next group's comment (or EOF for the final group).
-The full test file SHA256 is
+At that reviewed snapshot, the full test file SHA256 was
 `E6E340CC46ECDAC28587FE48DD90E0E1D5F6DEE7F68C648FCA306389C905660D`.
-Raw and LF-normalized production SHA256 values are identical:
+The historical raw and LF-normalized production SHA256 values were identical:
 
 | Code under test | SHA256 |
 | --- | --- |
@@ -1181,6 +1205,40 @@ baseline failures, not a full-suite pass or a waiver. The broad run loaded the
 earlier adapter test body; the final adapter snapshot is qualified by the focused
 replays above and its own current-head CI. This register does not certify legacy
 selectors, an SSH connection, or fleet deployment.
+
+### Push-budget and predecessor-upgrade successor
+
+The preparer's genuine failing-first run used the unchanged JavaScript pinned
+at `27758C691F894F76EEFCFC59ED2939E90D15993682C872F1F464B0195B678183`.
+It failed four named Node controls: the push allowance, combined and split
+quoted-path budgets, and the push real-child timeout contract. Seven Node
+controls and the installer group passed. `red.log` SHA256 is
+`9D9D77FF3456ADBF95589F250158F7D9476D1B25B3B98E24CCFA8DE06A033B0F`.
+After the JavaScript correction, `installer-red.log` (SHA256
+`A0344DECF90165D7461666A70A9E1067ADB250412703DDC195A1711A8202FC53`)
+passed all eleven Node controls but rejected the exact predecessor fixture as
+unknown under the unchanged installer. The successor installer accepts only
+that additional exact predecessor hash, retaining the unknown-content refusal.
+
+The preparer's canonical replay `sh tests/run.sh windows_ssh_adapter windows_ssh_adapter_install`
+then passed both groups: 2 passed, 0 failed, 0 skipped, exit 0. The eleven named
+Node controls and actual predecessor plan/apply/ACL/config/idempotency checks
+passed. `green.log` SHA256 is
+`B52E0AA5670BFE1038F9C279DB3EE1DA463E30006AD53D137F2DA65DC8EF722A`.
+These are scoped preparer results, not fresh independent review or approval.
+
+| Successor source or group | SHA256 | Review state |
+| --- | --- | --- |
+| JavaScript | `0B718434D540C476C5581BD8354E4D5A6D1A67EB2E8AD06FC5541F2238FBFA82` | Pending independent review |
+| Installer | `B34560E41F07FD86CD7EBB7BDDEF2331F597B148EF2B0AD1C2DFE52E3058A862` | Pending independent review |
+| Full category 33 test file | `751CC4D34686EF75D02ACC6C1767436ADB640503F7AF045BEA095888C5DA4C5E` | Pending independent review |
+| Node selector group | `59696838CBFC98F5CEDBDBBBC1C16E40DCD0FEA627C0B5DD1FCDD1984741B39B` | Pending independent review |
+| Installer selector group | `7310DC6C766C5139DB0406CE6C497CBD1C8826D9DACB8BD436F25A372AC06B84` | Pending independent review |
+
+No live wrapper, global Git configuration or hook was changed. No physical SSH
+connection, fleet rollout, full legacy suite or real 60min lifetime was qualified.
+The known baseline fixture is pinned to LF in `.gitattributes` so Windows
+autocrlf does not change its exact migration hash.
 
 ## Windows global configuration
 

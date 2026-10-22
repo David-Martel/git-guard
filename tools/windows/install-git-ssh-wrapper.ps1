@@ -1,7 +1,7 @@
 #Requires -Version 7.1
 <#
 .SYNOPSIS
-Updates known legacy Windows Git SSH wrappers from an installed git-guard release.
+Updates known Windows Git SSH wrapper predecessors from an installed git-guard release.
 .DESCRIPTION
 Default is a read-only plan. Apply changes only the existing JavaScript file,
 preserving its ACL and the legacy CMD launcher. Git configuration is never changed.
@@ -77,6 +77,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'This optional adapter installer requires native Windows.' }
 $legacyJsHash = '46D2615192CB8EBAADBF2FA43DAB8B1C93FEFE79260F61FB8571FDBAFE7A2EF1'
+# Reviewed predecessor with preserved quoting and the former 5min push budget.
+$pushBaselineJsHash = '27758C691F894F76EEFCFC59ED2939E90D15993682C872F1F464B0195B678183'
 $launcherHash = 'A7C81A417092D46D2F4F56F57E36B679B15A451F6C0A44F973A66DAA96ED542B'
 $marker = Join-Path $SourceRoot '.git-guard-commit'
 if (-not [IO.File]::Exists($marker) -or -not [IO.File]::Exists((Join-Path $SourceRoot 'VERSION'))) {
@@ -126,7 +128,9 @@ try {
     if ($targetHash -eq $sourceHash) {
         return [pscustomobject]@{ Status = 'Current'; Commit = $commit; SHA256 = $sourceHash }
     }
-    if ($targetHash -ne $legacyJsHash) { throw 'Existing JavaScript has unknown bytes; only the exact legacy wrapper is accepted.' }
+    if ($targetHash -notin @($legacyJsHash, $pushBaselineJsHash)) {
+        throw 'Existing JavaScript has unknown bytes; only exact known wrapper predecessors are accepted.'
+    }
     if (-not $Apply) {
         return [pscustomobject]@{ Status = 'Planned'; Commit = $commit; SHA256 = $sourceHash }
     }
