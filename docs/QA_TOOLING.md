@@ -830,9 +830,24 @@ invisible input. (git-guard #72 review; `qa_gate.sh --get-prefix mandate.
 | `changed` | findings on added/modified lines **block**; old debt in a touched file does not |
 | `block` | any finding anywhere in a staged file blocks |
 
-Changed lines come from `git diff --cached -U0 -M --diff-filter=AMR`, with rename
+Changed lines come from `git diff --cached -U0 -M --diff-filter=d`, with rename
 detection on so that moving a file does not turn its existing debt into "new"
 lines. A finding counts as changed when any line of its span is an added line.
+
+During a staged merge, [staged_changes](../hooks/common/mandate_scan.py) reads the
+per-worktree `MERGE_HEAD` and verifies HEAD and every merge parent. Only index
+postimage lines added relative to **all** parents count as changed. This lets an
+unrelated registry merge inherit main's existing debt, while new resolution code
+still blocks. The union of changed file paths remains subject to whole-file
+`block` rules. Missing or invalid merge parent commits refuse the scan.
+
+`--range BASE..HEAD` and `BASE...HEAD` still scan the entire supplied base-to-head
+diff. They do not use only the final merge's parents: that would hide violations
+introduced by earlier unpublished commits. The existing
+[quality-mandate case](../tests/32-quality-mandate.t.sh) covers the actual Audio
+main-side `Mapping[str, Any]` failure, a new resolution finding and retained
+unpublished branch debt. Range scanning can still report main-side code in the
+supplied range; this change only adjusts staged merges.
 
 **The rules.**
 
