@@ -58,7 +58,7 @@
 #   GIT_GUARD_AGENT_PRINCIPALS    agent principals (default "claude codex jules gemini")
 #   GIT_GUARD_IDENTITY_MAX_COMMITS  pre-push range cap (default 500)
 #
-# Pure POSIX sh + git + ssh-keygen. No machine-specific paths.
+# POSIX sh + git + ssh-keygen; verification also needs uv and existing Python.
 
 set -u
 
@@ -403,15 +403,42 @@ GG_VERIFY_FMT='%H%x1f%G?%x1f%GS%x1f%GF%x1f%(trailers:key=Agent,valueonly,separat
 # gg_verify_rows SIGNERS QUIET REV-ARGS... ; prints findings, returns 0/1/2.
 gg_verify_rows() {
   signers="$1" quiet="$2"; shift 2
+  deadline="$(git config --get gitGuard.identityTimeoutSeconds 2>/dev/null || :)"
+  deadline="${deadline:-30}"
+  case "$deadline" in
+    [1-9]|[1-9][0-9]|[12][0-9][0-9]|300) ;;
+    *) gg_die "verify: gitGuard.identityTimeoutSeconds must be an integer from 1 to 300" ;;
+  esac
+  command -v uv >/dev/null 2>&1 || gg_die "verify: install uv and an existing Python runtime for bounded signature verification"
+  worker="$GG_ID_DIR/identity_worker.py"
+  [ -f "$worker" ] || gg_die "verify: missing identity_worker.py; reinstall this git-guard release"
+  git_exe="$(command -v git)" || gg_die "verify: git unavailable"
   out="$(mktemp "${TMPDIR:-/tmp}/gg-id.XXXXXX")" || gg_die "mktemp failed"
-  # log.showSignature would splice raw ssh-keygen output into the format.
-  if ! git -c "gpg.ssh.allowedSignersFile=$signers" -c log.showSignature=false \
-       log --no-show-signature "--format=$GG_VERIFY_FMT" "$@" > "$out" 2>"$out.err"; then
-    sed 's/^/  /' "$out.err" >&2
-    rm -f "$out" "$out.err"
-    gg_die "verify: git log failed for: $*"
+  err="$(mktemp "${TMPDIR:-/tmp}/gg-id-err.XXXXXX")" || { rm -f "$out"; gg_die "mktemp failed"; }
+  supervisor="$(mktemp "${TMPDIR:-/tmp}/gg-id-worker.XXXXXX")" || { rm -f "$out" "$err"; gg_die "mktemp failed"; }
+  worker_out="$out" worker_err="$err"
+  # Native Python cannot consume MSYS /c/... paths. Preserve every Git argument.
+  if command -v cygpath >/dev/null 2>&1; then
+    worker="$(cygpath -aw "$worker")"
+    worker_out="$(cygpath -aw "$out")" worker_err="$(cygpath -aw "$err")"
+    git_exe="$(cygpath -aw "$git_exe")"
   fi
-  rm -f "$out.err"
+  # log.showSignature would splice raw ssh-keygen output into the format.
+  # Offline means no package resolution/downloads; missing runtime fails closed.
+  # An explicit request and no-config isolate tool runtime from caller pins.
+  python_request='>=3.10'
+  case "$(uname -s 2>/dev/null || :)" in Darwin) python_request='>=3.13' ;; esac
+  if ! uv run --offline --no-project --no-config --no-python-downloads \
+       --python "$python_request" python -I -S -B "$worker" \
+       --timeout-seconds "$deadline" --output "$worker_out" --error "$worker_err" -- \
+       "$git_exe" -c "gpg.ssh.allowedSignersFile=$signers" -c log.showSignature=false \
+       log --no-show-signature "--format=$GG_VERIFY_FMT" "$@" 2>"$supervisor"; then
+    head -c 4096 "$supervisor" >&2
+    head -c 4096 "$err" >&2
+    rm -f "$out" "$err" "$supervisor"
+    gg_die "verify: bounded signature query failed; check uv/Python availability and verifier configuration"
+  fi
+  rm -f "$err" "$supervisor"
   res="$(tr -d '\n' < "$out" | tr '\036' '\n' | awk -F '\037' -v agents=" $GG_AGENT_PRINCIPALS " -v quiet="$quiet" '
     NF < 5 { next }
     {

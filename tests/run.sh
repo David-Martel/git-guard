@@ -127,6 +127,7 @@ t_case_attribution_claude
 t_case_identity_cli
 t_case_identity_verify
 t_case_identity_hooks
+t_case_identity_worker
 t_case_secret_scan
 t_case_cache_staleness
 t_case_powershell

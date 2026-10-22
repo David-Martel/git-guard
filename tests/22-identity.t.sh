@@ -206,6 +206,18 @@ t_case_identity_verify() {
   grep -q "^ok   .* G claude Agent=claude" "$lab/v.out"
   t_assert "$?" "%GS names the agent principal (claude), not the shared email"
 
+  # Protects: caller Python pins/configuration cannot disable real attestation.
+  # Detects: uv chooses an unavailable repo interpreter or parses its config.
+  # Needs: the existing signed lab, uv and an installed compatible Python.
+  # Breadcrumb: hooks/common/identity.sh gg_verify_rows.
+  printf '99.99.99\n' > "$r/.python-version"
+  v "$clean"
+  t_expect_rc 0 "$?" "real signature verification ignores unavailable repository Python pin"
+  printf 'not valid TOML = [\n' > "$r/uv.toml"
+  v "$clean"
+  t_expect_rc 0 "$?" "real signature verification ignores caller uv configuration"
+  rm -f "$r/.python-version" "$r/uv.toml"
+
   gg_id_commit "$r" "$K/claude@testhost" codex "feat: mislabeled"
   v HEAD~1..HEAD
   t_expect_rc 1 "$?" "POSITIVE: claude key + Agent: codex -> exit 1"
@@ -261,6 +273,7 @@ t_case_identity_hooks() {
   mkdir -p "$r/test-hooks/common" "$r/.git-guard"
   for h in prepare-commit-msg commit-msg pre-push; do cp "$GG_ROOT/hooks/$h" "$r/test-hooks/$h"; chmod +x "$r/test-hooks/$h"; done
   cp "$GG_ROOT/hooks/common/identity.sh" "$r/test-hooks/common/identity.sh"
+  cp "$GG_ROOT/hooks/common/identity_worker.py" "$r/test-hooks/common/identity_worker.py"
   git -C "$r" config core.hooksPath "$r/test-hooks"
   git -C "$r" config gpg.ssh.allowedSignersFile "$as"
   git -C "$r" config gpg.format ssh
