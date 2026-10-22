@@ -645,7 +645,30 @@ def diff_changes(repo: Path, *args: str) -> Dict[str, Set[int]]:
 
 
 def staged_changes(repo: Path) -> Dict[str, Set[int]]:
-    return diff_changes(repo, "--cached")
+    """Keep merge-resolution lines new against every parent, retaining BLOCK paths."""
+    merge_path = Path(
+        os.fsdecode(git(repo, "rev-parse", "--git-path", "MERGE_HEAD").rstrip(b"\n"))
+    )
+    if not merge_path.is_absolute():
+        merge_path = repo / merge_path
+    try:
+        merge_heads = merge_path.read_text(encoding="ascii").split()
+    except FileNotFoundError:
+        return diff_changes(repo, "--cached")
+    except (OSError, UnicodeError) as exc:
+        raise MandateError("cannot read merge parent metadata") from exc
+    if not merge_heads:
+        raise MandateError("merge parent metadata contains no commits")
+    parents = [verify_commit(repo, "HEAD")]
+    parents.extend(verify_commit(repo, parent) for parent in merge_heads)
+    changes = diff_changes(repo, "--cached", parents[0])
+    for parent in parents[1:]:
+        other = diff_changes(repo, "--cached", parent)
+        # Both diffs use exact index postimage coordinates. A line inherited
+        # from any parent is old debt; keep every path for whole-file BLOCK.
+        for path in changes.keys() | other.keys():
+            changes.setdefault(path, set()).intersection_update(other.get(path, set()))
+    return changes
 
 
 def range_changes(repo: Path, spec: str) -> Tuple[str, Dict[str, Set[int]]]:

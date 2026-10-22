@@ -153,6 +153,40 @@ t_case_quality_mandate() {
   _qm_has "$log" "git-guard mandate: PASSED" "the pass is stated, not silent"
   gg_rmrepo "$r"
 
+  # Actual Audio #118/main 04765ec: registry merges inherited widgets.py:83
+  # Mapping[str, Any]. Protects: merge resolutions are new only versus ALL
+  # parents; Detects: main-side debt falsely blocks an unrelated merge, or a
+  # last-merge filter hides earlier unpublished branch debt in --range.
+  # Needs: Git, ruff, ast-grep; Breadcrumb: mandate_scan.py staged_changes/range_changes.
+  r="$(_qm_repo)"
+  _qm_put "$r" widgets.py 'def guidance_html(data: str) -> str:\n    return str(data)\n'
+  _qm_commit "$r" "clean merge base"
+  _qm_merge_base="$(git -C "$r" rev-parse HEAD)"
+  ( cd "$r" && git checkout -qb topic )
+  _qm_put "$r" registry.txt 'registry-only topic change\n'
+  _qm_put "$r" topic.py "$_QM_NARROW"
+  _qm_commit "$r" "unpublished topic debt before merge"
+  ( cd "$r" && git checkout -qb main-side "$_qm_merge_base" )
+  _qm_audio_main='from typing import Any, Mapping\n\ndef guidance_html(data: Mapping[str, Any], *, include_heading: bool = True) -> str:\n    return str(data)\n'
+  _qm_put "$r" widgets.py "$_qm_audio_main"
+  _qm_commit "$r" "Audio main-side Mapping[str, Any]"
+  ( cd "$r" && git checkout -q topic && \
+    git -c core.hooksPath="$GG_T_TMPROOT/qm-no-hooks" merge --no-ff --no-commit main-side ) >"$log" 2>&1
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 0 "$rc" "an Audio main-side Any inherited by a staged registry merge passes"
+  printf '%b' "\n$_QM_NARROW" >> "$r/widgets.py"
+  ( cd "$r" && git add widgets.py )
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "a genuinely new merge-resolution swallow still blocks"
+  _qm_has "$log" "[except_pass]" "the merge resolution retains its new except_pass finding"
+  _qm_put "$r" widgets.py "$_qm_audio_main"
+  _qm_commit "$r" "merge main without new resolution debt"
+  _qm_scan "$r" "$log" --range "$_qm_merge_base..HEAD"; rc=$?
+  t_expect_rc 1 "$rc" "a last merge cannot hide earlier unpublished branch debt from range scanning"
+  _qm_has "$log" "topic.py" "the range still scans the earlier unpublished topic file"
+  _qm_has "$log" "[except_pass]" "the earlier unpublished swallow remains blocked in the range"
+  gg_rmrepo "$r"
+
   # PR #72 actual review: inter-hunk context joined clean edits across old debt.
   r="$(_qm_repo)"
   _qm_put "$r" app.py 'value = 1\n\ndef probe():\n    try:\n        connect()\n    except OSError:\n        pass\n\nvalue2 = 1\n'
