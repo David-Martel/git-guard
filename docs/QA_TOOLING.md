@@ -1044,6 +1044,47 @@ not part of this patch's authorship or review claim. Raw logs are preserved
 under the implementing host's
 `~/.codex/backups/execpolicy-removal/git-guard-advisory-heuristics/`.
 
+### Native fixture portability successor review
+
+The predecessor review above remains bound to its historical source. Independent
+Codex parent-root reviewed and **APPROVED_WITH_SCOPE** the fixture-only successor
+[`tests/32-quality-mandate.t.sh`](../tests/32-quality-mandate.t.sh), SHA256
+`6abfae27b192564eeaa70c08c90650b3a4ce9076dc5e7c20635d7ee487f04f70`. Production scanner and defaults retain their
+exact hashes from the prior register. Final-head CI and outside-family controller
+review remain separate requirements.
+
+Protects: real missing-tool warnings and fail-closed scanner errors are tested
+through runnable native tools, with successful staging of platform-valid Unicode
+filenames. Detects: copied executables losing runtime DLLs, CMD reparsing regex
+arguments, raw drive-colon PATH prefixes hiding injected tools, or a loader error
+falsely satisfying a negative control. Needs: Git Bash/MSYS, native Windows Python,
+Ruff and ast-grep for native qualification; ordinary POSIX tools on Linux.
+All 180 predecessor assertion call lines and the three exact original U+2028
+payloads remain. Source editing must split on literal LF, since `splitlines()`
+would destroy those physical-line negative controls.
+
+On POSIX the existing symlink and repo-venv discovery behavior remains. On Windows,
+explicitly present native tools and Git/shell runtimes are copied into restricted
+fixture bins with source/copy SHA256 equality, DLL collision checks and an exact
+executable allowlist; absent tools stay absent. Injected Ruff error payloads use
+PATH-first CMD discovery on Windows, with invocation markers and the original
+semantic stderr/JSON/timeout assertions. Real regex-bearing scanner calls use
+native PEs. Windows filenames retain Unicode, spaces and apostrophes; POSIX
+retains the original literal backslash and double-quote variants.
+
+Exact successor source passed **222 native Windows category-32 assertions, zero
+failures or skips**, and the native-host Linux full suite passed **1,477 assertions,
+zero failures, 18 explicit platform/tool skips**. Focused actual native scanner
+absence controls passed 10 assertions; focused actual pre-push positive/fault
+controls passed five. ShellCheck and diff checks passed. Earlier failed candidate
+logs are retained and are not qualification. Native assertions exit zero, but the
+test harness still reports an in-use TEMP directory during cleanup, as the
+predecessor did; that directory was retained and filesystem cleanup is not
+qualified. Evidence and exact log hashes are in
+`~/.codex/backups/execpolicy-removal/git-guard-advisory-heuristics/FIXTURE_SUCCESSOR_RECEIPT.json`
+on ASUS and the Windows implementing host. No release tag or live installation
+is authorized by this source review.
+
 ## Optional Windows Git SSH adapter
 
 Install/build/test/run: first install a reviewed git-guard release using the
