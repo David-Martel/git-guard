@@ -243,7 +243,7 @@ RULES: Tuple[Rule, ...] = (
     _rule(
         "except_sentinel",
         "PY-05",
-        Severity.CHANGED,
+        Severity.WARN,
         sg=("mandate-except-sentinel",),
         tests_exempt=True,
         source="clarius CLAUDE.md:422-423 (no None/bool that drops the reason)",
@@ -339,7 +339,7 @@ RULES: Tuple[Rule, ...] = (
     _rule(
         "str_enum_param",
         "PY-04",
-        Severity.CHANGED,
+        Severity.WARN,
         sg=("mandate-str-enum-param",),
         tests_exempt=True,
         source="clarius CLAUDE.md:420-422; vigil-spark AGENTS.md:200",
@@ -1874,9 +1874,26 @@ def check_baseline(
     unevaluated = {k for keys in result.skipped.values() for k in keys}
     enforced = [k for k in enforced_keys(enabled) if k not in unevaluated]
     print_skips(result.skipped)
+    # These two syntax heuristics used to block account-wide. Their historical
+    # ceilings must not re-create that veto after the effective policy is WARN.
+    # Schema validation above and every explicitly enforced ratchet stay intact.
+    legacy_advisories = {
+        key
+        for key in ("except_sentinel", "str_enum_param")
+        if key in ceilings and enabled[key] is Severity.WARN
+    }
+    for key in sorted(legacy_advisories):
+        say(
+            f"git-guard mandate WARN legacy baseline [{key}]: its historical "
+            "ceilings are advisory under the effective warn policy."
+        )
     problems = evaluate_baseline(
         result.counts,
-        {k: v for k, v in ceilings.items() if k not in unevaluated},
+        {
+            k: v
+            for k, v in ceilings.items()
+            if k not in unevaluated and k not in legacy_advisories
+        },
         enforced,
         origin,
     )

@@ -1,6 +1,6 @@
 # Quality mandate PY-05 / PY-06 ("no None/bool that drops the reason"). Read by
 # hooks/common/mandate_scan.sh under `mandate.except_sentinel` (default:
-# changed = blocks on added/modified lines).
+# warn; repositories may explicitly opt into changed/block).
 #
 # Source: clarius CLAUDE.md:422-423 ("Errors are typed and informative — no
 # `except: pass`, no logged-and-swallowed, no `None`/`bool` that drops the
@@ -12,10 +12,11 @@
 #
 # Logging before the return does not exempt the handler (owner decision
 # 2026-10-14: logging is not handling; the caller still cannot branch on it).
-# A re-raise anywhere in the handler does. Known disagreement: vigil-spark's
-# py-no-except-empty-sentinel deliberately exempts `return False` in
-# predicates; under the mandate a predicate whose False branch is a caught
-# exception must say so with a recorded suppression (see note).
+# A re-raise anywhere in the handler does. The syntax alone cannot distinguish
+# operational failures from expected predicate outcomes (for example ValueError
+# classifying an unmatched shell quote). This heuristic warns by default; it
+# does not require a suppression or a different return contract. A repository
+# may explicitly select changed/block after reviewing its own semantics.
 id: mandate-except-sentinel
 language: python
 severity: warning
@@ -37,6 +38,7 @@ note: |
         raise ProbeError(f"probe of {path} failed: {exc}") from exc
   or return a typed outcome the caller must branch on (an Enum status, a
   Result-like object) instead of a bare None/False/[]/{}.
-  If a falsy answer genuinely IS the meaning of the exception (a predicate such
-  as "process exists" on ProcessLookupError), record that on the except line:
+  A falsy answer can genuinely be the meaning of an expected exception. The
+  default is advisory. If a repository explicitly enforces this heuristic,
+  an intentional predicate may record that meaning on the except line:
     except ProcessLookupError:  # ast-grep-ignore: mandate-except-sentinel  # SAFETY: no such pid means "not alive"

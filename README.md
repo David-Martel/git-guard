@@ -53,7 +53,7 @@ can soften or disable any check with a per-repo `.qa-gate.conf`.
 | `shellcheck` (staged `*.sh`) | **block** | fast, high-signal |
 | `ruff check` (staged `*.py`) | **block** | repo config if present, else minimal `E,F` |
 | JSON parse (staged `*.json`) | **block** | cheap, real |
-| Quality mandate (staged `*.py` / `*.rs`) | **block on changed lines** | pydantic v2, no `Any`, no silent excepts, typed errors, no Rust panics; old debt in a touched file does not block ([QA_TOOLING.md §13](docs/QA_TOOLING.md#13-quality-mandate)) |
+| Quality mandate (staged `*.py` / `*.rs`) | **block on changed lines; ambiguous heuristics warn** | pydantic v2, no `Any`, no silent excepts, typed errors, no Rust panics; old debt in a touched file does not block ([QA_TOOLING.md §13](docs/QA_TOOLING.md#13-quality-mandate)) |
 | ast-grep (everything else), `ruff format`, `cargo fmt`, `clippy`, `mypy`, panic-set, large-file | **warn** / opt-in | never blocks WIP by default; Python type checks honor configured project scope |
 
 Full schema, precedence, and the rule catalog: [`docs/QA_TOOLING.md`](docs/QA_TOOLING.md).

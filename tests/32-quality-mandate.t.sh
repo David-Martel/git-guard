@@ -39,6 +39,100 @@
 
 _QM_SCAN="$GG_ROOT/hooks/common/mandate_scan.sh"
 
+# Restricted PATH fixtures must launch the original executable in its original
+# runtime layout. MSYS ln may copy executables, losing adjacent DLLs; native
+# Python subprocesses also cannot execute an extensionless shell payload.
+# Protects: absence/error controls reach the intended guard, not a loader error.
+# Needs: the original shell, cygpath on native Windows, and allowlisted tools only.
+_QM_SHELL="$(command -v sh)"
+# A native mktemp may return C:/...; drive colons are not MSYS PATH separators.
+_qm_path_dir() {
+  if gg_is_windows; then cygpath -u "$1"; else printf '%s\n' "$1"; fi
+}
+_qm_forward() {
+  _qm_dest="$1"; _qm_real="$2"
+  if gg_is_windows; then
+    _qm_posix="$(cygpath -u "$_qm_real")"
+    _qm_quote="$(printf '%s' "$_qm_posix" | sed "s/'/'\\\\''/g")"
+    printf '#!/bin/sh\nexec '\''%s'\'' "$@"\n' "$_qm_quote" > "$_qm_dest"
+    _qm_native="$(cygpath -m "$_qm_real" | sed 's/%/%%/g')"
+    printf '@"%s" %%*\r\n' "$_qm_native" > "$_qm_dest.cmd"
+    chmod +x "$_qm_dest"
+  else
+    ln -sf "$_qm_real" "$_qm_dest"
+  fi
+}
+
+# Preserve the real injected shell payload on every host. A paired CMD adapter
+# lets native Windows Python launch it through the original absolute shell.
+_qm_payload() {
+  printf '%b' "$2" > "$1"
+  chmod +x "$1"
+  if gg_is_windows; then
+    _qm_cmd_shell="$(cygpath -m "$_QM_SHELL" | sed 's/%/%%/g')"
+    _qm_cmd_payload="$(cygpath -m "$1" | sed 's/%/%%/g')"
+    printf '@"%s" "%s" %%*\r\n' "$_qm_cmd_shell" "$_qm_cmd_payload" > "$1.cmd"
+  fi
+}
+
+_qm_min_bin() {
+  _qm_target_bin="$1"; shift
+  mkdir -p "$_qm_target_bin"
+  for _qm_tool in "$@"; do
+    _qm_original="$(command -v "$_qm_tool" 2>/dev/null)" &&
+      _qm_forward "$_qm_target_bin/$_qm_tool" "$_qm_original"
+  done
+  if gg_is_windows; then
+    # Bare Git and policy-shell subprocesses use CreateProcess, which does not
+    # search PATHEXT for CMD adapters. Admit their genuine PEs and runtime DLLs
+    # only, never either tool directory. No conflicting DLL may be overwritten.
+    _qm_git_runtime="$(cygpath -u "$(git --exec-path)")/../../bin"
+    _qm_sh_runtime="/usr/bin"
+    "$(gg_python)" -I -c '
+import hashlib, json, pathlib, shutil, sys
+git_source, sh_source, target = map(pathlib.Path, sys.argv[1:4])
+files = [git_source / "git.exe", sh_source / "sh.exe",
+         *sorted(git_source.glob("*.dll")), *sorted(sh_source.glob("*.dll"))]
+# Present Rust tools need their real PE too: CMD would reparse regex pipes.
+expected_exes = ["git.exe", "sh.exe"]
+for tool in ("ast-grep", "ruff"):
+    if tool in sys.argv[4:]:
+        resolved = shutil.which(tool)
+        assert resolved, tool
+        original = pathlib.Path(resolved)
+        assert original.suffix.lower() == ".exe", original
+        assert original.read_bytes()[:2] == b"MZ", original
+        files.append(original)
+        expected_exes.append(tool + ".exe")
+manifest = {}
+for original in files:
+    before = hashlib.sha256(original.read_bytes()).hexdigest()
+    key = original.name.lower()
+    assert manifest.get(key, before) == before, original.name
+    destination = target / key
+    if destination.exists():
+        assert hashlib.sha256(destination.read_bytes()).hexdigest() == before, key
+    else:
+        shutil.copyfile(original, destination)
+    after = hashlib.sha256(destination.read_bytes()).hexdigest()
+    assert before == after, key
+    manifest[key] = before
+assert sorted(p.name.lower() for p in target.glob("*.exe")) == sorted(expected_exes)
+print(json.dumps({"git_source_sha256": manifest["git.exe"],
+                  "git_copy_sha256": manifest["git.exe"],
+                  "sh_source_sha256": manifest["sh.exe"],
+                  "sh_copy_sha256": manifest["sh.exe"],
+                  "dlls_verified": sum(name.lower().endswith(".dll") for name in manifest),
+                  "runtime_manifest_sha256": hashlib.sha256(
+                      json.dumps(manifest, sort_keys=True).encode()).hexdigest(),
+                  "present_tool_sha256": {name: manifest[name] for name in expected_exes},
+                  "only_native_executables": sorted(expected_exes)}))
+' "$(cygpath -m "$_qm_git_runtime")" "$(cygpath -m "$_qm_sh_runtime")" "$(cygpath -m "$_qm_target_bin")" "$@"
+    rc=$?
+    t_expect_rc 0 "$rc" "restricted runtimes match trusted hashes and admit only the declared EXE set"
+  fi
+}
+
 # _qm_repo — a fresh fixture repo (path on stdout).
 _qm_repo() { gg_mktemp_repo; }
 
@@ -135,6 +229,113 @@ t_case_quality_mandate() {
     t_skip "quality mandate scans: need ruff and a genuine ast-grep (ruff=$(gg_has_ruff && echo y || echo n))"
     return 0
   fi
+
+  # Protects: valid open-text commands and classification predicates stay usable.
+  # Detects: name/return-shape heuristics silently promoted to account-wide vetoes.
+  # Needs: genuine ast-grep/ruff above; isolated index, range and actual hook calls.
+  # Breadcrumb: hooks/common/qa-gate.conf and mandate_scan.py RULES; agent-hooks#11.
+  r="$(_qm_repo)"
+  _qm_put "$r" README.md 'classifier fixture\n'
+  _qm_commit "$r" "classification base"
+  _qm_advisory_base="$(git -C "$r" rev-parse HEAD)"
+  _qm_classifier='import shlex\n\n\ndef is_classifiable(command: str) -> bool:\n    """An unmatched quote means unclassified, not an operational failure."""\n    try:\n        shlex.split(command, posix=True)\n    except ValueError:\n        return False\n    return True\n'
+  _qm_put "$r" src/classify.py "$_qm_classifier"
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 0 "$rc" "default staged heuristics allow open command text and an intentional False predicate"
+  _qm_has "$log" "WARN [except_sentinel]" "default sentinel heuristic remains visible as a warning"
+  _qm_has "$log" "WARN [str_enum_param]" "default parameter-name heuristic remains visible as a warning"
+  ( cd "$r" && sh "$GG_ROOT/hooks/pre-commit" ) >"$log" 2>&1; rc=$?
+  t_expect_rc 0 "$rc" "actual pre-commit permits the valid classifier under packaged defaults"
+  _qm_has "$log" "WARN [except_sentinel]" "pre-commit retains the predicate advisory"
+  _qm_has "$log" "WARN [str_enum_param]" "pre-commit retains the open-text advisory"
+  for _qm_level in changed block; do
+    for _qm_rule in except_sentinel str_enum_param; do
+      _qm_conf "$r" "mandate.$_qm_rule=$_qm_level\n"
+      _qm_scan "$r" "$log" --staged; rc=$?
+      t_expect_rc 1 "$rc" "explicit staged $_qm_rule=$_qm_level still enforces the selected heuristic"
+      _qm_has "$log" "BLOCK [$_qm_rule]" "the staged opt-in names $_qm_rule"
+    done
+  done
+  _qm_conf "$r" ''
+  _qm_commit "$r" "valid classifier under default advisory policy"
+  _qm_scan "$r" "$log" --range "$_qm_advisory_base..HEAD"; rc=$?
+  t_expect_rc 0 "$rc" "default range heuristics allow the same valid classifier"
+  _qm_has "$log" "WARN [except_sentinel]" "range sentinel heuristic remains visible"
+  _qm_has "$log" "WARN [str_enum_param]" "range open-text heuristic remains visible"
+  for _qm_level in changed block; do
+    for _qm_rule in except_sentinel str_enum_param; do
+      _qm_conf "$r" "mandate.$_qm_rule=$_qm_level\n"
+      _qm_commit "$r" "explicit range $_qm_rule=$_qm_level"
+      _qm_scan "$r" "$log" --range "$_qm_advisory_base..HEAD"; rc=$?
+      t_expect_rc 1 "$rc" "explicit range $_qm_rule=$_qm_level still enforces the selected heuristic"
+      _qm_has "$log" "BLOCK [$_qm_rule]" "the range opt-in names $_qm_rule"
+    done
+  done
+  _qm_conf "$r" ''
+  _qm_put "$r" src/failure.py 'def catches_control_flow() -> bool:\n    try:\n        return True\n    except:\n        return False\n'
+  _qm_scan "$r" "$log" --staged; rc=$?
+  t_expect_rc 1 "$rc" "an unrelated actual bare-except violation still blocks with advisory defaults"
+  _qm_has "$log" "BLOCK [bare_except]" "the positive blocking control retains its own rule"
+  ( cd "$r" && sh "$GG_ROOT/hooks/pre-commit" ) >"$log" 2>&1; rc=$?
+  t_expect_rc 1 "$rc" "actual pre-commit still rejects the unrelated bare-except violation"
+  gg_rmrepo "$r"
+
+  # Protects: upgrading these defaults cannot replace a false veto with STALE.
+  # Detects: legacy ceilings re-imposing a now-advisory rule at real pre-push.
+  # Needs: a genuine old-policy baseline and snapshot policy; same scanners above.
+  # Breadcrumb: mandate_scan.py check_baseline/evaluate_baseline; config defaults.
+  r="$(_qm_repo)"
+  _qm_put "$r" src/classify.py "$_qm_classifier"
+  _qm_conf "$r" 'mandate.except_sentinel=changed\nmandate.str_enum_param=changed\n'
+  ( cd "$r" && sh "$_QM_SCAN" --write-baseline ) >"$log" 2>&1; rc=$?
+  t_expect_rc 0 "$rc" "a legacy strict-policy baseline is generated by the real scanner"
+  _qm_commit "$r" "legacy strict heuristic baseline"
+  _qm_legacy_base="$(git -C "$r" rev-parse HEAD)"
+  _qm_conf "$r" ''
+  _qm_commit "$r" "adopt advisory defaults without rewriting legacy ceilings"
+  _qm_scan "$r" "$log" --check-baseline; rc=$?
+  t_expect_rc 0 "$rc" "legacy ceilings for the two WARN heuristics are advisory"
+  _qm_has "$log" "WARN legacy baseline [except_sentinel]" "legacy predicate ceiling is reported honestly"
+  _qm_has "$log" "WARN legacy baseline [str_enum_param]" "legacy command ceiling is reported honestly"
+  _qm_tip="$(git -C "$r" rev-parse HEAD)"
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_legacy_base" > "$GG_T_TMPROOT/qm-refs"
+  _qm_push "$r" "$log"; rc=$?
+  t_expect_rc 0 "$rc" "actual pre-push accepts the default-WARN legacy-baseline migration"
+  _qm_put "$r" src/second.py "$_qm_classifier"
+  _qm_commit "$r" "another valid classifier under advisory defaults"
+  for _qm_level in changed block; do
+    for _qm_rule in except_sentinel str_enum_param; do
+      _qm_parent="$(git -C "$r" rev-parse HEAD)"
+      _qm_conf "$r" "mandate.$_qm_rule=$_qm_level\n"
+      _qm_commit "$r" "restore strict ratchet $_qm_rule=$_qm_level"
+      _qm_scan "$r" "$log" --check-baseline; rc=$?
+      t_expect_rc 1 "$rc" "explicit $_qm_rule=$_qm_level retains its legacy ratchet"
+      _qm_has "$log" "BLOCK REGRESSION $_qm_rule" "the strict baseline names its actual new finding"
+      _qm_tip="$(git -C "$r" rev-parse HEAD)"
+      printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_parent" > "$GG_T_TMPROOT/qm-refs"
+      _qm_push "$r" "$log"; rc=$?
+      t_expect_rc 1 "$rc" "actual pre-push preserves the explicit $_qm_rule=$_qm_level ratchet"
+    done
+  done
+  _qm_conf "$r" ''
+  _qm_put "$r" src/second.py '\n'
+  _qm_commit "$r" "restore valid advisory source"
+  for _qm_negative in literal_enum unknown_rule malformed; do
+    case "$_qm_negative" in
+      literal_enum) _qm_register='{"version":1,"policy_revision":"git-guard-mandate-1","measured_at_commit":"fixture","rules":{"literal_enum":{"src/classify.py":1}}}'; _qm_problem=STALE ;;
+      unknown_rule) _qm_register='{"version":1,"policy_revision":"git-guard-mandate-1","measured_at_commit":"fixture","rules":{"unknown_rule":{}}}'; _qm_problem=STALE ;;
+      malformed) _qm_register='{"version":1,"policy_revision":"git-guard-mandate-1","measured_at_commit":"fixture","rules":{"except_sentinel":{"src/classify.py":0}}}'; _qm_problem=MALFORMED ;;
+    esac
+    _qm_parent="$(git -C "$r" rev-parse HEAD)"
+    _qm_put "$r" .git-guard/mandate-baseline.json "$_qm_register\n"
+    _qm_commit "$r" "negative legacy migration $_qm_negative"
+    _qm_tip="$(git -C "$r" rev-parse HEAD)"
+    printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_parent" > "$GG_T_TMPROOT/qm-refs"
+    _qm_push "$r" "$log"; rc=$?
+    t_expect_rc 1 "$rc" "actual pre-push still rejects unrelated $_qm_negative register state"
+    _qm_has "$log" "BLOCK $_qm_problem" "the $_qm_negative control retains its original $_qm_problem failure"
+  done
+  gg_rmrepo "$r"
 
   # ---- changed lines: new swallow blocks, old debt does not -------------------
   r="$(_qm_repo)"
@@ -257,9 +458,11 @@ t_case_quality_mandate() {
   # Exercise changed-line policy: BLOCK would find the violation regardless of hunks.
   _qm_conf "$r" 'mandate.pydantic_v1=changed\n'
   # Git records are LF-delimited; a source U+2028 must not reset the later hunk.
-  _qm_put "$r" 'vendor\model.py' 'marker = "old"\n\nfrom pydantic import BaseModel\n'
+  _qm_model_path='vendor\model.py'
+  if gg_is_windows; then _qm_model_path="vendor model café's.py"; fi
+  _qm_put "$r" "$_qm_model_path" 'marker = "old"\n\nfrom pydantic import BaseModel\n'
   _qm_commit "$r" "clean pydantic fixture"
-  _qm_put "$r" 'vendor\model.py' 'marker = "prefix diff --git a/fake b/fake"\n\nfrom pydantic.v1 import BaseModel\n'
+  _qm_put "$r" "$_qm_model_path" 'marker = "prefix diff --git a/fake b/fake"\n\nfrom pydantic.v1 import BaseModel\n'
   _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 1 "$rc" "'from pydantic.v1 import BaseModel' blocks"
   _qm_has "$log" "[pydantic_v1]" "the block names pydantic_v1"
@@ -492,50 +695,62 @@ t_case_quality_mandate() {
   # ---- tool failures fail closed; a missing tool warns -------------------------
   r="$(_qm_repo)"
   _qm_put "$r" src/app.py "$_QM_CLEAN"
-  mkdir -p "$r/.venv/bin"   # created after staging: the repo venv's ruff wins
-  printf '#!/bin/sh\necho "error: injected selector failure" >&2\nexit 2\n' > "$r/.venv/bin/ruff"
-  chmod +x "$r/.venv/bin/ruff"
-  _qm_scan "$r" "$log" --staged; rc=$?
+  mkdir -p "$r/.venv/bin"   # after staging; POSIX also exercises repo-venv precedence
+  _qm_ruff="$r/.venv/bin/ruff"
+  _qm_ruff_path="$PATH"
+  if gg_is_windows; then
+    # Native resolution requires .cmd; use supported PATH discovery rather than
+    # pretending an extensionless shell file is a Windows executable.
+    _qm_ruff="$r/.venv/bin/ruff-payload"
+    _qm_ruff_path="$(_qm_path_dir "$r/.venv/bin"):$PATH"
+  fi
+  GG_QM_MARKER="$GG_T_TMPROOT/qm-tool-invocations"
+  export GG_QM_MARKER
+  : > "$GG_QM_MARKER"
+  # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation
+  _qm_payload "$_qm_ruff" '#!/bin/sh\nprintf "ruff-exit2\\n" >> "$GG_QM_MARKER"\necho "error: injected selector failure" >&2\nexit 2\n'
+  if gg_is_windows; then cp "$_qm_ruff.cmd" "$r/.venv/bin/ruff.cmd"; fi
+  PATH="$_qm_ruff_path" _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 2 "$rc" "ruff exit 2 is a TOOL ERROR that blocks"
   _qm_has "$log" "TOOL ERROR [ruff]" "the TOOL ERROR names ruff"
   _qm_has "$log" "injected selector failure" "the TOOL ERROR carries ruff's stderr"
-  printf '#!/bin/sh\necho "this is not json"\nexit 1\n' > "$r/.venv/bin/ruff"
-  _qm_scan "$r" "$log" --staged; rc=$?
+  _qm_has "$GG_QM_MARKER" "ruff-exit2" "the injected exit-2 payload actually ran"
+  # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation
+  _qm_payload "$_qm_ruff" '#!/bin/sh\nprintf "ruff-json\\n" >> "$GG_QM_MARKER"\necho "this is not json"\nexit 1\n'
+  if gg_is_windows; then cp "$_qm_ruff.cmd" "$r/.venv/bin/ruff.cmd"; fi
+  PATH="$_qm_ruff_path" _qm_scan "$r" "$log" --staged; rc=$?
   t_expect_rc 2 "$rc" "unparseable ruff output is a TOOL ERROR, never zero findings"
   _qm_has "$log" "unparseable JSON" "the TOOL ERROR says the output could not be parsed"
-  printf '#!/bin/sh\nsleep 30\n' > "$r/.venv/bin/ruff"
-  ( cd "$r" && GIT_GUARD_MANDATE_TIMEOUT=2 sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
+  _qm_has "$GG_QM_MARKER" "ruff-json" "the malformed-JSON payload actually ran"
+  # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation
+  _qm_payload "$_qm_ruff" '#!/bin/sh\nprintf "ruff-timeout\\n" >> "$GG_QM_MARKER"\nsleep 30\n'
+  if gg_is_windows; then cp "$_qm_ruff.cmd" "$r/.venv/bin/ruff.cmd"; fi
+  ( cd "$r" && GIT_GUARD_MANDATE_TIMEOUT=2 PATH="$_qm_ruff_path" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
   t_expect_rc 2 "$rc" "a scanner that hangs past GIT_GUARD_MANDATE_TIMEOUT is a TOOL ERROR"
   _qm_has "$log" "did not finish within 2s" "the TOOL ERROR says the scanner hung"
+  _qm_has "$GG_QM_MARKER" "ruff-timeout" "the hanging payload started before the timeout"
   rm -rf "$r/.venv"
-  _qm_bin="$GG_T_TMPROOT/qm-noruff-bin"
-  mkdir -p "$_qm_bin"
-  for _qm_t in sh git dirname env ast-grep sort tr; do
-    _qm_p="$(command -v "$_qm_t" 2>/dev/null)" && ln -sf "$_qm_p" "$_qm_bin/$_qm_t"
-  done
+  _qm_bin="$(_qm_path_dir "$GG_T_TMPROOT/qm-noruff-bin")"
+  _qm_min_bin "$_qm_bin" sh git dirname env ast-grep sort tr
   # The interpreter itself, not a version-manager shim that needs PATH to work.
   _qm_p="$("$(gg_python)" -c 'import sys; print(sys.executable)' 2>/dev/null)" &&
-    ln -sf "$_qm_p" "$_qm_bin/python3"
-  if PATH="$_qm_bin" command -v ruff >/dev/null 2>&1; then
-    t_skip "missing-ruff case: could not build a PATH without ruff"
-  else
-    ( cd "$r" && VIRTUAL_ENV='' PATH="$_qm_bin" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
-    t_expect_rc 0 "$rc" "ruff not installed warns and does not block"
-    _qm_has "$log" "ruff is not installed, so these rules were NOT evaluated" \
-      "the warning names the unevaluated rules"
-  fi
+    _qm_forward "$_qm_bin/python3" "$_qm_p"
+  ( PATH="$_qm_bin" python3 -I -c 'import shutil; assert shutil.which("ruff") is None' ) >/dev/null 2>"$log"; rc=$?
+  t_expect_rc 0 "$rc" "the restricted interpreter runs and cannot discover ruff"
+  ( cd "$r" && VIRTUAL_ENV='' PATH="$_qm_bin" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
+  t_expect_rc 0 "$rc" "ruff not installed warns and does not block"
+  _qm_has "$log" "ruff is not installed, so these rules were NOT evaluated" \
+    "the warning names the unevaluated rules"
   # A python3 that is on PATH but cannot start (an unconfigured version-manager
   # shim) must read as "no interpreter", not as BLOCKED or TOOL ERROR.
-  _qm_shim="$GG_T_TMPROOT/qm-shim-bin"
-  mkdir -p "$_qm_shim"
-  for _qm_t in sh git dirname; do
-    _qm_p="$(command -v "$_qm_t" 2>/dev/null)" && ln -sf "$_qm_p" "$_qm_shim/$_qm_t"
-  done
-  printf '#!/bin/sh\necho "shim ERROR No version is set" >&2\nexit 1\n' > "$_qm_shim/python3"
-  chmod +x "$_qm_shim/python3"
+  _qm_shim="$(_qm_path_dir "$GG_T_TMPROOT/qm-shim-bin")"
+  _qm_min_bin "$_qm_shim" sh git dirname
+  # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation
+  _qm_payload "$_qm_shim/python3" '#!/bin/sh\nprintf "python-shim\\n" >> "$GG_QM_MARKER"\necho "shim ERROR No version is set" >&2\nexit 1\n'
   ( cd "$r" && PATH="$_qm_shim" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
   t_expect_rc 0 "$rc" "a python3 shim that cannot start warns and does not block"
   _qm_has "$log" "quality mandate was NOT evaluated" "the warning says the mandate did not run"
+  _qm_has "$GG_QM_MARKER" "python-shim" "the deliberately unconfigured interpreter shim actually ran"
   gg_rmrepo "$r"
 
   # ---- debt register -----------------------------------------------------------
@@ -570,17 +785,21 @@ t_case_quality_mandate() {
     "$_qm_before_ratchet" > "$GG_T_TMPROOT/qm-refs"
   _qm_push "$r" "$log"; rc=$?
   t_expect_rc 0 "$rc" "the ratchet commit passes when earlier debt is already remote"
-  _qm_fault_bin="$GG_T_TMPROOT/qm-buffer-fault"
+  _qm_fault_bin="$(_qm_path_dir "$GG_T_TMPROOT/qm-buffer-fault")"
   mkdir -p "$_qm_fault_bin"
-  printf '#!/bin/sh\nexit 1\n' > "$_qm_fault_bin/mktemp"
+  # shellcheck disable=SC2016  # marker expands in the injected child
+  printf '#!/bin/sh\nprintf "mktemp-fault\\n" >> "$GG_QM_MARKER"\nexit 1\n' > "$_qm_fault_bin/mktemp"
   chmod +x "$_qm_fault_bin/mktemp"
   PATH="$_qm_fault_bin:$PATH" _qm_push "$r" "$log"; rc=$?
   t_expect_rc 1 "$rc" "failed mandatory ref-buffer creation refuses the push"
+  _qm_has "$GG_QM_MARKER" "mktemp-fault" "the pre-push scratch allocation fault actually ran"
   rm "$_qm_fault_bin/mktemp"
-  printf '#!/bin/sh\nexit 1\n' > "$_qm_fault_bin/cat"
+  # shellcheck disable=SC2016  # marker expands in the injected child
+  printf '#!/bin/sh\nprintf "cat-fault\\n" >> "$GG_QM_MARKER"\nexit 1\n' > "$_qm_fault_bin/cat"
   chmod +x "$_qm_fault_bin/cat"
   PATH="$_qm_fault_bin:$PATH" _qm_push "$r" "$log"; rc=$?
   t_expect_rc 1 "$rc" "failed ref-buffer write refuses the push"
+  _qm_has "$GG_QM_MARKER" "cat-fault" "the pre-push ref capture fault actually ran"
   gg_rmrepo "$r"
 
   r="$(_qm_repo)"
@@ -777,37 +996,46 @@ t_case_quality_mandate() {
   # fails used to fall through to the missing-tool WARN and pass.
   r="$(_qm_repo)"
   _qm_put "$r" src/app.py "$_QM_SWALLOW"
-  _qm_fake="$GG_T_TMPROOT/qm-fake-astgrep"
+  _qm_fake="$(_qm_path_dir "$GG_T_TMPROOT/qm-fake-astgrep")"
   mkdir -p "$_qm_fake"
-  printf '#!/bin/sh\necho "ast-grep: cannot load runtime" >&2\nexit 3\n' > "$_qm_fake/ast-grep"
-  chmod +x "$_qm_fake/ast-grep"
+  # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation
+  _qm_payload "$_qm_fake/ast-grep" '#!/bin/sh\nprintf "astgrep-exit3\\n" >> "$GG_QM_MARKER"\necho "ast-grep: cannot load runtime" >&2\nexit 3\n'
   ( cd "$r" && PATH="$_qm_fake:$PATH" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
   t_expect_rc 2 "$rc" "an ast-grep whose --version exits 3 is a TOOL ERROR that blocks"
   _qm_has "$log" "TOOL ERROR [ast-grep]" "the TOOL ERROR names ast-grep"
-  printf '#!/bin/sh\nexit 0\n' > "$_qm_fake/ast-grep"
+  _qm_has "$GG_QM_MARKER" "astgrep-exit3" "the deliberately broken ast-grep payload actually ran"
+  # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation
+  _qm_payload "$_qm_fake/ast-grep" '#!/bin/sh\nprintf "astgrep-empty\\n" >> "$GG_QM_MARKER"\nexit 0\n'
   ( cd "$r" && PATH="$_qm_fake:$PATH" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
   t_expect_rc 2 "$rc" "an ast-grep that prints no version is a TOOL ERROR too"
-  _qm_sgbin="$GG_T_TMPROOT/qm-sg-bin"
-  mkdir -p "$_qm_sgbin"
-  for _qm_t in sh git dirname env sort tr ruff; do
-    _qm_p="$(command -v "$_qm_t" 2>/dev/null)" && ln -sf "$_qm_p" "$_qm_sgbin/$_qm_t"
-  done
+  _qm_has "$GG_QM_MARKER" "astgrep-empty" "the empty-version ast-grep payload actually ran"
+  _qm_sgbin="$(_qm_path_dir "$GG_T_TMPROOT/qm-sg-bin")"
+  _qm_min_bin "$_qm_sgbin" sh git dirname env sort tr ruff
   _qm_p="$("$(gg_python)" -c 'import sys; print(sys.executable)' 2>/dev/null)" &&
-    ln -sf "$_qm_p" "$_qm_sgbin/python3"
-  printf '#!/bin/sh\necho "sg from util-linux 2.39"\n' > "$_qm_sgbin/sg"
-  chmod +x "$_qm_sgbin/sg"
+    _qm_forward "$_qm_sgbin/python3" "$_qm_p"
+  # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation
+  _qm_payload "$_qm_sgbin/sg" '#!/bin/sh\nprintf "util-sg\\n" >> "$GG_QM_MARKER"\necho "sg from util-linux 2.39"\n'
+  ( PATH="$_qm_sgbin" python3 -I -c 'import shutil; assert shutil.which("ast-grep") is None' ) >/dev/null 2>"$log"; rc=$?
+  t_expect_rc 0 "$rc" "the restricted interpreter runs and cannot discover ast-grep"
   ( cd "$r" && VIRTUAL_ENV='' PATH="$_qm_sgbin" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
   t_expect_rc 1 "$rc" "an unrelated system sg is treated as no ast-grep (ruff still blocks the swallow)"
   _qm_has "$log" "ast-grep is not installed, so these rules were NOT evaluated" \
     "the util-linux sg reads as a missing ast-grep, not a TOOL ERROR"
   gg_rmrepo "$r"
 
+  _qm_has "$GG_QM_MARKER" "util-sg" "the unrelated sg payload actually ran"
+  unset GG_QM_MARKER
+
   # ---- qa_gate.sh calls the scanner at pre-commit ------------------------------
   r="$(_qm_repo)"
   printf 'python.ruff_check=off\npython.ruff_format=off\npython.mypy=off\npython.basedpyright=off\nastgrep=off\n' \
     > "$r/.qa-gate.conf"
   ( cd "$r" && git add .qa-gate.conf )
-  _qm_put "$r" 'vendor\caf"é.py' "$_QM_SWALLOW"
+  _qm_quoted_path='vendor\caf"é.py'
+  if gg_is_windows; then _qm_quoted_path="vendor café's model.py"; fi
+  _qm_put "$r" "$_qm_quoted_path" "$_QM_SWALLOW"
+  git -C "$r" ls-files --error-unmatch -- "$_qm_quoted_path" >/dev/null 2>&1; rc=$?
+  t_expect_rc 0 "$rc" "the platform-valid quoted UTF-8 fixture is actually staged"
   gg_run_gate_log "$r" "$log"; rc=$?
   t_expect_rc 1 "$rc" "qa_gate.sh blocks a staged mandate finding in a quoted UTF-8 filename with a quote"
   _qm_has "$log" "quality mandate findings" "the gate's block names the mandate"
