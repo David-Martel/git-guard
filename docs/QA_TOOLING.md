@@ -859,7 +859,7 @@ supplied range; this change only adjusts staged merges.
 | `blind_except` | PY-06 | every failure handled alike | ruff `BLE001` | changed | clarius AGENTS.md:653-655; vigil-ai-tpm pyproject.toml:80-87 | catch what you can recover from |
 | `except_pass` | PY-06 | a failure discarded (logging does not count as handling) | ruff `S110` + ast-grep `mandate-except-pass` | changed | clarius AGENTS.md:653-655 | re-raise typed, or `contextlib.suppress(Specific)` |
 | `except_continue` | PY-06 | a skipped item with no record | ruff `S112` + ast-grep `mandate-except-continue` | changed | clarius AGENTS.md:653-655 | record it (`failures.append`) and surface it |
-| `except_sentinel` | PY-05 | failure returned as `None`/`False`/`""`/`[]`/`{}` | ast-grep `mandate-except-sentinel` | changed | clarius CLAUDE.md:422-423 | raise typed, or return a typed outcome |
+| `except_sentinel` | PY-05 | failure returned as `None`/`False`/`""`/`[]`/`{}` | ast-grep `mandate-except-sentinel` | warn | clarius CLAUDE.md:422-423 | raise typed, or return a typed outcome |
 | `broad_suppress` | PY-06 | `contextlib.suppress(Exception)` | ast-grep `mandate-broad-suppress` | changed | clarius AGENTS.md:653-655 | name the expected exceptions |
 | `no_any` | PY-03 | the type checker switched off | ruff `ANN401` + ast-grep `mandate-explicit-any` (annotations, generics, aliases, the import) | changed | clarius AGENTS.md:657-658; vigil-ai-tpm RULES.md:10-11; vigil-oto CLAUDE.md:117 | `object`, a Protocol/TypeVar, a JSON alias, a model |
 | `raise_from` | PY-07 | a lost exception chain | ruff `B904` | changed | vigil-ai-tpm RULES.md:48-52 | `raise X(...) from exc` |
@@ -868,7 +868,7 @@ supplied range; this change only adjusts staged merges.
 | `unchecked_subprocess` | PY-13 | a failing child ignored | ruff `PLW1510` | changed | vigil-ai-tpm RULES.md:123-125 | `check=True`, or `check=False` and branch |
 | `suppression_code` | PY-09 | blanket `# noqa` / `# type: ignore` | ruff `PGH004`, `PGH003` | changed | vigil-ai-tpm RULES.md:83-86 | name the code |
 | `suppression_reason` | PY-09 | a mandate suppression with no reason | text check | changed | vigil-ai-tpm RULES.md:83-86 | add `# SAFETY: <reason>` on the line |
-| `str_enum_param` | PY-04 | `mode: str`, `kind: int` and similar | ast-grep `mandate-str-enum-param` | changed | clarius CLAUDE.md:420-422; vigil-spark AGENTS.md:200 | an Enum, parsed at the boundary |
+| `str_enum_param` | PY-04 | `mode: str`, `kind: int` and similar | ast-grep `mandate-str-enum-param` | warn | clarius CLAUDE.md:420-422; vigil-spark AGENTS.md:200 | an Enum, parsed at the boundary |
 | `literal_enum` | PY-04 | `Literal["a", "b"]` as an enum | ast-grep `mandate-literal-enum` | warn | vigil-spark rule (vigil-ai-tpm RULES.md:11 recommends `Literal`) | an Enum |
 | `magic_number` | PY-04 | unexplained numbers in comparisons | ruff `PLR2004` | warn | clarius CLAUDE.md:420-422 | a named constant or IntEnum |
 | `python_syntax` | PY-10 | a file nothing could check | ruff parse errors | changed | git-guard | fix the syntax error |
@@ -876,6 +876,15 @@ supplied range; this change only adjusts staged merges.
 
 The whole-file panic set of §4 (`astgrep_panics`, default warn) is unchanged and
 independent of `rust_panic`.
+
+`except_sentinel` and `str_enum_param` are advisory by default. A syntax match
+cannot prove whether `False` is an expected classification result or whether a
+parameter such as `command: str` has a closed domain. Valid open-text/predicate
+code keeps its existing interface; warnings remain visible. A repository that
+chooses these conventions may explicitly set either key to `changed` or `block`
+in its staged/committed QA configuration. All other rule defaults and tool-error
+handling are unchanged. The actual staged, range and pre-commit regression
+controls are in [category 32](../tests/32-quality-mandate.t.sh).
 
 **Exemptions.**
 - Test code (`tests/`/`test/` dirs, `test_*.py`, `*_test.py`, `conftest.py`;
@@ -966,7 +975,15 @@ each pushed commit carrying the file) counts that commit's tree and blocks on:
 | REGRESSION | a file's count rose above its ceiling | fix the new finding, or raise that ceiling in the same diff with a reason |
 | UNRATCHETED | a count fell but the ceiling did not | the exact edit: `set rules.<rule>["<path>"] to N` or `delete …` |
 | UNDECLARED | an enforced rule has findings and no entry | fix them, or declare the backlog with `--write-baseline` |
-| STALE | an entry for a rule that is unknown or not enforced | delete the entry |
+| STALE | an entry for an unknown or non-enforced rule, except the two WARN migrations below | delete the entry |
+
+Historical `except_sentinel` and `str_enum_param` ceilings become advisory only
+when that rule's effective policy is `warn`. The scanner names each such legacy
+entry instead of refusing a push merely because a packaged default changed.
+Explicit `changed`/`block` opt-ins retain the full existing ratchet; unrelated
+WARN entries still produce STALE, and malformed/unknown entries still block.
+Schema validation runs before this narrow migration. New baselines already omit
+WARN rules, so no broad register rewrite is required.
 
 Ceilings are per file so that fixing a finding in one file cannot pay for a new
 one in another. A `policy_revision` different from the scanner's prints a note
@@ -974,12 +991,58 @@ and the counts are still compared. Whole-tree counts (`--all [--rev REV]`, JSON
 on stdout) are how a repo measures its backlog before adopting the register.
 
 **Not enforced, by decision.** A general ban on `Optional`/`None` (about 16.7k
-fleet lines; no source asks for it): only the error-path reading above
-(`except_sentinel`) is enforced, and returning `None` for a genuinely absent value
-remains fine. Dataclasses and TypedDict are allowed (vigil-oto CLAUDE.md:116-117).
-`Literal[...]` stays at `warn` because vigil-ai-tpm recommends it. vigil-spark's
-`py-no-except-empty-sentinel` exempts `return False` in predicates; the mandate
-does not, so such a predicate records a `SAFETY:` suppression on the except line.
+fleet lines; no source asks for it): the error-path reading above
+(`except_sentinel`) is advisory by default, and returning `None` for a genuinely
+absent value remains fine. Dataclasses and TypedDict are allowed (vigil-oto
+CLAUDE.md:116-117). `Literal[...]` stays at `warn` because vigil-ai-tpm recommends
+it. The sentinel matcher includes intentional predicate `False` results; a
+repository explicitly enforcing that heuristic may record their meaning with a
+`SAFETY:` suppression. The account-wide default requires no such suppression.
+
+### Advisory heuristic defaults test review
+
+Review status: **APPROVED_WITH_SCOPE by independent Codex parent-root** at the
+exact scanner, defaults and category-32 test hashes below. Root inspected the
+functional diff and detecting regressions: only `except_sentinel` and
+`str_enum_param` become advisory defaults, and only their historical WARN-policy
+ceilings become advisory. Schema validation stays first; explicit strict opt-ins,
+unrelated STALE entries and other defaults stay enforced. Rule metadata matcher
+cores are unchanged; their notes document ambiguity. This approval covers the
+three functional files, not a live deployment, release tag, inherited source
+changes or outside-family final-head PR review.
+
+Protects: valid open command text and a documented `ValueError` classification
+predicate can commit and push without adopting a different interface. Detects:
+account-wide heuristic vetoes, legacy ceilings restoring those vetoes, or broad
+migration exceptions hiding genuine ratchet/schema failures. Needs: real Git
+snapshots, Ruff and ast-grep, and actual pre-commit/pre-push hook entrypoints in
+isolated repositories. Breadcrumb:
+[category 32](../tests/32-quality-mandate.t.sh), `check_baseline` and `RULES` in
+[mandate_scan.py](../hooks/common/mandate_scan.py), and the defaults below.
+
+| Qualified source (exact bytes) | SHA256 |
+|---|---|
+| [`hooks/common/qa-gate.conf`](../hooks/common/qa-gate.conf) | `391df8ba56ff021917d26651bf9b874ce2cf7ba9070d3913b23cd36270740c9f` |
+| [`hooks/common/mandate_scan.py`](../hooks/common/mandate_scan.py) | `133d4321e5c74095961d4b980b873aedcb284082e1c018980256638b7fc5b456` |
+| [`tests/32-quality-mandate.t.sh`](../tests/32-quality-mandate.t.sh) | `6ac88cdf62b41528a1bdf2d052d125447d0a6c4c0105e39c6f1d3b2d8be1f2d5` |
+| [`rules-examples/mandate/python/mandate-except-sentinel.yml`](../rules-examples/mandate/python/mandate-except-sentinel.yml) | `32d07a4cdc1762c2707ec62c7cab8c93f542b6e1c7fe6bfd0f35b338a181520d` |
+| [`rules-examples/mandate/python/mandate-str-enum-param.yml`](../rules-examples/mandate/python/mandate-str-enum-param.yml) | `196145b849d1770b02751791e78c26f8a1e82e47221aa4116cb4ef28a0ebe2de` |
+
+The staged/range/pre-commit regression failed nine default-admission/warning
+assertions against the predecessor defaults (175 passed, 9 failed, zero skipped),
+then passed all 184 assertions after the two defaults changed. The real legacy
+baseline migration subsequently failed four new assertions without compatibility
+(203 passed, 4 failed), then passed **207 assertions, zero failures or skips**
+with the WARN-only compatibility. Strict `changed` and `block` opt-ins retain
+actual pre-push regression failures; unrelated WARN→STALE, unknown-rule and
+malformed-advisory-register controls still refuse pushes. Ruff formatting,
+repository-compatible E/F checks and ShellCheck passed. The full final suite
+passed **1,465 assertions, zero failures, 18 explicit platform/tool skips**;
+its earlier interrupted attempt is not qualification. The inherited staged-merge
+parent attribution from git-guard#83 remains separately authored source and is
+not part of this patch's authorship or review claim. Raw logs are preserved
+under the implementing host's
+`~/.codex/backups/execpolicy-removal/git-guard-advisory-heuristics/`.
 
 ## Optional Windows Git SSH adapter
 

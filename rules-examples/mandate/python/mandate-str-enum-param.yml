@@ -1,6 +1,6 @@
 # Quality mandate PY-04 (typed enums, never strings as enumerations). Read by
 # hooks/common/mandate_scan.sh under `mandate.str_enum_param` (default:
-# changed). Ported from vigil-spark ast-grep-rules/python/py-no-str-enum-param.yml
+# warn). Ported from vigil-spark ast-grep-rules/python/py-no-str-enum-param.yml
 # with its path scope removed (the mandate applies account-wide).
 #
 # Sources: clarius CLAUDE.md:420-422 ("Typed enums, never strings or raw
@@ -12,7 +12,10 @@
 # backend/distro/arch) and whose TYPE is a raw str/int. Physical and transport
 # names (timeout_s, depth, port, count, ...) never match the name alternation.
 # Unlike the vigil-spark original, a parameter with a default
-# (`mode: str = "fast"`, a typed_default_parameter) is matched too.
+# (`mode: str = "fast"`, a typed_default_parameter) is matched too. A name cannot
+# establish a closed domain: command text and library level strings can be open
+# values. Findings are advisory unless a repository explicitly opts into
+# changed/block enforcement.
 id: mandate-str-enum-param
 language: python
 severity: warning
@@ -35,6 +38,7 @@ note: |
         SAFE = "safe"
     def run(mode: Mode) -> None: ...
   Parse foreign values at the boundary: Mode(raw) raises ValueError on a typo.
-  Genuinely free-form text (a log level string handed to a library that takes
-  str) is recorded on the line:
+  Genuinely free-form text can retain str under the advisory default. If a
+  repository explicitly enforces this heuristic, it may record a library
+  boundary or other intentional open domain on the line:
     def f(level: str):  # ast-grep-ignore: mandate-str-enum-param  # SAFETY: passed through to logging.setLevel
