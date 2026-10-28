@@ -71,7 +71,8 @@ set -u
 # Git Bash: run Git Bash's own POSIX tools, not native Windows coreutils that a
 # PATH may list first (their mv has no -T, which flip_current needs). Located
 # with parameter expansion only, since dirname may itself be a shadowing tool.
-case "$0" in */*) gg_self_dir="${0%/*}" ;; *) gg_self_dir=. ;; esac
+# PowerShell callers pass a native `C:\...\install.sh`, so `\` separates too.
+case "$0" in *[/\\]*) gg_self_dir=${0%[/\\]*} ;; *) gg_self_dir=. ;; esac
 # shellcheck source=tools/posix-tool-path.sh disable=SC1091
 . "$gg_self_dir/tools/posix-tool-path.sh"
 gg_posix_tool_path

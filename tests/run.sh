@@ -24,8 +24,9 @@ set -u
 # PATH may list first. A native mktemp returns a `C:/...` temp root whose drive
 # colon splits every PATH the cases build from it (rc 127 on 2026-10-28). The
 # helper exports GIT_GUARD_POSIX_PATH_SET, so an install.sh run by a case keeps
-# the case's stub tools first. Located with parameter expansion only.
-case "$0" in */*) gg_self_dir="${0%/*}" ;; *) gg_self_dir=. ;; esac
+# the case's stub tools first. Located with parameter expansion only; a native
+# `C:\...\run.sh` path separates with `\`.
+case "$0" in *[/\\]*) gg_self_dir=${0%[/\\]*} ;; *) gg_self_dir=. ;; esac
 # shellcheck source=tools/posix-tool-path.sh disable=SC1091
 . "$gg_self_dir/../tools/posix-tool-path.sh"
 gg_posix_tool_path

@@ -128,6 +128,10 @@ t_case_posix_tool_path() {
   ptp_tag="gg-test-posix-path-$$"
   git -C "$ptp_src" -c tag.gpgsign=false -c tag.forceSignAnnotated=false tag "$ptp_tag" HEAD
 
+  # PowerShell callers (test 27's config publication harness) start install.sh
+  # by its native `C:\...` path, so the fixed run uses that form where it exists.
+  ptp_installer="$ptp_src/install.sh"
+  if have cygpath; then ptp_installer="$(cygpath -w "$ptp_installer")"; fi
   for ptp_mode in control fixed; do
     ptp_home="$ptp_root/home-$ptp_mode"
     mkdir -p "$ptp_home"
@@ -137,7 +141,8 @@ t_case_posix_tool_path() {
       export HOME="$ptp_home" GIT_CONFIG_GLOBAL="$ptp_home/.gitconfig" GIT_CONFIG_NOSYSTEM=1
       export PATH="$ptp_bin:$PATH" GIT_GUARD_POSIX_PATH_SET=''
       [ "$ptp_mode" = fixed ] || export MSYSTEM=''
-      sh "$ptp_src/install.sh" --to "$ptp_tag" --store "$ptp_store" \
+      if [ "$ptp_mode" = control ]; then set -- "$ptp_src/install.sh"; else set -- "$ptp_installer"; fi
+      sh "$1" --to "$ptp_tag" --store "$ptp_store" \
         --hooks-link "$ptp_home/.git-hooks" --no-git-defaults
     ) > "$ptp_root/install-$ptp_mode.log" 2>&1
     ptp_rc=$?
