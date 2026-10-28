@@ -229,7 +229,7 @@ jobs:
             hooks/common/nul-cleanup.sh hooks/common/preserve.sh hooks/common/fleet_versions.sh hooks/common/hygiene.sh \
             hooks/common/mandate_scan.sh \
             bin/git-guard bin/git-guard-run \
-            install.sh branch-protection.sh \
+            install.sh branch-protection.sh tools/posix-tool-path.sh \
             tests/run.sh tests/lib.sh tests/*.t.sh
 
       - name: validate bundled example rules

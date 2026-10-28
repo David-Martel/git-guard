@@ -20,6 +20,16 @@
 
 set -u
 
+# Git Bash: run Git Bash's own POSIX tools, not native Windows coreutils that a
+# PATH may list first. A native mktemp returns a `C:/...` temp root whose drive
+# colon splits every PATH the cases build from it (rc 127 on 2026-10-28). The
+# helper exports GIT_GUARD_POSIX_PATH_SET, so an install.sh run by a case keeps
+# the case's stub tools first. Located with parameter expansion only.
+case "$0" in */*) gg_self_dir="${0%/*}" ;; *) gg_self_dir=. ;; esac
+# shellcheck source=tools/posix-tool-path.sh disable=SC1091
+. "$gg_self_dir/../tools/posix-tool-path.sh"
+gg_posix_tool_path
+
 # --- locate the git-guard root (this file is at <root>/tests/run.sh) ---
 GG_TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 GG_ROOT="$(cd "$GG_TESTS_DIR/.." && pwd)"
@@ -54,6 +64,16 @@ export GIT_GUARD_IDENTITY='' GIT_GUARD_ALLOWED_SIGNERS='' GIT_GUARD_IDENTITY_KEY
 # Per-suite temp root, cleaned on exit (covers any repo a case forgot to remove).
 GG_T_TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/git-guard-tests.XXXXXX")"
 export GG_T_TMPROOT
+# Every case builds PATH and GIT_CEILING_DIRECTORIES lists from this root, so a
+# colon or backslash in it would fail dozens of cases with rc 127 rather than
+# once here. Stop with the cause instead.
+case "$GG_T_TMPROOT" in
+  ''|*:*|*\\*)
+    printf 'git-guard tests: temp root is not a POSIX path: %s\n' "$GG_T_TMPROOT" >&2
+    printf '  mktemp is %s; put the shell'\''s POSIX tools first on PATH.\n' "$(command -v mktemp)" >&2
+    [ -z "$GG_T_TMPROOT" ] || rm -rf "$GG_T_TMPROOT"
+    exit 1 ;;
+esac
 
 # Isolate the validated rule cache for the suite. Pinning GIT_GUARD_RULES_DIR
 # above is only half the job: the cache qa_gate builds from it is MACHINE-GLOBAL
@@ -155,6 +175,7 @@ t_case_windows_ssh_adapter
 t_case_windows_ssh_adapter_install
 t_case_precommit_provider
 t_case_precommit_submodules
+t_case_posix_tool_path
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------
