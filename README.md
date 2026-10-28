@@ -269,6 +269,7 @@ git-guard/
 ├── rules-examples/        curated, public example ast-grep rules (incl. the BLOCK trio; mandate/ = quality-mandate rules)
 ├── bin/git-guard          the CLI
 ├── install.sh             idempotent, reversible installer (symlinks + overlay)
+├── tools/posix-tool-path.sh  Git Bash: prefer /usr/bin over shadowing native coreutils (install.sh, tests/run.sh)
 ├── branch-protection.sh   optional GitHub ruleset applier
 ├── docs/                  RULES.md, QA_TOOLING.md, GIT_COMMIT_SAFETY.md, IDENTITY.md
 └── .github/workflows/qa.yml   self-hosted QA on every PR and push to main: git-guard self-tests itself
@@ -286,6 +287,17 @@ Native Windows installation also requires PowerShell7.1+ and Git Bash's
 Existing equivalent hook paths leave the config untouched. Changed paths retain
 its original owner, group and DACL. The installed hooks continue to run in POSIX
 `sh`.
+
+`install.sh` and `tests/run.sh` need Git Bash's own POSIX tools. A Windows PATH
+may list native coreutils builds (for example uutils `mv`, `mktemp`, `uname`)
+ahead of `/usr/bin`. Such an `mv` rejects the `-T` that the atomic `current` swap
+uses, and such a `mktemp` returns a `C:/...` path whose drive colon splits PATH
+lists in the test suite. On Git Bash, MSYS2 and Cygwin both scripts therefore
+put `/usr/bin` first, default an unset `TMPDIR` to `/tmp` and convert a
+drive-letter `TMPDIR` with `cygpath -u`, for their own
+process only ([`tools/posix-tool-path.sh`](tools/posix-tool-path.sh)). Your
+shell's PATH is not changed, and nothing changes on Linux, WSL or macOS. The
+installed hooks keep the PATH they are given.
 
 ## Containerized / cross-backend runs
 
