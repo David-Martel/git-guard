@@ -18,6 +18,82 @@ fi
   exit 1
 }
 
+submodule_block() {
+  printf 'git-guard BLOCK: pre-commit pre-push submodule %s\n' "$1" >&2
+  exit 1
+}
+
+# Qualify every gitlink of commit $2 in worktree $1 against its checkout, then
+# recurse into nested gitlinks. $3 prefixes displayed paths; $4 is the depth.
+# The subshell body keeps each level's variables and traps private.
+validate_gitlinks() (
+  repo="$1"; commit="$2"; prefix="$3"; depth="$4"
+  if [ "$depth" -ge 16 ]; then
+    submodule_block "nesting under '${prefix%/}' exceeds 16 levels; use an explicit repository gate that qualifies immutable snapshots."
+  fi
+  cd "$repo" || submodule_block "worktree '${prefix%/}' is unreadable."
+  links="$(git -c core.quotePath=false ls-tree -r --format='%(objectmode) %(objectname) %(path)' "$commit")" ||
+    submodule_block "listing for '${prefix:-.}' failed at $commit."
+  while IFS= read -r line; do
+    [ "${line%% *}" = 160000 ] || continue
+    rest="${line#* }"; sha="${rest%% *}"; path="${rest#* }"; shown="$prefix$path"
+    case "$path" in \"*)
+      submodule_block "path $path needs quoting; rename it or use an explicit repository gate."
+    ;; esac
+    sub="$repo/$path"
+    if [ ! -e "$sub/.git" ] && [ ! -L "$sub/.git" ]; then
+      if [ -L "$sub" ] || [ ! -d "$sub" ]; then
+        submodule_block "'$shown' is missing or not a directory; restore it with: git submodule update --init --recursive"
+      fi
+      for entry in "$sub"/* "$sub"/.[!.]* "$sub"/..?*; do
+        if [ -e "$entry" ] || [ -L "$entry" ]; then
+          submodule_block "'$shown' is not initialized but its directory has content; initialize it with git submodule update --init --recursive, or remove the stray files."
+        fi
+      done
+      # QA tools see only the recorded commit id, never the dependency's bytes.
+      printf "git-guard: submodule '%s' is not checked out; QA sees only its recorded commit %s, and its own repository's gates qualify its content.\n" "$shown" "$sha" >&2
+      continue
+    fi
+    (
+      # Git exports repository variables to hooks; they would bind every
+      # command below to the parent instead of the submodule.
+      # shellcheck disable=SC2046  # one variable name per word is intended
+      unset $(git rev-parse --local-env-vars)
+      cd "$sub" || submodule_block "'$shown' is unreadable."
+      # An empty or foreign .git lets discovery climb into the parent.
+      if ! cdup="$(git rev-parse --show-cdup 2>&1)"; then
+        # Name Git's reason: dubious ownership needs a different fix than a broken gitdir.
+        submodule_block "'$shown' has a .git entry that is not a readable repository at that path (git: $(printf '%s\n' "$cdup" | sed -n 1p)); repair it with: git submodule update --init --recursive, or fix the repository's ownership or safe.directory."
+      fi
+      [ -z "$cdup" ] ||
+        submodule_block "'$shown' has a .git entry that is not a readable repository at that path; repair it with: git submodule update --init --recursive"
+      actual="$(git rev-parse -q --verify HEAD 2>/dev/null)" || actual=""
+      if [ "$actual" != "$sha" ]; then
+        submodule_block "'$shown' is checked out at ${actual:-an unborn HEAD}, but the pushed HEAD records $sha; run: git submodule update --init --recursive (or commit the new gitlink)."
+      fi
+      for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+        state_path="$(git rev-parse --git-path "$state")" || submodule_block "'$shown' state is unreadable."
+        if [ -e "$state_path" ]; then
+          submodule_block "'$shown' has an in-progress operation ($state); finish or abort it before publishing."
+        fi
+      done
+      # Same private-index comparison as the parent: assume-unchanged and
+      # skip-worktree flags in the submodule's own index cannot hide edits.
+      # Nested gitlinks are qualified by the recursion below, not here.
+      sub_index="$(mktemp "${TMPDIR:-/tmp}/git-guard-submodule-index.XXXXXX")" || submodule_block "'$shown' index copy failed."
+      trap 'rm -f "$sub_index" "$sub_index.lock"' EXIT
+      if ! git diff --cached --quiet --ignore-submodules=dirty "$sha" -- ||
+         ! GIT_INDEX_FILE="$sub_index" git read-tree "$sha" ||
+         ! GIT_INDEX_FILE="$sub_index" git diff --quiet --ignore-submodules=all "$sha" --; then
+        submodule_block "'$shown' has staged or unstaged tracked changes against $sha (including any hidden by assume-unchanged or skip-worktree); commit them and record the gitlink, or restore them."
+      fi
+      validate_gitlinks "$sub" "$sha" "$shown/" $((depth + 1))
+    ) || exit 1
+  done <<EOF
+$links
+EOF
+)
+
 refs=""
 source_index=""
 trap '[ -z "$refs" ] || rm -f "$refs"; [ -z "$source_index" ] || rm -f "$source_index" "$source_index.lock"' EXIT
@@ -62,12 +138,20 @@ if [ "$stage" = pre-push ]; then
   done < "$refs"
   # Deletions and unchanged sources do not execute software QA.
   [ "$updates" -ne 0 ] || exit 0
-  # Parent comparisons do not seal a submodule's own index and tracked bytes.
-  tree_modes="$(git ls-tree -r --format='%(objectmode)' "$head")" || exit 1
-  if printf '%s\n' "$tree_modes" | grep -qx 160000; then
-    printf '%s\n' 'git-guard BLOCK: pre-commit pre-push needs a clean tracked HEAD workspace; submodule-backed source is unsupported until recursively validated; use an explicit repository gate that qualifies immutable snapshots.' >&2
-    exit 1
+  # Parent comparisons do not seal a submodule's own index and tracked bytes,
+  # so each gitlink is validated recursively in its own repository first.
+  # `refuse` restores the former blanket refusal; an unknown value refuses.
+  submodule_policy="${GIT_GUARD_PRECOMMIT_SUBMODULES:-}"
+  [ -n "$submodule_policy" ] ||
+    submodule_policy="$(git config --get gitGuard.precommitSubmodules 2>/dev/null)" || submodule_policy=validate
+  if [ "$submodule_policy" != validate ]; then
+    tree_modes="$(git ls-tree -r --format='%(objectmode)' "$head")" || exit 1
+    if printf '%s\n' "$tree_modes" | grep -qx 160000; then
+      printf 'git-guard BLOCK: pre-commit pre-push submodule policy is %s, so submodule-backed source is refused; use an explicit repository gate that qualifies immutable snapshots, or set gitGuard.precommitSubmodules=validate.\n' "$submodule_policy" >&2
+      exit 1
+    fi
   fi
+  validate_gitlinks "$root" "$head" "" 0 || exit 1
   # The framework selects its first eligible input record. Replaying unchanged
   # annotated-tag rewrites would let an empty diff conceal the changed release.
   # Keep the admitted record's original object identities and remote ref names.
@@ -79,9 +163,11 @@ if [ "$stage" = pre-push ]; then
   source_index="$(mktemp "${TMPDIR:-/tmp}/git-guard-source-index.XXXXXX")" || exit 1
   # Keep the live staged-source gate as well: a restored HEAD worktree can
   # otherwise conceal a different staged blob that would be committed next.
+  # Untracked files are not sealed in the parent; the same holds inside a
+  # submodule, whose commit and tracked bytes validate_gitlinks has checked.
   if ! git diff --cached --quiet --ignore-submodules=none "$head" -- ||
      ! GIT_INDEX_FILE="$source_index" git read-tree "$head" ||
-     ! GIT_INDEX_FILE="$source_index" git diff --quiet --ignore-submodules=none "$head" --; then
+     ! GIT_INDEX_FILE="$source_index" git diff --quiet --ignore-submodules=untracked "$head" --; then
     printf '%s\n' 'git-guard BLOCK: pre-commit pre-push needs a clean tracked HEAD workspace; staged or unstaged changes are not the pushed source.' >&2
     exit 1
   fi
