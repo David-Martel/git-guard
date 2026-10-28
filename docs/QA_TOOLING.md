@@ -82,6 +82,7 @@ branch. "Unset" means the default behaviour applies.
 | `GIT_GUARD_BACKEND`, `GIT_GUARD_IMAGE` | `bin/git-guard-run` | Force the `docker` / `wsl` / `native` backend, and set the Docker image tag (default `git-guard:local`). The README documents these. |
 | `GIT_GUARD_STORE` | `install.sh` | Version store root (default `~/.local/share/git-guard`). Same as `--store`. |
 | `GIT_GUARD_HOOKS_LINK` | `install.sh` | Path of the hooks symlink that `core.hooksPath` is set to (default `~/.git-hooks`). Same as `--hooks-link`. |
+| `GIT_GUARD_PRECOMMIT_SUBMODULES` | `hooks/common/precommit-provider.sh` (via `pre-push`) | Submodule policy of the declared pre-commit pre-push route: `validate` (default) checks each gitlink recursively, `refuse` refuses any gitlink. Beats `git config gitGuard.precommitSubmodules`; any other value refuses. |
 | `GIT_GUARD_HYGIENE` | `hooks/common/hygiene.sh` (via `pre-push`, `post-checkout`) | Backlog-limit mode for this invocation: `off`, `warn` or `enforce`. Beats `git config hygiene.mode`; an unknown value means `warn`. See §12. |
 | `GIT_GUARD_HYGIENE_GH` | `hooks/common/hygiene.sh` | `gh` executable for the open-PR count (tests stub it). |
 | `GIT_GUARD_TEST_PAUSE_AFTER_RESOLVE` | `hooks/pre-commit` | **Test-only** seam (seconds to sleep after the version resolve). Never set it in real use. |
@@ -112,12 +113,24 @@ sources and multiple changed updates refuse before execution; publish them
 separately from their corresponding checkout or use an explicit repository gate
 that qualifies immutable snapshots. This route does not seal untracked files,
 environments or dependencies and is not a remote/offload qualification receipt.
-The new declared pre-commit pre-push route also refuses any gitlink in the pushed
-HEAD: submodule-backed source is unsupported until recursively validated. This
-includes clean and uninitialized submodules; parent comparisons cannot seal a
-submodule's own index and tracked bytes. Use an explicit repository gate that
-qualifies immutable snapshots for these repositories. Commit-time framework
-dispatch and the other providers retain their existing semantics.
+Parent comparisons cannot seal a submodule's own index and tracked bytes, so
+the route validates every gitlink in the pushed HEAD recursively before the
+framework runs. An uninitialized submodule (no `.git`, empty directory) is
+admitted with a note: QA sees only its recorded commit id, and the dependency's
+own repository gates qualify its content. An initialized submodule is admitted
+only when its HEAD equals the recorded gitlink, its tracked workspace and staged
+index match that commit through a private index (so `assume-unchanged` and
+`skip-worktree` cannot hide edits), no merge, rebase, cherry-pick or revert is in
+progress, and every nested gitlink passes the same check. Untracked files are not
+sealed, in the parent or in a submodule. A checkout at another commit, tracked or
+staged changes, a missing directory, stray content in an uninitialized directory,
+an unreadable `.git`, nesting deeper than 16 levels or a path Git must quote
+refuses before execution and names the path and the fix (usually
+`git submodule update --init --recursive`). `git config
+gitGuard.precommitSubmodules refuse` (or `GIT_GUARD_PRECOMMIT_SUBMODULES=refuse`,
+which beats it) restores the former refusal of any gitlink; any value other than
+`validate` or `refuse` also refuses. Commit-time framework dispatch and the other
+providers retain their existing semantics.
 The explicit/local/lefthook providers retain their own semantics, and the
 documented emergency bypass remains available.
 
