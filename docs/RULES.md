@@ -1,5 +1,8 @@
 # git-guard rules
 
+The [vendored Rust glob boundary](VENDOR_GLOB_REVIEW.md) documents the scoped
+`no-glob-reexport` exception and its path/composed-gate review register.
+
 Optional transport migration is separate from the hook engine. Its
 [contract and scoped test review register](QA_TOOLING.md#optional-windows-git-ssh-adapter)
 link to the adapter source and the category33 failing/passing controls.

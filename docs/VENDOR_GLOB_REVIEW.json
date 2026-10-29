@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "source_commit": "1c27ef6502d1ed06ec56dde82980dcd21bd89f09 + proposed working-tree diff",
+  "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector from declaration through closing brace, excluding trailing newline",
+  "source_hashes": {
+    "rules-examples/rust/no-glob-reexport.yml": "3986681f87d5429cb788b2fdaf2d14ea41b59f095ae211287b8648aec0bb4461",
+    "hooks/common/qa_gate.sh": "5f8c554bb0d7071be9c2e2c58ffc78b2fa686de112f92be37ed21da101f469a9",
+    "tests/37-vendor-glob-boundary.t.sh": "907a39f0d666cb68860f65f16abb72a21adbc331c44d15968a1d14ad5fb38702",
+    "tests/run.sh": "c3699a17ba2cf30b10d342978fa77992348dc6ff936f40b000af452945851160"
+  },
+  "author_evidence": {
+    "platform": "Windows dtm-p1gen9 / Git Bash / ast-grep 0.51.0",
+    "red": "9 passed, 5 failed, 0 skipped",
+    "green": "14 passed, 0 failed, 0 skipped",
+    "red_log_sha256": "437e7626463a04ce06f99295971d3b1837c6d15e2adfd1b04cfa5b8afba7a1e5",
+    "green_log_sha256": "d2a6935e0013f66edc392a7f57fdb9d29633c5282d6d1ce754b89459aff33a44",
+    "regression": "134 passed, 0 failed, 15 existing skips; neither new selector skipped",
+    "regression_log_sha256": "46cb651c48d0efe499e936b0351d545dce8eabd7a16978a1ba2fe36fab33eb3b"
+  },
+  "rows": [
+    {
+      "selector": "t_case_vendor_glob_paths",
+      "selector_sha256": "3878db3ddcf75b548a582cb66526ab7d609f9a10f0d9277d014a3d896f9f6778",
+      "reviewer": "codex-root",
+      "reviewer_type": "independent-agent",
+      "disposition": "keep",
+      "scope": "Nine real rule path cases: exact root/nested vendor boundaries and authored/sibling/lookalike positive controls",
+      "reviewed_utc": "2026-10-29T00:36:13.0145849Z",
+      "reviewed_source": "Base1c27ef6502d1ed06ec56dde82980dcd21bd89f09 plus exact source_hashes and selector_sha256",
+      "review_rationale": "Relevant shipped API style boundary; actual baseline catches vendor false rejection and positive controls reject authored glob; permits upstream vendor glob APIs without changing authored API enforcement or other rules."
+    },
+    {
+      "selector": "t_case_vendor_glob_gate",
+      "selector_sha256": "503c15fe4ed33800783f3284bda0f6e6b31475f252b21a2ec4bcffcc8bd4b9ec",
+      "reviewer": "codex-root",
+      "reviewer_type": "independent-agent",
+      "disposition": "keep",
+      "scope": "Three real default staged QA/cache runs: acceptance, authored rejection naming BLOCK trio, repair acceptance, unchanged vendor preimage",
+      "reviewed_utc": "2026-10-29T00:36:13.0145849Z",
+      "reviewed_source": "Base1c27ef6502d1ed06ec56dde82980dcd21bd89f09 plus exact source_hashes and selector_sha256",
+      "review_rationale": "Relevant shipped API style boundary; actual baseline catches vendor false rejection and positive controls reject authored glob; permits upstream vendor glob APIs without changing authored API enforcement or other rules."
+    }
+  ],
+  "rule_review": {
+    "selector": "no-glob-reexport",
+    "reviewer": "codex-root",
+    "disposition": "keep",
+    "scope": "Vendor-only API style boundary; no authored glob exemption or global gate change",
+    "reviewed_utc": "2026-10-29T00:36:13.0145849Z"
+  },
+  "independent_execution": {
+    "reviewer": "codex-root",
+    "result": "14 passed, 0 failed, 0 skipped",
+    "receipt": "r2/integration/gitguard-vendor/root-peer.log",
+    "receipt_sha256": "d2a6935e0013f66edc392a7f57fdb9d29633c5282d6d1ce754b89459aff33a44",
+    "scope": "Read all nine path controls, actual staged default QA/cache, three-phase authored BLOCK+repair/vendor preimage, registration and docs; reviewer authored neither selector."
+  }
+}

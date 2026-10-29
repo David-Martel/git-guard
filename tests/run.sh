@@ -119,6 +119,8 @@ t_case_prepush
 t_case_backends
 t_case_rule_integrity
 t_case_rule_behaviour
+t_case_vendor_glob_paths
+t_case_vendor_glob_gate
 t_case_panic_set
 t_case_silent_failures
 t_case_quality_mandate
