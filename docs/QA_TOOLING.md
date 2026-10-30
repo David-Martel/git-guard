@@ -1132,6 +1132,11 @@ accepted, pinned at SHA256
 `27758C691F894F76EEFCFC59ED2939E90D15993682C872F1F464B0195B678183`.
 Its byte-authentic [fixture](../tests/fixtures/windows-ssh-wrapper-push-baseline.js)
 comes from commit `8a9fe8e0c0844edb09fabb7efb1725b269348ba4`.
+The 60min-push predecessor that bounded only `GIT_TERMINAL_PROMPT=0` callers is
+also accepted, pinned at SHA256
+`0B718434D540C476C5581BD8354E4D5A6D1A67EB2E8AD06FC5541F2238FBFA82`. Its
+byte-authentic [fixture](../tests/fixtures/windows-ssh-wrapper-batch-baseline.js)
+comes from commit `70946f0` (#84).
 The script checks source syntax in a hidden, shell-free Node child with a 10s
 execution limit, at most 1s for post-kill reaping and at most 1s for output drain,
 before opening targets. Cleanup and pipe reads never use an unbounded wait.
@@ -1153,12 +1158,23 @@ a missing child-launch option; it does not establish that this wrapper caused
 the fleet's reported Git Bash popups or hide a console created by its caller.
 The option follows Node's
 [child-process contract](https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options).
-Interactive calls retain prompts and have no added timeout or SSH options.
-`CI` alone does not change this behavior.
+Interactive calls, meaning stderr is a terminal and `GIT_TERMINAL_PROMPT` is not
+`0`, retain prompts and have no added timeout or SSH options. `CI` alone does not
+change this behavior.
 
-Only the explicit value `GIT_TERMINAL_PROMPT=0` opts into `BatchMode=yes`,
-`ConnectTimeout=15`, `ServerAliveInterval=30`, `ServerAliveCountMax=3`, and a
-finite total child timeout. Explicit `git-receive-pack` commands receive
+Git always pipes the SSH child's stdin and stdout, so stderr is the only stream
+that can be a terminal. When stderr is not a terminal (a scheduler, an agent's
+sshd session, a GUI client) or `GIT_TERMINAL_PROMPT=0` is set, the wrapper adds
+`ConnectTimeout=15`, `ServerAliveInterval=30`, `ServerAliveCountMax=3` and a
+finite total child timeout. Only the explicit `GIT_TERMINAL_PROMPT=0` also adds
+`BatchMode=yes`, so an askpass or passphrase caller without a terminal keeps its
+prompt and gains only the bound. `GIT_TERMINAL_PROMPT=1` does not remove the bound
+when no terminal is attached. Before #90 a missing terminal alone added nothing,
+and on dtm-p1gen7 a plain `git fetch` child stayed blocked for two days.
+Git Bash's default mintty terminal presents pipes, not a console, to Node, so a
+mintty session counts as having no terminal: it keeps its prompts but a clone or
+fetch longer than 5min fails with `ETIMEDOUT`. Run long transfers from a console
+terminal (Windows Terminal, conhost) instead. Explicit `git-receive-pack` commands receive
 3600000ms (60min), in both combined and split transport forms. Classification
 checks the final remote command's exact verb followed by a space or tab, after
 the existing verbatim split-form join; a verb occurring only inside a path or
@@ -1356,6 +1372,52 @@ No live wrapper, global Git configuration or hook was changed. No physical SSH
 connection, fleet rollout, full legacy suite or real 60min lifetime was qualified.
 The known baseline fixture is pinned to LF in `.gitattributes` so Windows
 autocrlf does not change its exact migration hash.
+
+### Missing-terminal bound successor (#90)
+
+On dtm-p1gen7 (2026-10-30), Windows OpenSSH 9.5p2 children started from a
+non-interactive sshd session stalled with no bound. The stall does not need Git,
+msys `sh` or the SSH config: a bare `ssh.exe -T git@github.com` given .NET pipes
+stalled too, and so did one run under `-F NUL`. The same command started through
+`Start-Process` with file redirects authenticated in about 0.5s. A `cmd.exe` parent
+created with no console window stalled even with file redirects. `ssh -v` output
+on a non-console stderr is buffered, so the earlier "stalls after the banner"
+reading shows where output stopped, not where ssh stopped. The underlying cause
+is not localized; this wrapper change bounds the child and does not cure the
+stall. Probe log SHA256 is
+`855C37759BB79C6AAF7B2A263E33F37AAF2CFB044D6A23B09EB444C8410E8D87`.
+
+The preparer's failing-first run used the unchanged JavaScript pinned at
+`0B718434D540C476C5581BD8354E4D5A6D1A67EB2E8AD06FC5541F2238FBFA82`. It failed
+three named Node controls: the missing-terminal bound, `GIT_TERMINAL_PROMPT=1`
+without a terminal, and the missing-terminal real-child timeout. The precedence
+control `explicit_zero_with_terminal_still_restricts` and the other eleven
+controls passed. `red.log` SHA256 is
+`32550B193C2896B244AD59534E403C60D567B390E948D702CCD26CD522F73DEF`.
+A mutation that adds `BatchMode=yes` without the explicit opt-in fails two of the
+new controls. On native Windows (dtm-p1gen7, Git for Windows 2.55.0, Node 24.12.0,
+scratch clone at `8e42298`), the unchanged installer rejected the new exact
+predecessor fixture as unknown bytes (`windows-installer-red.log` SHA256
+`361CD0F06CF83211C2FE71E5E87C23B8DDB72FE2CA6AFD3E39B6B8AA2165B902`). With the
+successor installer, `sh tests/run.sh windows_ssh_adapter windows_ssh_adapter_install`
+passed both groups, all fifteen Node controls and the installer group
+(`windows-qual.log` SHA256
+`7024900809AD3D25EE8A1893E3B68913F755C54D83B62119393320C7A41AD108`).
+Linux `green.log` SHA256 is
+`B6C38FFF0E0201249D47BF9835282BFA9802C1E9318FCBAD757BF81F8996FD7F`.
+These are scoped preparer results, not independent review or approval.
+
+| Successor source or group | SHA256 | Review state |
+| --- | --- | --- |
+| JavaScript | `F0069BFB5980C33F6D45A953D3E7F96CA3F0046DE1C5FB1495A5FA9FBB8EADA6` | Pending independent review |
+| Installer | `AB0DDBF4D249339B37DF3E135D0E5D8C66CED381932FDF9D483A6097B77504C6` | Pending independent review |
+| Full category 33 test file | `84DB3667E2736D7DFC89ACA06F06F8569B1B6D21888413CC5F48D8B53F6F80A6` | Pending independent review |
+| Node selector group | `E71C4135577D4A7D3718A9ACD2380110940D93CBF63ECD8C1D4ED12537DD10F3` | Pending independent review |
+| Installer selector group | `6897EFAE5D1DF852D24240DC31D93C03EF4E0AAC9DAD21429F8DDE89526157B5` | Pending independent review |
+
+No live wrapper, global Git configuration or hook was changed, and the stalled
+dtm-p1gen7 processes were left to their owner. Upgrading an installed wrapper is
+the operator's `-Apply` step above.
 
 ## Windows global configuration
 
