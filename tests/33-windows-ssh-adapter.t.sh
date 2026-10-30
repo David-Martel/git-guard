@@ -4,7 +4,8 @@
 
 # Protects: hidden children, headless bounds, Git remote quoting and exit behavior.
 # Detects: missing Windows hide, CI-only restrictions, dropped/rewritten arguments,
-# remote-shell splitting/injection, an inert timeout, or false success.
+# remote-shell splitting/injection, an inert timeout, an unbounded child when no
+# terminal is attached (git-guard #90), or false success.
 # Needs: Node and the suite's POSIX shell; no SSH/network/device.
 # Breadcrumb: tools/windows/git-ssh-wrapper.js. Named Node selectors form this group.
 t_case_windows_ssh_adapter() {
@@ -25,7 +26,10 @@ function check(name, fn) {
   try { fn(); console.log(`PASS ${name}`); }
   catch (error) { failures++; console.error(`FAIL ${name}: ${error.message}`); }
 }
-function invoke(env, args, execute = () => ({ status: 0 })) {
+// Git always pipes ssh stdin/stdout, so stderr is the only stream that can
+// carry a terminal. Default to an attached terminal; Node reports a missing
+// one as undefined, not false, so the headless form mirrors that.
+function invoke(env, args, execute = () => ({ status: 0 }), { terminal = true } = {}) {
   let actual;
   const messages = [];
   const sandbox = {
@@ -36,7 +40,10 @@ function invoke(env, args, execute = () => ({ status: 0 })) {
         return execute(file, argv, options);
       } };
     },
-    process: { env, argv: ['node', 'wrapper', ...args], exit(code) { throw { adapterExit: code }; } },
+    process: {
+      env, argv: ['node', 'wrapper', ...args], stderr: { isTTY: terminal ? true : undefined },
+      exit(code) { throw { adapterExit: code }; },
+    },
     console: { error(message) { messages.push(message); } },
   };
   let exit;
@@ -70,6 +77,35 @@ check('explicit_noninteractive_has_existing_fleet_bounds', () => {
     '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
     '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3', 'host', 'command',
   ]);
+});
+const boundOptions = [
+  '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
+];
+check('missing_terminal_has_finite_bound_without_batchmode', () => {
+  for (const [command, budget] of [
+    [["git-upload-pack 'owner/repo.git'"], 300000],
+    [['git-upload-pack', "'owner/repo.git'"], 300000],
+    [["git-receive-pack 'owner/repo.git'"], 3600000],
+    [['git-receive-pack', "'owner/repo.git'"], 3600000],
+  ]) {
+    const result = invoke({}, ['host', ...command], undefined, { terminal: false });
+    assert.equal(result.actual.options.timeout, budget, JSON.stringify(command));
+    assert.equal(result.actual.options.windowsHide, true);
+    assert.equal(result.actual.options.stdio, 'inherit');
+    // Bounds only: prompts (askpass, passphrase) stay possible without the explicit opt-in.
+    assert.ok(!result.actual.argv.includes('BatchMode=yes'), JSON.stringify(result.actual.argv));
+    assert.deepEqual(result.actual.argv, [...boundOptions, 'host', command.join(' ')]);
+  }
+});
+check('terminal_prompt_one_without_terminal_is_still_bounded', () => {
+  const result = invoke({ CI: 'true', GIT_TERMINAL_PROMPT: '1' }, ['host'], undefined, { terminal: false });
+  assert.equal(result.actual.options.timeout, 300000);
+  assert.deepEqual(result.actual.argv, [...boundOptions, 'host']);
+});
+check('explicit_zero_with_terminal_still_restricts', () => {
+  const result = invoke({ GIT_TERMINAL_PROMPT: '0' }, ['host', 'command'], undefined, { terminal: true });
+  assert.equal(result.actual.options.timeout, 300000);
+  assert.deepEqual(result.actual.argv, ['-o', 'BatchMode=yes', ...boundOptions, 'host', 'command']);
 });
 check('headless_push_forms_have_finite_pre_push_allowance', () => {
   for (const command of [
@@ -182,6 +218,19 @@ check('real_child_timeout_is_finite_and_reports_failure', () => {
     assert.equal(result.exit, 1);
     assert.ok(result.messages.some(message => /ETIMEDOUT/.test(message)));
   }
+  assert.ok(Date.now() - started < 2000);
+});
+check('missing_terminal_real_child_timeout_reports_failure', () => {
+  const started = Date.now();
+  const result = invoke({}, ['host', "git-upload-pack 'owner/repo.git'"], (_file, _argv, options) => {
+    assert.equal(options.timeout, 300000);
+    // Same executable-boundary shortening as above; the 1s self-exit keeps RED finite.
+    return spawnSync(process.execPath, ['-e', 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1000)'], {
+      ...options, timeout: 80,
+    });
+  }, { terminal: false });
+  assert.equal(result.exit, 1);
+  assert.ok(result.messages.some(message => /ETIMEDOUT/.test(message)));
   assert.ok(Date.now() - started < 2000);
 });
 check('spawn_error_and_signal_do_not_become_success', () => {
@@ -299,6 +348,23 @@ Assert-Equal (Get-FileHash $gitConfig).Hash $configHash 'push predecessor Git co
 $again = & $script -SourceRoot $source -BinDirectory $bin -Apply
 Assert-Equal $again.Status 'Current' 'push predecessor repeat install'
 Assert-Equal @(Get-ChildItem -LiteralPath $bin).Count 2 'push predecessor no backup/extra files'
+# known_batch_baseline_upgrades_without_config_or_acl_change
+# Exact predecessor bytes from 70946f0 (#84), bounded only under GIT_TERMINAL_PROMPT=0.
+$batchBaseline = Join-Path $env:GG_ROOT 'tests/fixtures/windows-ssh-wrapper-batch-baseline.js'
+Assert-Equal (Get-FileHash $batchBaseline).Hash '0B718434D540C476C5581BD8354E4D5A6D1A67EB2E8AD06FC5541F2238FBFA82' 'batch predecessor fixture pin'
+[IO.File]::WriteAllBytes($js, [IO.File]::ReadAllBytes($batchBaseline))
+$batchBaselineHash = (Get-FileHash $js).Hash
+$plan = & $script -SourceRoot $source -BinDirectory $bin
+Assert-Equal $plan.Status 'Planned' 'batch predecessor plan'
+Assert-Equal (Get-FileHash $js).Hash $batchBaselineHash 'batch predecessor plan must not write'
+$upgraded = & $script -SourceRoot $source -BinDirectory $bin -Apply
+Assert-Equal $upgraded.Status 'Installed' 'batch predecessor upgrade'
+Assert-Equal (Get-FileHash $js).Hash (Get-FileHash (Join-Path $adapter 'git-ssh-wrapper.js')).Hash 'batch predecessor installed JS'
+Assert-Equal (Get-Acl -LiteralPath $js).Sddl $acl 'batch predecessor ACL'
+Assert-Equal (Get-FileHash $gitConfig).Hash $configHash 'batch predecessor Git config unchanged'
+$again = & $script -SourceRoot $source -BinDirectory $bin -Apply
+Assert-Equal $again.Status 'Current' 'batch predecessor repeat install'
+Assert-Equal @(Get-ChildItem -LiteralPath $bin).Count 2 'batch predecessor no backup/extra files'
 # unknown_launcher_is_preserved_and_refused
 [IO.File]::WriteAllText($js, $legacyJs, [Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText($cmd, 'unique launcher work')
