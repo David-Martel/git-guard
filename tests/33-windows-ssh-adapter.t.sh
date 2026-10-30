@@ -4,8 +4,9 @@
 
 # Protects: hidden children, headless bounds, Git remote quoting and exit behavior.
 # Detects: missing Windows hide, CI-only restrictions, dropped/rewritten arguments,
-# remote-shell splitting/injection, an inert timeout, an unbounded child when no
-# terminal is attached (git-guard #90), or false success.
+# remote-shell splitting/injection, an inert timeout, an unbounded wait for the
+# server when no terminal is attached (git-guard #90), a total cap on a long
+# transfer that already started (mintty, long clones), or false success.
 # Needs: Node and the suite's POSIX shell; no SSH/network/device.
 # Breadcrumb: tools/windows/git-ssh-wrapper.js. Named Node selectors form this group.
 t_case_windows_ssh_adapter() {
@@ -18,7 +19,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
+const { Writable } = require('node:stream');
 const probeShell = process.argv[2];
 const source = fs.readFileSync(path.join(process.env.GG_ROOT, 'tools/windows/git-ssh-wrapper.js'), 'utf8');
 let failures = 0;
@@ -35,10 +37,13 @@ function invoke(env, args, execute = () => ({ status: 0 }), { terminal = true } 
   const sandbox = {
     require(name) {
       assert.equal(name, 'node:child_process');
-      return { spawnSync(file, argv, options) {
-        actual = { file, argv, options };
-        return execute(file, argv, options);
-      } };
+      return {
+        spawnSync(file, argv, options) {
+          actual = { file, argv, options };
+          return execute(file, argv, options);
+        },
+        spawn() { throw new Error('synchronous selector reached the first-response path'); },
+      };
     },
     process: {
       env, argv: ['node', 'wrapper', ...args], stderr: { isTTY: terminal ? true : undefined },
@@ -81,25 +86,10 @@ check('explicit_noninteractive_has_existing_fleet_bounds', () => {
 const boundOptions = [
   '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
 ];
-check('missing_terminal_has_finite_bound_without_batchmode', () => {
-  for (const [command, budget] of [
-    [["git-upload-pack 'owner/repo.git'"], 300000],
-    [['git-upload-pack', "'owner/repo.git'"], 300000],
-    [["git-receive-pack 'owner/repo.git'"], 3600000],
-    [['git-receive-pack', "'owner/repo.git'"], 3600000],
-  ]) {
-    const result = invoke({}, ['host', ...command], undefined, { terminal: false });
-    assert.equal(result.actual.options.timeout, budget, JSON.stringify(command));
-    assert.equal(result.actual.options.windowsHide, true);
-    assert.equal(result.actual.options.stdio, 'inherit');
-    // Bounds only: prompts (askpass, passphrase) stay possible without the explicit opt-in.
-    assert.ok(!result.actual.argv.includes('BatchMode=yes'), JSON.stringify(result.actual.argv));
-    assert.deepEqual(result.actual.argv, [...boundOptions, 'host', command.join(' ')]);
-  }
-});
-check('terminal_prompt_one_without_terminal_is_still_bounded', () => {
+check('missing_terminal_non_pack_command_gets_ssh_bounds_only', () => {
   const result = invoke({ CI: 'true', GIT_TERMINAL_PROMPT: '1' }, ['host'], undefined, { terminal: false });
-  assert.equal(result.actual.options.timeout, 300000);
+  assert.equal(result.actual.options.timeout, undefined);
+  assert.equal(result.actual.options.windowsHide, true);
   assert.deepEqual(result.actual.argv, [...boundOptions, 'host']);
 });
 check('explicit_zero_with_terminal_still_restricts', () => {
@@ -220,24 +210,128 @@ check('real_child_timeout_is_finite_and_reports_failure', () => {
   }
   assert.ok(Date.now() - started < 2000);
 });
-check('missing_terminal_real_child_timeout_reports_failure', () => {
-  const started = Date.now();
-  const result = invoke({}, ['host', "git-upload-pack 'owner/repo.git'"], (_file, _argv, options) => {
-    assert.equal(options.timeout, 300000);
-    // Same executable-boundary shortening as above; the 1s self-exit keeps RED finite.
-    return spawnSync(process.execPath, ['-e', 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1000)'], {
-      ...options, timeout: 80,
-    });
-  }, { terminal: false });
-  assert.equal(result.exit, 1);
-  assert.ok(result.messages.some(message => /ETIMEDOUT/.test(message)));
-  assert.ok(Date.now() - started < 2000);
-});
 check('spawn_error_and_signal_do_not_become_success', () => {
   assert.equal(invoke({}, [], () => ({ status: null, error: new Error('inert failure') })).exit, 1);
   assert.equal(invoke({}, [], () => ({ status: null, signal: 'SIGTERM' })).exit, 1);
 });
-process.exitCode = failures ? 1 : 0;
+// No-terminal pack commands run asynchronously so the wrapper can see the
+// server's first byte. Real inert children stand in for ssh.exe; only the
+// 300000ms first-response timer is shortened, at the sandbox timer boundary.
+function invokeAsync(env, args, execute, { firstResponseMs = 80 } = {}) {
+  return new Promise((resolve, reject) => {
+    let actual;
+    let exitCode;
+    let settled = false;
+    const messages = [];
+    const timers = [];
+    const chunks = [];
+    const guard = setTimeout(() => reject(new Error('wrapper did not settle within 3000ms')), 3000);
+    const finish = (exit) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(guard);
+      resolve({ actual: JSON.parse(JSON.stringify(actual ?? null)), messages, timers, exit,
+        stdout: Buffer.concat(chunks).toString() });
+    };
+    const sandboxProcess = {
+      env, argv: ['node', 'wrapper', ...args], stderr: { isTTY: undefined },
+      stdout: new Writable({ write(chunk, _encoding, done) { chunks.push(Buffer.from(chunk)); done(); } }),
+      exit(code) { throw { adapterExit: code }; },
+    };
+    Object.defineProperty(sandboxProcess, 'exitCode', { get: () => exitCode, set(value) { exitCode = value; } });
+    const sandbox = {
+      require(name) {
+        assert.equal(name, 'node:child_process');
+        return {
+          spawnSync() { throw new Error('no-terminal pack command took the synchronous path'); },
+          spawn(file, argv, options) {
+            actual = { file, argv, options };
+            const child = execute(file, argv, options);
+            // Run after the wrapper's own handlers have recorded the status.
+            const settle = () => setImmediate(() => finish(exitCode));
+            child.on('close', settle);
+            child.on('error', settle);
+            return child;
+          },
+        };
+      },
+      process: sandboxProcess,
+      console: { error(message) { messages.push(message); } },
+      setTimeout(fn, ms) { timers.push(ms); return setTimeout(fn, ms === 300000 ? firstResponseMs : ms); },
+      clearTimeout(handle) { clearTimeout(handle); },
+    };
+    try { vm.runInNewContext(source, sandbox, { timeout: 1000 }); }
+    catch (error) {
+      clearTimeout(guard);
+      if (Object.hasOwn(error, 'adapterExit')) { finish(error.adapterExit); return; }
+      reject(error);
+    }
+  });
+}
+function inertChild(script, options) {
+  return spawn(process.execPath, ['-e', script], options);
+}
+const sleep = ms => `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,${ms})`;
+const asyncChecks = [];
+function checkAsync(name, fn) { asyncChecks.push([name, fn]); }
+checkAsync('missing_terminal_pack_commands_wait_only_for_first_response', async () => {
+  for (const [env, command] of [
+    [{}, ["git-upload-pack 'owner/repo.git'"]],
+    [{}, ['git-upload-pack', "'owner/repo.git'"]],
+    [{}, ["git-receive-pack 'owner/repo.git'"]],
+    [{}, ['git-receive-pack', "'owner/repo.git'"]],
+    [{ TERM_PROGRAM: 'mintty' }, ["git-upload-pack 'owner/repo.git'"]],
+    [{ CI: 'true', GIT_TERMINAL_PROMPT: '1' }, ["git-upload-archive 'owner/repo.git'"]],
+  ]) {
+    const result = await invokeAsync(env, ['host', ...command], (_file, _argv, options) =>
+      inertChild('process.stdout.write("x")', options));
+    const label = JSON.stringify([env, command]);
+    assert.equal(result.actual.file, 'C:\\Windows\\System32\\OpenSSH\\ssh.exe', label);
+    // Bounds only: prompts (mintty, askpass, passphrase) stay possible without the opt-in.
+    assert.deepEqual(result.actual.argv, [...boundOptions, 'host', command.join(' ')], label);
+    assert.deepEqual(result.actual.options.stdio, ['inherit', 'pipe', 'inherit'], label);
+    assert.equal(result.actual.options.windowsHide, true, label);
+    // No total lifetime; the only wrapper timer is the 5min first-response bound.
+    assert.equal(result.actual.options.timeout, undefined, label);
+    assert.deepEqual(result.timers, [300000], label);
+    assert.equal(result.stdout, 'x', label);
+    assert.equal(result.exit, 0, label);
+  }
+});
+checkAsync('missing_terminal_transfer_after_first_byte_is_not_cut', async () => {
+  // First byte, then silence well past the (shortened) first-response bound.
+  const result = await invokeAsync({}, ['host', "git-receive-pack 'owner/repo.git'"], (_file, _argv, options) =>
+    inertChild(`process.stdout.write("a");${sleep(400)};process.stdout.write("b")`, options));
+  assert.equal(result.stdout, 'ab');
+  assert.equal(result.exit, 0);
+  assert.deepEqual(result.messages, []);
+});
+checkAsync('missing_terminal_silent_server_is_stopped', async () => {
+  const started = Date.now();
+  // The child self-exits 0 after 1s, so a removed kill reads as exit 0 and fails.
+  const result = await invokeAsync({}, ['host', "git-upload-pack 'owner/repo.git'"], (_file, _argv, options) =>
+    inertChild(sleep(1000), options));
+  assert.equal(result.exit, 1);
+  assert.ok(result.messages.some(message => /no server response within 300000ms.*#90/.test(message)),
+    JSON.stringify(result.messages));
+  assert.ok(Date.now() - started < 900, `took ${Date.now() - started}ms`);
+});
+checkAsync('missing_terminal_exit_status_and_spawn_error_propagate', async () => {
+  const status = await invokeAsync({}, ['host', "git-upload-pack 'owner/repo.git'"], (_file, _argv, options) =>
+    inertChild('process.stdout.write("x");process.exit(23)', options));
+  assert.equal(status.exit, 23);
+  const failed = await invokeAsync({}, ['host', "git-upload-pack 'owner/repo.git'"], (_file, argv, options) =>
+    spawn(path.join(process.env.GG_T_TMPROOT, 'missing-ssh-executable'), argv, options));
+  assert.equal(failed.exit, 1);
+  assert.ok(failed.messages.some(message => /ENOENT/.test(message)), JSON.stringify(failed.messages));
+});
+(async () => {
+  for (const [name, fn] of asyncChecks) {
+    try { await fn(); console.log(`PASS ${name}`); }
+    catch (error) { failures++; console.error(`FAIL ${name}: ${error.message}`); }
+  }
+  process.exitCode = failures ? 1 : 0;
+})();
 NODE
   t_expect_rc 0 "$?" "SSH adapter named Node controls"
 }
