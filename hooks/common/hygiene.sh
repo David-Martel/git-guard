@@ -23,6 +23,13 @@
 #                          never deleted.
 #   defaults [--dry-run]   set the recommended GLOBAL git config, only for keys
 #                          that are unset (install.sh calls this).
+#   sync [--dry-run] [--no-drain]
+#                          fetch every repo under hygiene.syncRoots (bounded),
+#                          fast-forward each checkout that is provably safe to
+#                          move, write the drain dry runs to one report file.
+#                          Never deletes. Prints nothing on stdout.
+#   sync install-timer | uninstall-timer
+#                          a systemd --user timer running sync every 30 minutes.
 #
 # Configuration (git config; repo-local beats global by git's own precedence):
 #   hygiene.mode               enforce (default) | warn | off
@@ -39,10 +46,18 @@
 #                              but may be another agent's live checkout
 #   hygiene.preserveDir        where drain writes bundles of unique work
 #                              (default ${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve)
+#   hygiene.sync               false in a repo (or globally) keeps sync out of it
+#   hygiene.syncRoots          multi-valued directories sync walks, each plus
+#                              its direct children (~/dev/repos, ~/.claude/repos)
+#   hygiene.syncFetchTimeout   seconds per remote fetch in sync (60)
+#   hygiene.syncDrainTimeout   seconds per repo for the drain dry run in sync (300)
 # Environment:
 #   GIT_GUARD=0                skip all git-guard hooks (existing convention)
 #   GIT_GUARD_HYGIENE          off | warn | enforce, beats hygiene.mode
 #   GIT_GUARD_HYGIENE_GH       gh executable to use (tests stub it)
+#   GIT_GUARD_SYNC_UNIT_DIR, GIT_GUARD_SYNC_SYSTEMCTL
+#                              where install-timer writes units and which
+#                              systemctl it calls (tests stub both)
 #
 # POSIX sh, no dependencies beyond git; `gh` is optional and only consulted when
 # hygiene.maxOpenPRs is set. Any failure to measure a dimension skips it: this
@@ -689,6 +704,346 @@ hyg_drain() {
   return 0
 }
 
+# --- sync: fleet auto fast-forward + drain report ----------------------------
+#
+# Owner direction (2026-10-30): more repositories should fast-forward on their
+# own, so the branch, worktree and PR backlog drains with less effort. `sync`
+# walks hygiene.syncRoots, fetches each repository once per upstream remote
+# with a bound, and fast-forwards a checkout only when nothing local can be
+# lost or disturbed. Every other checkout is a logged skip. The read-only
+# `drain --dry-run` of each repository then goes into one report file. sync
+# never deletes anything. Tests: tests/36-sync.t.sh.
+
+HYG_SYNC_DEFAULT_FETCH_TIMEOUT=60
+HYG_SYNC_DEFAULT_DRAIN_TIMEOUT=300
+HYG_SYNC_UNIT=git-guard-sync
+
+hyg_sync_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# hyg_sync_note RESULT PATH BRANCH REASON [BEFORE AFTER] — one log line on
+# stderr (the journal, under the timer) and one report record.
+hyg_sync_note() {
+  hyg_say "git-guard sync: $1 $2 (${3:--}): $4"
+  printf 'C\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$HYG_SYNC_REPO" "$2" "${3:--}" "$1" "$4" "${5:--}" "${6:--}" >> "$HYG_SYNC_REC"
+}
+
+# hyg_sync_bounded SECONDS CMD... — run CMD, killed after SECONDS. Exit 124
+# means it timed out. Uses timeout(1) when present, else a watchdog.
+hyg_sync_bounded() {
+  _bs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout -k 5 "$_bs" "$@"; _brc=$?
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout -k 5 "$_bs" "$@"; _brc=$?
+  else
+    "$@" & _bp=$!
+    ( sleep "$_bs"; kill -9 "$_bp" 2>/dev/null ) & _bw=$!
+    wait "$_bp"; _brc=$?
+    kill "$_bw" 2>/dev/null; wait "$_bw" 2>/dev/null
+    [ "$_brc" = "137" ] && _brc=124
+  fi
+  [ "$_brc" = "137" ] && _brc=124
+  return "$_brc"
+}
+
+# hyg_sync_excluded PATH — runner work dirs and /opt deployment slots are
+# never touched, wherever a root points.
+hyg_sync_excluded() {
+  case "$1/" in /opt/*|*/_work/*|*/actions-runner/*) return 0 ;; esac
+  return 1
+}
+
+# hyg_sync_ancestors — this process and its ancestors (Linux /proc), space
+# separated: the shell that ran `sync` from inside a checkout is not a user of
+# that checkout.
+hyg_sync_ancestors() {
+  _ap=$$; _an=0; _al=""
+  while [ -n "$_ap" ] && [ "$_ap" != "0" ] && [ "$_an" -lt 64 ]; do
+    _al="$_al $_ap"; _an=$((_an + 1))
+    [ -r "/proc/$_ap/stat" ] || break
+    # The command name may hold spaces or parens: ppid follows the LAST ") ".
+    _ap="$(sed -n 's/.*) [^ ]* \([0-9][0-9]*\) .*/\1/p' "/proc/$_ap/stat" 2>/dev/null)"
+  done
+  printf '%s' "$_al"
+}
+
+# hyg_sync_cwd_user DIR — prints the pid of one process (not an ancestor)
+# whose cwd is DIR or below it, "unavailable" when this host has no Linux
+# /proc to ask, or nothing. Processes of other users whose cwd cannot be read
+# are not visible; the log says how many.
+hyg_sync_cwd_user() {
+  if [ "$(uname -s 2>/dev/null)" != "Linux" ] || [ ! -r /proc/self/cwd ]; then printf 'unavailable'; return 0; fi
+  # shellcheck disable=SC2012  # ls -l is the one-process way to read every cwd link
+  ls -l /proc/[0-9]*/cwd 2>/dev/null | awk -v t="$1" -v anc="$HYG_SYNC_ANC" '
+    BEGIN { n = split(anc, a, " "); for (i = 1; i <= n; i++) skip[a[i]] = 1 }
+    {
+      i = index($0, " -> "); if (!i) next
+      target = substr($0, i + 4); link = substr($0, 1, i - 1)
+      sub(/.* \/proc\//, "", link); sub(/\/cwd$/, "", link)
+      if (link in skip) next
+      if (target == t || index(target, t "/") == 1) { print link; exit }
+    }'
+}
+
+# hyg_sync_fetched REMOTE — the recorded fetch result for REMOTE in this repo.
+hyg_sync_fetched() {
+  awk -F '\t' -v r="$1" '$1 == r { print $2; exit }' "$HYG_TMP/fetched" 2>/dev/null
+}
+
+# hyg_sync_checkout PATH PRIMARY DEFAULT_BRANCH LOCK — decide one checkout.
+# Fast-forward only when every check passes; each failed check is one skip.
+hyg_sync_checkout() {
+  _wt="$1"; _prim="$2"; _defb="$3"; _lock="$4"
+  _br="$(git -C "$_wt" symbolic-ref -q --short HEAD 2>/dev/null)" || _br=""
+  if hyg_sync_excluded "$_wt"; then hyg_sync_note skip "$_wt" "$_br" excluded-path; return 0; fi
+  if [ "$_lock" != "-" ]; then hyg_sync_note skip "$_wt" "$_br" "worktree-locked: $_lock"; return 0; fi
+  [ -n "$_br" ] || { hyg_sync_note skip "$_wt" "" detached; return 0; }
+  case "$_br" in preserve/*) hyg_sync_note skip "$_wt" "$_br" preserve-branch; return 0 ;; esac
+  if [ "$_prim" = "1" ]; then
+    [ -n "$_defb" ] || { hyg_sync_note skip "$_wt" "$_br" default-branch-unknown; return 0; }
+    [ "$_br" = "$_defb" ] || { hyg_sync_note skip "$_wt" "$_br" "not-default-branch (default $_defb)"; return 0; }
+  fi
+  _rem="$(git -C "$_wt" config --get "branch.$_br.remote" 2>/dev/null || true)"
+  _up="$(git -C "$_wt" for-each-ref --format='%(upstream)' "refs/heads/$_br" 2>/dev/null)"
+  if [ -z "$_rem" ] || [ -z "$_up" ] || ! git -C "$_wt" config --get "remote.$_rem.url" >/dev/null 2>&1; then
+    hyg_sync_note skip "$_wt" "$_br" no-upstream; return 0
+  fi
+  _fr="$(hyg_sync_fetched "$_rem")"
+  [ "$_fr" = "ok" ] || { hyg_sync_note skip "$_wt" "$_br" "fetch-${_fr:-failed} ($_rem)"; return 0; }
+  git -C "$_wt" rev-parse -q --verify "$_up^{commit}" >/dev/null 2>&1 || { hyg_sync_note skip "$_wt" "$_br" upstream-gone; return 0; }
+  _gd="$(git -C "$_wt" rev-parse --absolute-git-dir 2>/dev/null)" || { hyg_sync_note skip "$_wt" "$_br" cannot-inspect; return 0; }
+  if hyg_op_in_progress "$_gd"; then hyg_sync_note skip "$_wt" "$_br" "in-progress (merge/rebase/cherry-pick/revert/bisect)"; return 0; fi
+  [ ! -e "$_gd/index.lock" ] || { hyg_sync_note skip "$_wt" "$_br" "locked: index.lock"; return 0; }
+  if git -C "$_wt" ls-files -v 2>/dev/null | grep -q '^[a-zS] '; then
+    hyg_sync_note skip "$_wt" "$_br" "hidden-local-changes (skip-worktree/assume-unchanged)"; return 0
+  fi
+  _st="$(git -C "$_wt" status --porcelain --untracked-files=normal 2>/dev/null)" || { hyg_sync_note skip "$_wt" "$_br" status-failed; return 0; }
+  if [ -n "$_st" ]; then
+    if printf '%s\n' "$_st" | grep -qv '^??'; then hyg_sync_note skip "$_wt" "$_br" dirty
+    else hyg_sync_note skip "$_wt" "$_br" untracked; fi
+    return 0
+  fi
+  _lr="$(git -C "$_wt" rev-list --left-right --count "HEAD...$_up" 2>/dev/null)" || { hyg_sync_note skip "$_wt" "$_br" count-failed; return 0; }
+  _ahead="$(printf '%s' "$_lr" | awk '{print $1}')"; _behind="$(printf '%s' "$_lr" | awk '{print $2}')"
+  if [ "${_ahead:-1}" != "0" ]; then hyg_sync_note skip "$_wt" "$_br" "ahead ($_ahead ahead, $_behind behind)"; return 0; fi
+  if [ "${_behind:-0}" = "0" ]; then hyg_sync_note current "$_wt" "$_br" up-to-date; return 0; fi
+  _phys="$(cd "$_wt" 2>/dev/null && pwd -P)" || { hyg_sync_note skip "$_wt" "$_br" cannot-inspect; return 0; }
+  _user="$(hyg_sync_cwd_user "$_phys")"
+  case "$_user" in
+    unavailable) hyg_sync_note skip "$_wt" "$_br" "cwd-check-unavailable (no Linux /proc)"; return 0 ;;
+    ?*) hyg_sync_note skip "$_wt" "$_br" "in-use (pid $_user has its cwd in the tree)"; return 0 ;;
+  esac
+  _before="$(git -C "$_wt" rev-parse HEAD 2>/dev/null)"
+  if [ "$HYG_SYNC_DRY" = "1" ]; then
+    hyg_sync_note would-ff "$_wt" "$_br" "$_behind commit(s) from ${_up#refs/remotes/} (dry run)" "$_before" "$(git -C "$_wt" rev-parse "$_up" 2>/dev/null)"
+    return 0
+  fi
+  git -C "$_wt" merge --ff-only --quiet "$_up" </dev/null >/dev/null 2>&1
+  _after="$(git -C "$_wt" rev-parse HEAD 2>/dev/null)"
+  if [ "$_after" = "$_before" ]; then hyg_sync_note skip "$_wt" "$_br" merge-refused "$_before" "$_after"; return 0; fi
+  hyg_sync_note ff "$_wt" "$_br" "$_behind commit(s) from ${_up#refs/remotes/}" "$_before" "$_after"
+  return 0
+}
+
+# hyg_sync_repo REPO — fetch, then decide the primary and each linked worktree,
+# then record the drain dry run.
+hyg_sync_repo() {
+  HYG_SYNC_REPO="$1"
+  if hyg_sync_excluded "$1"; then hyg_sync_note skip "$1" "" excluded-path; return 0; fi
+  if [ "$(git -C "$1" config --bool --get hygiene.sync 2>/dev/null)" = "false" ]; then
+    hyg_sync_note skip "$1" "" "opted-out (hygiene.sync=false)"; return 0
+  fi
+  # <path>\t<primary 1|0>\t<lock reason or ->, prunable and bare entries dropped.
+  git -C "$1" worktree list --porcelain 2>/dev/null | awk '
+    function flush() { if (path != "" && !bare && !prunable) printf "%s\t%d\t%s\n", path, (n == 1), (locked ? (reason == "" ? "locked" : reason) : "-"); path = ""; bare = 0; prunable = 0; locked = 0; reason = "" }
+    /^worktree / { flush(); n++; path = substr($0, 10); next }
+    /^bare$/     { bare = 1; next }
+    /^prunable/  { prunable = 1; next }
+    /^locked/    { locked = 1; reason = substr($0, 8); next }
+    END { flush() }' > "$HYG_TMP/checkouts"
+  # Fetch once per remote that origin or any checked-out branch tracks.
+  : > "$HYG_TMP/fetched"
+  { git -C "$1" config --get remote.origin.url >/dev/null 2>&1 && echo origin
+    while IFS='	' read -r _p _x _y; do
+      _b="$(git -C "$_p" symbolic-ref -q --short HEAD 2>/dev/null)" || continue
+      git -C "$1" config --get "branch.$_b.remote" 2>/dev/null
+    done < "$HYG_TMP/checkouts"
+  } | awk 'NF && !seen[$0]++' > "$HYG_TMP/remotes"
+  _to="$(cd "$1" && hyg_int hygiene.syncFetchTimeout "$HYG_SYNC_DEFAULT_FETCH_TIMEOUT")"
+  while IFS= read -r _r; do
+    git -C "$1" config --get "remote.$_r.url" >/dev/null 2>&1 || continue
+    hyg_sync_bounded "$_to" git -C "$1" -c gc.auto=0 fetch --prune --quiet "$_r" </dev/null >/dev/null 2>&1
+    case $? in 0) _res=ok ;; 124) _res=timeout ;; *) _res=failed ;; esac
+    printf '%s\t%s\n' "$_r" "$_res" >> "$HYG_TMP/fetched"
+    printf 'F\t%s\t%s\t%s\n' "$1" "$_r" "$_res" >> "$HYG_SYNC_REC"
+    [ "$_res" = "ok" ] || hyg_say "git-guard sync: fetch $_res $1 ($_r)"
+  done < "$HYG_TMP/remotes"
+  _defb="$(cd "$1" && hyg_base_name "$(hyg_base "$(hyg_remote "")")")"
+  while IFS='	' read -r _p _prim _lk; do
+    hyg_sync_checkout "$_p" "$_prim" "$_defb" "$_lk"
+  done < "$HYG_TMP/checkouts"
+  if [ "$HYG_SYNC_DRAIN" = "1" ]; then
+    _dto="$(cd "$1" && hyg_int hygiene.syncDrainTimeout "$HYG_SYNC_DEFAULT_DRAIN_TIMEOUT")"
+    ( cd "$1" && hyg_sync_bounded "$_dto" sh "$HYG_SELF" drain --dry-run ) </dev/null > "$HYG_TMP/drain" 2>&1
+    _drc=$?
+    [ "$_drc" = "124" ] && echo "  (drain dry run timed out after ${_dto}s: hygiene.syncDrainTimeout)" >> "$HYG_TMP/drain"
+    awk -v r="$1" -v rc="$_drc" '{ printf "D\t%s\t%s\t%s\n", r, rc, $0 } END { if (NR == 0) printf "D\t%s\t%s\t\n", r, rc }' "$HYG_TMP/drain" >> "$HYG_SYNC_REC"
+  fi
+  return 0
+}
+
+# hyg_sync_roots — configured roots (hygiene.syncRoots, multi-valued, ~
+# expanded), else ~/dev/repos and ~/.claude/repos. One per line.
+hyg_sync_roots() {
+  _rs="$(git config --get-all hygiene.syncRoots 2>/dev/null || true)"
+  [ -n "$_rs" ] || _rs="$HOME/dev/repos
+$HOME/.claude/repos"
+  printf '%s\n' "$_rs" | while IFS= read -r _r; do
+    case "$_r" in \~) _r="$HOME" ;; \~/*) _r="$HOME/${_r#??}" ;; esac
+    [ -n "$_r" ] && printf '%s\n' "$_r"
+  done
+}
+
+# hyg_sync_report OUT — render the records as JSON (written to a temp file and
+# moved into place, so a reader never sees half a report).
+hyg_sync_report() {
+  awk -F '\t' -v host="$(hostname 2>/dev/null || uname -n)" -v started="$HYG_SYNC_STARTED" -v finished="$(hyg_sync_now)" -v roots="$HYG_SYNC_ROOTS" '
+    function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/\t/, "\\t", s); gsub(/\r/, "\\r", s); gsub(/[[:cntrl:]]/, " ", s); return "\"" s "\"" }
+    function opt(s) { return (s == "-" ? "null" : esc(s)) }
+    $1 == "C" { c[++nc] = sprintf("{\"repo\":%s,\"path\":%s,\"branch\":%s,\"result\":%s,\"reason\":%s,\"before\":%s,\"after\":%s}", esc($2), esc($3), opt($4), esc($5), esc($6), opt($7), opt($8)) }
+    $1 == "F" { f[++nf] = sprintf("{\"repo\":%s,\"remote\":%s,\"result\":%s}", esc($2), esc($3), esc($4)) }
+    $1 == "D" {
+      if (!($2 in di)) { di[$2] = ++nd; dr[nd] = $2; dx[nd] = $3; dl[nd] = "" }
+      k = di[$2]; line = $0; sub(/^D\t[^\t]*\t[^\t]*\t/, "", line)
+      if (line != "") dl[k] = dl[k] (dl[k] == "" ? "" : ",") esc(line)
+    }
+    END {
+      printf "{\"schema\":1,\"host\":%s,\"started\":%s,\"finished\":%s,\"roots\":[", esc(host), esc(started), esc(finished)
+      n = split(roots, rr, "\n"); s = ""; for (i = 1; i <= n; i++) if (rr[i] != "") { printf "%s%s", s, esc(rr[i]); s = "," }
+      printf "],\"checkouts\":["; for (i = 1; i <= nc; i++) printf "%s%s", (i > 1 ? "," : ""), c[i]
+      printf "],\"fetches\":["; for (i = 1; i <= nf; i++) printf "%s%s", (i > 1 ? "," : ""), f[i]
+      printf "],\"drain\":["; for (i = 1; i <= nd; i++) printf "%s{\"repo\":%s,\"exit\":%d,\"lines\":[%s]}", (i > 1 ? "," : ""), esc(dr[i]), dx[i], dl[i]
+      printf "]}\n"
+    }' "$HYG_SYNC_REC" > "$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"
+}
+
+hyg_sync_run() {
+  HYG_SYNC_DRAIN=1; HYG_SYNC_DRY=0
+  for _a in "$@"; do
+    case "$_a" in
+      --no-drain) HYG_SYNC_DRAIN=0 ;;
+      --dry-run) HYG_SYNC_DRY=1 ;;
+      *) hyg_say "git-guard hygiene sync: unknown argument '$_a'"; return 2 ;;
+    esac
+  done
+  [ "${GIT_GUARD:-1}" = "0" ] && return 0
+  HYG_SELF="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+  _state="${XDG_STATE_HOME:-$HOME/.local/state}/git-guard"
+  mkdir -p "$_state" 2>/dev/null || { hyg_say "git-guard sync: cannot create $_state; nothing done"; return 1; }
+  hyg_tmpdir
+  [ -n "$HYG_TMP" ] || { hyg_say "git-guard sync: cannot create a temp dir; nothing done"; return 1; }
+  # One pass at a time per user; a lock older than two hours is a crashed run.
+  HYG_SYNC_LOCK="$_state/sync.lock"
+  if ! mkdir "$HYG_SYNC_LOCK" 2>/dev/null; then
+    if [ -n "$(find "$HYG_SYNC_LOCK" -maxdepth 0 -mmin +120 2>/dev/null)" ]; then
+      rmdir "$HYG_SYNC_LOCK" 2>/dev/null; mkdir "$HYG_SYNC_LOCK" 2>/dev/null || { hyg_say "git-guard sync: another pass holds $HYG_SYNC_LOCK"; return 0; }
+    else
+      hyg_say "git-guard sync: another pass holds $HYG_SYNC_LOCK; nothing done"; return 0
+    fi
+  fi
+  trap 'rm -rf "$HYG_TMP"; rmdir "$HYG_SYNC_LOCK" 2>/dev/null' EXIT
+  # Never prompt (the timer has no terminal), and do not inherit another
+  # repository's GIT_DIR or index from a caller that runs inside a hook.
+  GIT_TERMINAL_PROMPT=0; GCM_INTERACTIVE=never
+  [ -n "${GIT_SSH_COMMAND:-}" ] || GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10'
+  export GIT_TERMINAL_PROMPT GCM_INTERACTIVE GIT_SSH_COMMAND
+  for _v in $(git rev-parse --local-env-vars 2>/dev/null); do unset "$_v"; done
+  cd / || return 1
+  HYG_SYNC_ANC="$(hyg_sync_ancestors)"
+  HYG_SYNC_STARTED="$(hyg_sync_now)"
+  HYG_SYNC_REC="$HYG_TMP/records"; : > "$HYG_SYNC_REC"
+  HYG_SYNC_ROOTS="$(hyg_sync_roots)"
+  printf '%s\n' "$HYG_SYNC_ROOTS" | while IFS= read -r _root; do
+    [ -d "$_root" ] || continue
+    for _d in "$_root" "$_root"/*; do
+      [ -d "$_d/.git" ] || continue
+      (cd "$_d" && pwd -P)
+    done
+  done | awk 'NF && !seen[$0]++' > "$HYG_TMP/repos"
+  while IFS= read -r _repo; do hyg_sync_repo "$_repo"; done < "$HYG_TMP/repos"
+  hyg_sync_report "$_state/sync-report.json" || hyg_say "git-guard sync: could not write $_state/sync-report.json"
+  hyg_say "git-guard sync: $(awk -F '\t' '$1 == "C" { n[$5]++ } END { printf "%d ff, %d would-ff, %d current, %d skip", n["ff"], n["would-ff"], n["current"], n["skip"] }' "$HYG_SYNC_REC") across $(grep -c . "$HYG_TMP/repos" || true) repos; report $_state/sync-report.json"
+  return 0
+}
+
+# hyg_sync_cli — the git-guard CLI the timer should start: the store's
+# `current` link when this release is the one it points at, so an upgrade
+# moves the timer with it; otherwise this checkout's own bin/git-guard.
+hyg_sync_cli() {
+  _root="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd -P)"
+  _store="$(dirname "$_root")"
+  if [ -L "$_store/current" ] && [ "$(cd "$_store/current" 2>/dev/null && pwd -P)" = "$_root" ]; then
+    printf '%s' "$_store/current/bin/git-guard"
+  else
+    printf '%s' "$_root/bin/git-guard"
+  fi
+}
+
+# hyg_sync_timer install|uninstall — a systemd --user oneshot service and a
+# 30-minute timer. GIT_GUARD_SYNC_UNIT_DIR and GIT_GUARD_SYNC_SYSTEMCTL exist
+# for tests.
+hyg_sync_timer() {
+  _ud="${GIT_GUARD_SYNC_UNIT_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user}"
+  _sc="${GIT_GUARD_SYNC_SYSTEMCTL:-systemctl}"
+  if [ "$1" = "uninstall" ]; then
+    "$_sc" --user disable --now "$HYG_SYNC_UNIT.timer" >/dev/null 2>&1 || :
+    rm -f "$_ud/$HYG_SYNC_UNIT.service" "$_ud/$HYG_SYNC_UNIT.timer"
+    "$_sc" --user daemon-reload >/dev/null 2>&1 || :
+    echo "git-guard sync: removed $_ud/$HYG_SYNC_UNIT.{service,timer}"
+    return 0
+  fi
+  command -v "$_sc" >/dev/null 2>&1 || { hyg_say "git-guard sync: $_sc not found; this installer needs systemd --user (Windows: see docs/QA_TOOLING.md §12)"; return 1; }
+  mkdir -p "$_ud" || return 1
+  _cli="$(hyg_sync_cli)"
+  cat > "$_ud/$HYG_SYNC_UNIT.service" <<EOF || return 1
+[Unit]
+Description=git-guard hygiene sync: fast-forward clean checkouts, write the drain report
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh "$_cli" hygiene sync
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=1800
+EOF
+  cat > "$_ud/$HYG_SYNC_UNIT.timer" <<EOF || return 1
+[Unit]
+Description=Run git-guard hygiene sync every 30 minutes
+
+[Timer]
+OnCalendar=*:0/30
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  "$_sc" --user daemon-reload || { hyg_say "git-guard sync: systemctl --user daemon-reload failed"; return 1; }
+  "$_sc" --user enable --now "$HYG_SYNC_UNIT.timer" || { hyg_say "git-guard sync: could not enable $HYG_SYNC_UNIT.timer"; return 1; }
+  echo "git-guard sync: installed $_ud/$HYG_SYNC_UNIT.{service,timer} (ExecStart $_cli); logs: journalctl --user -u $HYG_SYNC_UNIT"
+  return 0
+}
+
+hyg_sync() {
+  case "${1:-run}" in
+    run)             [ "$#" -gt 0 ] && shift; hyg_sync_run "$@" ;;
+    --*)             hyg_sync_run "$@" ;;
+    install-timer)   hyg_sync_timer install ;;
+    uninstall-timer) hyg_sync_timer uninstall ;;
+    *) hyg_say "usage: git-guard hygiene sync [run] [--dry-run] [--no-drain] | install-timer | uninstall-timer"; return 2 ;;
+  esac
+}
+
 # --- global defaults ---------------------------------------------------------
 
 hyg_defaults() {
@@ -739,5 +1094,6 @@ case "${1:-report}" in
   check)         hyg_measure "" "" 1; [ -z "$HYG_OVER" ] || { hyg_explain OVER; exit 1; } ;;
   drain)         shift; hyg_drain "$@" ;;
   defaults)      shift; hyg_defaults "$@" ;;
-  *) hyg_say "usage: hygiene.sh pre-push|post-checkout|report|check|drain|defaults"; exit 2 ;;
+  sync)          shift; hyg_sync "$@" ;;
+  *) hyg_say "usage: hygiene.sh pre-push|post-checkout|report|check|drain|defaults|sync"; exit 2 ;;
 esac
