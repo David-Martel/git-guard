@@ -275,6 +275,27 @@ t_hyg_body() {
   git -C "$r" worktree unlock "$wtp/w3"
   git -C "$r" config --unset hygiene.exemptLockPrefix
 
+  # Why: vigil-spark scripts/operator_build.py keeps one worktree per completed
+  # build, locked "vigil.operator-build/v1 <commit> <attempt>", and
+  # scripts/operator_build_prune.py retires it. It is tool-managed infrastructure
+  # like an operator-release tree. Counting it put vigil-spark on asuspro13 at 4 of
+  # 3 on 2026-10-30, which refused every new-branch push there. The prefixes that
+  # `defaults` seeds must exempt it; the control shows the same lock IS counted
+  # without them, so the first assertion cannot pass vacuously.
+  ob_home="$(mktemp -d "$GG_T_TMPROOT/hyg-ob-home.XXXXXX")"
+  : > "$ob_home/.gitconfig"
+  ( HOME="$ob_home" GIT_CONFIG_GLOBAL="$ob_home/.gitconfig" sh "$hyg" defaults >"$log" 2>&1 )
+  git -C "$r" worktree lock --reason "vigil.operator-build/v1 0123abcd 20261029T020207Z-f8a6cb32" "$wtp/w3"
+  t_hyg_branch "$r" feat-opbuild-ctl
+  t_hyg_gg "$r" "$log" push origin feat-opbuild-ctl; rc=$?
+  if [ "$rc" -ne 0 ]; then t_ok "control: without the seeded prefixes an operator-build worktree counts (rc=$rc)"
+  else t_fail "control: operator-build worktree was not counted even without an exempt prefix"; fi
+  t_hyg_branch "$r" feat-opbuild
+  ( GIT_CONFIG_GLOBAL="$ob_home/.gitconfig"; export GIT_CONFIG_GLOBAL; t_hyg_gg "$r" "$log" push origin feat-opbuild ); rc=$?
+  t_expect_rc 0 "$rc" "operator-build worktree is not counted under the seeded default prefixes"
+  git -C "$r" worktree unlock "$wtp/w3"
+  rm -rf "$ob_home"
+
   # --- post-checkout warns after `git worktree add` ------------------------
   t_hyg_gg "$r" "$log" worktree add -q -b w4 "$wtp/w4"; rc=$?
   t_expect_rc 0 "$rc" "post-checkout never fails a worktree add"
@@ -704,6 +725,9 @@ t_hyg_body() {
   HOME="$fh" GIT_CONFIG_GLOBAL="$fh/.gitconfig" git config --global --get-all hygiene.exemptLockPrefix \
     | grep -qx "vigil.fleet-build/" && t_ok "defaults seeds the infrastructure lock prefixes" \
     || t_fail "defaults did not seed hygiene.exemptLockPrefix"
+  HOME="$fh" GIT_CONFIG_GLOBAL="$fh/.gitconfig" git config --global --get-all hygiene.exemptLockPrefix \
+    | grep -qx "vigil.operator-build/" && t_ok "defaults seeds the operator-build lock prefix" \
+    || t_fail "defaults did not seed vigil.operator-build/"
   [ -z "$(gget gc.worktreePruneExpire)" ] && t_ok "defaults leaves gc.worktreePruneExpire alone" \
     || t_fail "defaults changed gc.worktreePruneExpire"
 
