@@ -716,6 +716,7 @@ when the repo is over a limit, and never fails.
 | `hygiene.drainMinAgeMinutes` | 1440 | `drain` keeps a worktree whose HEAD moved (worktree add, checkout, commit) within this many minutes, because a fresh worktree is clean and "merged" but may be another agent's live checkout; `0` disables |
 | `hygiene.preserveDir` | `${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve` | where `drain` writes bundles |
 | `hygiene.sync` | unset (on) | `false` in a repository keeps `sync` out of it; `false` globally turns `sync` off everywhere that does not set it back |
+| `hygiene.syncExclude` | unset | multi-valued, read from the global and system config only, never a repository's own; a path or glob (`~` expanded) that `sync` neither fetches nor moves, nor anything below it. Lines of `${XDG_CONFIG_HOME:-~/.config}/git-guard/sync.exclude` (`#` comments allowed) count the same. Use it for a repository this host must not write to, such as one another org owns |
 | `hygiene.syncRoots` | `~/dev/repos`, `~/.claude/repos` | multi-valued (`git config --global --add`); `sync` takes each directory that has a `.git` directory, and each direct child that does |
 | `hygiene.syncFetchTimeout` | 60 | seconds allowed for each remote fetch in `sync` |
 | `hygiene.syncDrainTimeout` | 300 | seconds allowed for each repository's drain dry run in `sync` |
@@ -806,8 +807,14 @@ own, so the backlog drains with less effort. `git-guard sync` (the same as
 `git-guard hygiene sync`) does one pass:
 
 1. It takes every repository under `hygiene.syncRoots` (a root that is itself
-   a repository counts too), skipping any repository with
-   `hygiene.sync=false`.
+   a repository counts too). It skips, before any fetch, a repository with
+   `hygiene.sync=false` and one the host excludes: an entry of a global
+   `hygiene.syncExclude` or a line of `~/.config/git-guard/sync.exclude`,
+   each a path or glob that also covers everything below it. The host
+   exclude needs no write to the repository, so it is the way to keep `sync`
+   off a checkout you must not change (its report record says
+   `excluded (<source>: <entry>)`). An entry that names an existing
+   directory also matches its physical path.
 2. It fetches each repository once per remote that `origin` or a checked-out
    branch tracks: `git fetch --prune`, bounded by `hygiene.syncFetchTimeout`,
    with `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never` and, unless you set

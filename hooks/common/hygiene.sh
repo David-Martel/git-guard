@@ -47,6 +47,9 @@
 #   hygiene.preserveDir        where drain writes bundles of unique work
 #                              (default ${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve)
 #   hygiene.sync               false in a repo (or globally) keeps sync out of it
+#   hygiene.syncExclude        multi-valued, global/system only: a path or glob
+#                              sync never fetches or moves (also read: one per
+#                              line in ~/.config/git-guard/sync.exclude)
 #   hygiene.syncRoots          multi-valued directories sync walks, each plus
 #                              its direct children (~/dev/repos, ~/.claude/repos)
 #   hygiene.syncFetchTimeout   seconds per remote fetch in sync (60)
@@ -747,10 +750,39 @@ hyg_sync_bounded() {
 }
 
 # hyg_sync_excluded PATH — runner work dirs and /opt deployment slots are
-# never touched, wherever a root points.
+# never touched, wherever a root points (HYG_SYNC_WHY=excluded-path). Nor is
+# a path the host excludes without writing into the repository: a
+# hygiene.syncExclude value in the global or system config, or a line of
+# ${XDG_CONFIG_HOME:-~/.config}/git-guard/sync.exclude. Each is a path or a
+# glob and also covers everything below it (HYG_SYNC_WHY names the entry).
 hyg_sync_excluded() {
-  case "$1/" in /opt/*|*/_work/*|*/actions-runner/*) return 0 ;; esac
+  case "$1/" in /opt/*|*/_work/*|*/actions-runner/*) HYG_SYNC_WHY=excluded-path; return 0 ;; esac
+  [ -s "$HYG_TMP/excludes" ] || return 1
+  while IFS='	' read -r _xs _xp; do
+    # shellcheck disable=SC2254  # the entry is a glob on purpose
+    case "$1" in $_xp|$_xp/*) HYG_SYNC_WHY="excluded ($_xs: $_xp)"; return 0 ;; esac
+  done < "$HYG_TMP/excludes"
   return 1
+}
+
+# hyg_sync_excludes — <source>\t<pattern> lines for hyg_sync_excluded. Run
+# from / so that no repository's own config is read; ~ is expanded, blank
+# lines and # comments are dropped, and an existing directory is also listed
+# under its physical path (the paths sync compares are physical).
+hyg_sync_excludes() {
+  _xf="${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"
+  { git config --get-all hygiene.syncExclude 2>/dev/null | sed 's/^/hygiene.syncExclude	/'
+    [ -r "$_xf" ] && sed 's/^/sync.exclude	/' "$_xf"
+  } | while IFS='	' read -r _xs _xp; do
+    _xp="$(printf '%s' "$_xp" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    case "$_xp" in ''|\#*) continue ;; \~) _xp="$HOME" ;; \~/*) _xp="$HOME/${_xp#??}" ;; esac
+    _xp="${_xp%/}"; [ -n "$_xp" ] || continue
+    printf '%s\t%s\n' "$_xs" "$_xp"
+    if [ -d "$_xp" ]; then
+      _xr="$(cd "$_xp" 2>/dev/null && pwd -P)"
+      [ -n "$_xr" ] && [ "$_xr" != "$_xp" ] && printf '%s\t%s\n' "$_xs" "$_xr"
+    fi
+  done
 }
 
 # hyg_sync_ancestors — this process and its ancestors (Linux /proc), space
@@ -795,7 +827,7 @@ hyg_sync_fetched() {
 hyg_sync_checkout() {
   _wt="$1"; _prim="$2"; _defb="$3"; _lock="$4"
   _br="$(git -C "$_wt" symbolic-ref -q --short HEAD 2>/dev/null)" || _br=""
-  if hyg_sync_excluded "$_wt"; then hyg_sync_note skip "$_wt" "$_br" excluded-path; return 0; fi
+  if hyg_sync_excluded "$_wt"; then hyg_sync_note skip "$_wt" "$_br" "$HYG_SYNC_WHY"; return 0; fi
   if [ "$_lock" != "-" ]; then hyg_sync_note skip "$_wt" "$_br" "worktree-locked: $_lock"; return 0; fi
   [ -n "$_br" ] || { hyg_sync_note skip "$_wt" "" detached; return 0; }
   case "$_br" in preserve/*) hyg_sync_note skip "$_wt" "$_br" preserve-branch; return 0 ;; esac
@@ -849,7 +881,7 @@ hyg_sync_checkout() {
 # then record the drain dry run.
 hyg_sync_repo() {
   HYG_SYNC_REPO="$1"
-  if hyg_sync_excluded "$1"; then hyg_sync_note skip "$1" "" excluded-path; return 0; fi
+  if hyg_sync_excluded "$1"; then hyg_sync_note skip "$1" "" "$HYG_SYNC_WHY"; return 0; fi
   if [ "$(git -C "$1" config --bool --get hygiene.sync 2>/dev/null)" = "false" ]; then
     hyg_sync_note skip "$1" "" "opted-out (hygiene.sync=false)"; return 0
   fi
@@ -963,6 +995,7 @@ hyg_sync_run() {
   HYG_SYNC_STARTED="$(hyg_sync_now)"
   HYG_SYNC_REC="$HYG_TMP/records"; : > "$HYG_SYNC_REC"
   HYG_SYNC_ROOTS="$(hyg_sync_roots)"
+  hyg_sync_excludes > "$HYG_TMP/excludes"
   printf '%s\n' "$HYG_SYNC_ROOTS" | while IFS= read -r _root; do
     [ -d "$_root" ] || continue
     for _d in "$_root" "$_root"/*; do
