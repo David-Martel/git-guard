@@ -715,6 +715,10 @@ when the repo is over a limit, and never fails.
 | `hygiene.baseRef` | unset | integration ref used when `refs/remotes/<remote>/HEAD` is not set; without either, `refs/remotes/<remote>/main` or `/master` is tried, and if none exists the merged test is skipped |
 | `hygiene.drainMinAgeMinutes` | 1440 | `drain` keeps a worktree whose HEAD moved (worktree add, checkout, commit) within this many minutes, because a fresh worktree is clean and "merged" but may be another agent's live checkout; `0` disables |
 | `hygiene.preserveDir` | `${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve` | where `drain` writes bundles |
+| `hygiene.sync` | unset (on) | `false` in a repository keeps `sync` out of it; `false` globally turns `sync` off everywhere that does not set it back |
+| `hygiene.syncRoots` | `~/dev/repos`, `~/.claude/repos` | multi-valued (`git config --global --add`); `sync` takes each directory that has a `.git` directory, and each direct child that does |
+| `hygiene.syncFetchTimeout` | 60 | seconds allowed for each remote fetch in `sync` |
+| `hygiene.syncDrainTimeout` | 300 | seconds allowed for each repository's drain dry run in `sync` |
 
 Repo-local values beat global ones (git's own precedence), so a repo with a
 legitimate need sets `git config hygiene.maxWorktrees 6` locally. Anything
@@ -793,6 +797,74 @@ counts every linked worktree of one repo on one host;
 `agent_worktrees_per_repo` and `active_worktrees_per_lane` are lane-attributed.
 
 ---
+
+
+### Sync: fast-forward clean checkouts
+
+Owner direction (2026-10-30): more repositories should fast-forward on their
+own, so the backlog drains with less effort. `git-guard sync` (the same as
+`git-guard hygiene sync`) does one pass:
+
+1. It takes every repository under `hygiene.syncRoots` (a root that is itself
+   a repository counts too), skipping any repository with
+   `hygiene.sync=false`.
+2. It fetches each repository once per remote that `origin` or a checked-out
+   branch tracks: `git fetch --prune`, bounded by `hygiene.syncFetchTimeout`,
+   with `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never` and, unless you set
+   one, `GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10'`. An
+   inherited `GIT_DIR` and the other git local variables are dropped first.
+3. It fast-forwards each checkout (`git merge --ff-only <upstream>`) only when
+   every one of these holds, and otherwise logs one skip with the reason:
+   - the path is not under `/opt/` and has no `_work` or `actions-runner`
+     component (deployment slots and runner work dirs);
+   - the worktree is not locked; HEAD is a branch, not `preserve/*`;
+   - a primary checkout is on the default branch (`<remote>/HEAD`); a linked
+     worktree may be on any branch;
+   - the branch tracks a configured remote, that remote's fetch succeeded in
+     this pass, and the upstream ref still exists;
+   - no merge, rebase, cherry-pick, revert or bisect is in progress, and there
+     is no `index.lock`;
+   - no index entry is skip-worktree or assume-unchanged;
+   - `git status` shows nothing, untracked files included (ignored files are
+     fine);
+   - the branch has no commits ahead of its upstream and is behind it;
+   - no process other than `sync` and its ancestors has its working
+     directory in the tree, read from `/proc/<pid>/cwd`. Services run from
+     checkouts. Processes of other users whose cwd cannot be read are not
+     seen. Off Linux there is no such check yet, so every candidate is
+     skipped with `cwd-check-unavailable`.
+4. It runs `git-guard hygiene drain --dry-run` in each repository, bounded by
+   `hygiene.syncDrainTimeout`, and writes everything to
+   `${XDG_STATE_HOME:-~/.local/state}/git-guard/sync-report.json`: one record
+   per checkout (`ff`, `would-ff`, `current` or `skip`, the reason, and the
+   before and after commits), one per fetch, and the drain lines and exit code
+   per repository. The file is replaced atomically.
+
+`sync` never deletes, never resets and never merges anything that is not a
+fast-forward. It runs the repository's own hooks as `git pull` would. It
+prints nothing on stdout: one line per checkout goes to stderr (the journal,
+under the timer), then a summary. `--dry-run` fetches and decides the same way
+but moves nothing (`would-ff`). `--no-drain` leaves the drain section empty. A
+lock in the state directory keeps two passes apart; a lock older than two
+hours is treated as a crashed run.
+
+**Timer.** `git-guard sync install-timer` writes
+`~/.config/systemd/user/git-guard-sync.{service,timer}`: a oneshot service at
+`Nice=19` and `IOSchedulingClass=idle`, and a timer with `OnCalendar=*:0/30`,
+`RandomizedDelaySec=600` and `Persistent=true`. It then runs
+`systemctl --user daemon-reload` and `enable --now`. When the running release
+is the one the store's `current` link points at, the service starts
+`<store>/current/bin/git-guard`, so `git-guard update` moves the timer with
+it. Logs: `journalctl --user -u git-guard-sync`. `uninstall-timer` disables
+and removes both units. There is no Windows scheduler yet; on Windows run
+`git-guard sync` by hand. A scheduled-task installer is a follow-up.
+
+**Interplay.** dtm-claude's SessionStart hook `ff-live-clone.mjs`
+fast-forwards the live dtm-claude clone under the same rules. When both run
+at once, git's `index.lock` makes one of them refuse; the next pass catches
+up.
+
+Tests: [`tests/36-sync.t.sh`](../tests/36-sync.t.sh).
 
 ## 13. Quality mandate
 
