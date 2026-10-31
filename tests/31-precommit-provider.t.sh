@@ -409,3 +409,47 @@ EOF
   t_expect_rc 0 "$?" 'older releases without dispatcher keep original admission semantics'
   gg_rmrepo "$r"; rm -f "$log"
 }
+
+# Protects: the pushing repository from a provider whose test fixtures run git in
+# temp directories. Git exports GIT_DIR and friends to hooks; on 2026-10-28 a
+# vigil-ai-tpm pre-push pytest run used them and set core.bare=true, a fixture
+# user.name and fixture commits in the real shared .git.
+# Detects: a provider that still inherits GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE,
+# or whose `git init` + `git config` in a temp dir lands in the pushing repo.
+t_case_prepush_provider_git_env() {
+  t_begin '31b pre-push providers do not inherit the hook Git environment'
+  r="$(gg_mktemp_repo)"
+  log="$(gg_tmp_log)"
+  bin="$GG_T_TMPROOT/envguard-bin"
+  seen="$GG_T_TMPROOT/envguard-seen"
+  fixture="$GG_T_TMPROOT/envguard-fixture"
+  mkdir -p "$bin"
+  cat > "$bin/pre-commit" <<EOF
+#!/bin/sh
+cat > /dev/null
+env | grep -E '^GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY)=' > '$seen'
+git init -q '$fixture' && git -C '$fixture' config user.name Fixture && git -C '$fixture' config core.bare true
+exit 0
+EOF
+  chmod +x "$bin/pre-commit"
+  printf 'repos: []\n' > "$r/.pre-commit-config.yaml"
+  printf 'envguard\n' > "$r/a.txt"
+  (cd "$r" && git add .pre-commit-config.yaml a.txt && git -c core.hooksPath=/dev/null commit -q -m envguard)
+  head="$(git -C "$r" rev-parse HEAD)"
+  record="refs/heads/main $head refs/heads/main 0000000000000000000000000000000000000000"
+  # Exactly the environment Git gives a pre-push hook, made explicit.
+  printf '%s\n' "$record" | (cd "$r" && env PATH="$bin:$PATH" GIT_DIR="$r/.git" GIT_WORK_TREE="$r" \
+    GIT_INDEX_FILE="$r/.git/index" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+  t_expect_rc 0 "$?" 'pre-push with an exported hook environment runs the provider'
+  if [ -f "$seen" ] && [ ! -s "$seen" ]; then rc=0; else rc=1; fi
+  t_assert "$rc" 'provider sees no GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE'
+  if [ -d "$fixture/.git" ]; then rc=0; else rc=1; fi
+  t_assert "$rc" "provider's git init created its own temp repository"
+  if [ "$(git -C "$r" config --local --get user.name 2>/dev/null)" = Fixture ]; then
+    t_fail 'fixture user.name leaked into the pushing repository'
+  else
+    t_ok 'pushing repository config untouched by the fixture'
+  fi
+  [ "$(git -C "$r" config --local --get core.bare)" = false ]; t_assert $? 'pushing repository is still non-bare'
+  gg_rmrepo "$r"; rm -rf "$fixture" "$bin" "$seen" "$log"
+}

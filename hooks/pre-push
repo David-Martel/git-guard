@@ -240,6 +240,23 @@ git_guard_pushed_precommit_config() {
   return 1
 }
 
+# Why: Git exports GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE and related variables
+# to hooks. A repo gate whose test fixtures run `git init` or `git commit` in a
+# temp directory then writes into THIS repository instead: on 2026-10-28 a
+# vigil-ai-tpm push left core.bare=true, a fixture user.name and fixture commits
+# in the shared .git. git-guard's own checks above are done; every provider
+# below starts from the worktree root, where Git finds the repository unaided.
+# The caller's `git -c` / `--config-env` settings (GIT_CONFIG_PARAMETERS and the
+# GIT_CONFIG_COUNT/KEY_n/VALUE_n pairs) locate no repository and carry policy the
+# providers still read, such as gitGuard.precommitSubmodules=refuse, so they stay.
+if [ -n "$git_guard_repo_root" ]; then cd "$git_guard_repo_root" || exit 1; fi
+for _gg_git_var in $(git rev-parse --local-env-vars); do
+  case "$_gg_git_var" in
+    GIT_CONFIG_PARAMETERS | GIT_CONFIG_COUNT) ;;
+    *) unset "$_gg_git_var" ;;
+  esac
+done
+
 if [ -n "${GIT_GUARD_DOWNSTREAM_PRE_PUSH:-}" ]; then
   if [ ! -f "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" ] || [ ! -x "${GIT_GUARD_DOWNSTREAM_PRE_PUSH}" ]; then
     printf '%s\n' \
