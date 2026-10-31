@@ -20,6 +20,12 @@
 #     (Linux /proc), hygiene.sync=false, a runner work dir path (_work), a
 #     preserve/* worktree branch, and a hanging fetch (bounded by
 #     hygiene.syncFetchTimeout).
+#   * A host-level exclude that needs no write access to the repository (a
+#     line of ~/.config/git-guard/sync.exclude, or a global hygiene.syncExclude
+#     glob, also when written through a symlinked path) skips the repo as
+#     "excluded" before any fetch, leaves its config byte-identical, and is
+#     recorded in the report. In the same pass a sibling repo that no entry
+#     matches is still fast-forwarded (the positive control for each case).
 #   * A clean linked worktree on its own branch fast-forwards to its upstream.
 #   * The report is valid JSON and carries each repo's drain dry run; the dry
 #     run deletes nothing.
@@ -55,6 +61,34 @@ t_sync_fixture() {
   git config --file "$GIT_CONFIG_GLOBAL" --unset-all hygiene.syncRoots >/dev/null 2>&1
   git config --file "$GIT_CONFIG_GLOBAL" --add hygiene.syncRoots "$SY_ROOT"
   return 0
+}
+
+# t_sync_sibling — a second clone of the fixture's origin at $SY_ROOT/other,
+# for exclusion cases that need a repo no entry matches. Sets SY_OTHER.
+t_sync_sibling() {
+  SY_OTHER="$SY_ROOT/other"
+  git clone -q "$SY_ORIGIN" "$SY_OTHER" 2>/dev/null || return 1
+  git -C "$SY_OTHER" config core.hooksPath "$GG_T_TMPROOT/no-hooks"
+  git -C "$SY_OTHER" remote set-head origin main >/dev/null 2>&1
+}
+
+# t_sync_expect_excluded NAME SOURCE — run sync with SY_REPO excluded and
+# SY_OTHER not: SY_REPO is skipped as excluded by SOURCE, never fetched, its
+# config untouched; SY_OTHER fast-forwards to the new tip.
+t_sync_expect_excluded() {
+  _xtip="$(t_sync_advance)"
+  _xcfg="$(cksum < "$SY_REPO/.git/config")"
+  rm -f "$SY_REPO/.git/FETCH_HEAD"
+  t_sync_expect_skip "$1" "excluded ($2:"
+  [ -e "$SY_REPO/.git/FETCH_HEAD" ] && t_fail "$1: excluded repo was fetched" || t_ok "$1: excluded repo not fetched"
+  [ "$(cksum < "$SY_REPO/.git/config")" = "$_xcfg" ] && t_ok "$1: excluded repo config untouched" \
+    || t_fail "$1: excluded repo config changed"
+  [ "$(git -C "$SY_OTHER" rev-parse HEAD)" = "$_xtip" ] && t_ok "$1: unmatched sibling still fast-forwards" \
+    || { t_fail "$1: unmatched sibling was not fast-forwarded"; sed 's/^/      /' "$sylog" >&2; }
+  if gg_has_python; then
+    "$(gg_python)" -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if any(c["path"]==sys.argv[2] and c["result"]=="skip" and c["reason"].startswith("excluded (") for c in d["checkouts"]) else 1)' \
+      "$report" "$SY_REPO" && t_ok "$1: report records the exclusion" || t_fail "$1: report lacks the exclusion"
+  else t_skip "python absent: exclusion record not parsed"; fi
 }
 
 # t_sync_advance [BRANCH] — push one new commit on BRANCH (main) from the seed;
@@ -95,15 +129,21 @@ t_case_sync() {
   sy_old_gcg="${GIT_CONFIG_GLOBAL-}"
   sy_had_xdg="${XDG_STATE_HOME+x}"
   sy_old_xdg="${XDG_STATE_HOME-}"
+  sy_had_xcfg="${XDG_CONFIG_HOME+x}"
+  sy_old_xcfg="${XDG_CONFIG_HOME-}"
   GIT_CONFIG_GLOBAL="$GG_T_TMPROOT/sync-empty-global"
   : > "$GIT_CONFIG_GLOBAL"
   XDG_STATE_HOME="$GG_T_TMPROOT/sync-state"
-  export GIT_CONFIG_GLOBAL XDG_STATE_HOME
+  XDG_CONFIG_HOME="$GG_T_TMPROOT/sync-config"
+  rm -rf "$XDG_CONFIG_HOME"
+  export GIT_CONFIG_GLOBAL XDG_STATE_HOME XDG_CONFIG_HOME
   t_sync_body
   if [ -n "$sy_had_gcg" ]; then GIT_CONFIG_GLOBAL="$sy_old_gcg"; export GIT_CONFIG_GLOBAL
   else unset GIT_CONFIG_GLOBAL; fi
   if [ -n "$sy_had_xdg" ]; then XDG_STATE_HOME="$sy_old_xdg"; export XDG_STATE_HOME
   else unset XDG_STATE_HOME; fi
+  if [ -n "$sy_had_xcfg" ]; then XDG_CONFIG_HOME="$sy_old_xcfg"; export XDG_CONFIG_HOME
+  else unset XDG_CONFIG_HOME; fi
 }
 
 t_sync_body() {
@@ -163,6 +203,25 @@ t_sync_body() {
     t_sync_expect_skip "skip-worktree entry" "hidden-local-changes"
   t_sync_fixture optout && t_sync_advance >/dev/null && git -C "$SY_REPO" config hygiene.sync false &&
     t_sync_expect_skip "hygiene.sync=false" "opted-out"
+
+  # Host-level excludes: the repo's own config is never written (vigil-system
+  # and other repos this host must not change are excluded this way).
+  t_sync_fixture exclfile && t_sync_sibling || t_fail "fixture exclfile"
+  mkdir -p "$XDG_CONFIG_HOME/git-guard"
+  printf '# p1gen7 owns this one\n\n  %s  \n' "$SY_REPO" > "$XDG_CONFIG_HOME/git-guard/sync.exclude"
+  chmod a-w "$SY_REPO/.git/config"
+  t_sync_expect_excluded "sync.exclude line" "sync.exclude"
+  chmod u+w "$SY_REPO/.git/config"
+  rm -f "$XDG_CONFIG_HOME/git-guard/sync.exclude"
+  t_sync_fixture exclglob && t_sync_sibling || t_fail "fixture exclglob"
+  git config --file "$GIT_CONFIG_GLOBAL" --add hygiene.syncExclude "$SY_ROOT/re*"
+  t_sync_expect_excluded "global hygiene.syncExclude glob" "hygiene.syncExclude"
+  git config --file "$GIT_CONFIG_GLOBAL" --unset-all hygiene.syncExclude
+  t_sync_fixture excllink && t_sync_sibling || t_fail "fixture excllink"
+  ln -s "$SY_ROOT" "$GG_T_TMPROOT/sync-excllink/via-link"
+  git config --file "$GIT_CONFIG_GLOBAL" --add hygiene.syncExclude "$GG_T_TMPROOT/sync-excllink/via-link/repo/"
+  t_sync_expect_excluded "exclude written through a symlink" "hygiene.syncExclude"
+  git config --file "$GIT_CONFIG_GLOBAL" --unset-all hygiene.syncExclude
 
   # A process (not this sync) working inside the tree: services run from
   # checkouts. Linux only: the check reads /proc/<pid>/cwd.
