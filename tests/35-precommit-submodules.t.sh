@@ -191,6 +191,15 @@ EOF
   t_expect_rc 0 "$?" 'dependency deinitialized'
   sm_prepush "$parent" "$sm_log"; sm_expect_allow "$?" 'uninitialized submodule'
   grep -qF "submodule 'dep' is not checked out" "$sm_log"; t_assert $? 'uninitialized submodule is reported'
+  # Why: `git -c gitGuard.precommitSubmodules=refuse push` reaches the hook as
+  # GIT_CONFIG_PARAMETERS, and `git --config-env` / GIT_CONFIG_COUNT as numbered
+  # pairs. The hook clears the repository-locating Git variables before running
+  # providers (#88); clearing these too would drop the caller's refusal and admit
+  # this uninitialized gitlink, which only the validate policy allows.
+  sm_prepush "$parent" "$sm_log" "GIT_CONFIG_PARAMETERS='gitGuard.precommitSubmodules'='refuse'"
+  sm_expect_refuse "$?" 'git -c refuse policy (GIT_CONFIG_PARAMETERS)' 'submodule policy is refuse'
+  sm_prepush "$parent" "$sm_log" GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=gitGuard.precommitSubmodules GIT_CONFIG_VALUE_0=refuse
+  sm_expect_refuse "$?" 'GIT_CONFIG_COUNT refuse policy' 'submodule policy is refuse'
   # Why: files in an uninitialized directory are bytes no repository vouches for.
   printf 'stray\n' > "$parent/dep/stray.txt"
   sm_prepush "$parent" "$sm_log"; sm_expect_refuse "$?" 'stray content in an uninitialized submodule' "'dep' is not initialized but its directory has content"
