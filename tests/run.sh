@@ -152,6 +152,7 @@ t_case_preserve_exemption
 t_case_gate_controls
 t_case_hygiene
 t_case_sync
+t_case_sync_remove
 t_case_windows_ssh_adapter
 t_case_windows_ssh_adapter_install
 t_case_precommit_provider
