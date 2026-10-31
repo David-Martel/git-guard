@@ -565,7 +565,7 @@ foreach ($case in $cases) {
         $limit = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--file', $config, '--get', 'hygiene.maxWorktrees') @{}
         Assert-Actual ($limit.Exit -eq 0 -and $limit.Out.Trim() -ceq $(if ($keep) { '7' } else { '3' })) "$($case.Name): existing numeric choice wins over default"
         $prefix = Invoke-InertNative $env:GG_CONFIG_ACL_GIT @('config', '--file', $config, '--get-all', 'hygiene.exemptLockPrefix') @{}
-        $expectedPrefixes = if ($keep) { @('operator-choice/') } else { @('vigil.operator-release/', 'vigil.fleet-build/') }
+        $expectedPrefixes = if ($keep) { @('operator-choice/') } else { @('vigil.operator-release/', 'vigil.fleet-build/', 'vigil.operator-build/') }
         Assert-Actual ($prefix.Exit -eq 0 -and (($prefix.Out.Trim() -split '\r?\n') -join '|') -ceq ($expectedPrefixes -join '|')) "$($case.Name): existing multi-value choice wins over defaults"
         }
         $defaultBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($config))
