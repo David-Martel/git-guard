@@ -17,17 +17,21 @@
 #                          `git worktree add` when over a limit. Always exits 0.
 #   report                 print counts vs limits (exit 0).
 #   check                  same counts, exit 1 when any limit is exceeded.
-#   drain [--dry-run|--apply] [--allow-ignored]
+#   drain [--dry-run|--apply] [--allow-ignored] [--unattended]
 #                          list (default) or remove merged, clean, unlocked
 #                          worktrees and stale branches. Unique work is bundled,
-#                          never deleted.
+#                          never deleted. --unattended (what sync uses) adds
+#                          a custody grant per item, a one-day age floor for
+#                          worktrees AND branches, and refuses --allow-ignored.
 #   defaults [--dry-run]   set the recommended GLOBAL git config, only for keys
 #                          that are unset (install.sh calls this).
 #   sync [--dry-run] [--no-drain]
 #                          fetch every repo under hygiene.syncRoots (bounded),
 #                          fast-forward each checkout that is provably safe to
 #                          move, write the drain dry runs to one report file.
-#                          Never deletes. Prints nothing on stdout.
+#                          Deletes nothing unless hygiene.syncRemove=true is
+#                          set globally; then it runs `drain --apply
+#                          --unattended`. Prints nothing on stdout.
 #   sync install-timer | uninstall-timer
 #                          a systemd --user timer running sync every 30 minutes.
 #
@@ -53,6 +57,13 @@
 #   hygiene.syncRoots          multi-valued directories sync walks, each plus
 #                              its direct children (~/dev/repos, ~/.claude/repos)
 #   hygiene.syncFetchTimeout   seconds per remote fetch in sync (60)
+#   hygiene.syncRemove         true, global/system only: sync removes what
+#                              `drain --unattended` proves integrated AND
+#                              ~/.config/git-guard/custody.grants grants
+#                              (default off; a repo's false opts it out)
+#   hygiene.custodyBus         false, global only: grant without the agent-bus
+#                              claims check (default: the check is required)
+#   hygiene.custodyBusCommand  global only: the agent-bus CLI to ask (agent-bus)
 #   hygiene.syncDrainTimeout   seconds per repo for the drain dry run in sync (300)
 # Environment:
 #   GIT_GUARD=0                skip all git-guard hooks (existing convention)
@@ -61,6 +72,10 @@
 #   GIT_GUARD_SYNC_UNIT_DIR, GIT_GUARD_SYNC_SYSTEMCTL
 #                              where install-timer writes units and which
 #                              systemctl it calls (tests stub both)
+#   GIT_GUARD_CUSTODY_BUS, GIT_GUARD_AGENT_BUS, GIT_GUARD_DRAIN_RECORDS
+#                              set by sync for its drain subprocess: 0 skips
+#                              the claims check, the agent-bus CLI, and a file
+#                              drain appends one record per removal to
 #
 # POSIX sh, no dependencies beyond git; `gh` is optional and only consulted when
 # hygiene.maxOpenPRs is set. Any failure to measure a dimension skips it: this
@@ -75,6 +90,8 @@ HYG_DEFAULT_MIN_AGE=1440
 # PATH by default, so messages print the full path.
 HYG_CLI="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)/bin/git-guard"
 HYG_TMP=""
+HYG_LAST_BUNDLE=""
+HYG_CUSTODY_REPO=""
 # Policy refusal from pre-push. Distinct from 1/2 so that a crash (bash-as-sh
 # exits 1 on a `set -u` abort, dash exits 2) can never look like a refusal.
 HYG_REFUSE=77
@@ -577,19 +594,82 @@ hyg_delete_branch() {
   git update-ref -d "refs/heads/$1" "$2" >/dev/null 2>&1 || return 1
   git config --remove-section "branch.$1" >/dev/null 2>&1 || :
   [ -z "$_b" ] || echo "      (bundle kept: $_b)"
+  HYG_LAST_BUNDLE="$_b"
   return 0
 }
 
+# hyg_custody KIND PATH BRANCH — prints why removing this item is or is not
+# granted; true only when it is. Owner rule (2026-10-31): unattended removal
+# never touches another lane's work unless custody is proven. Proof is
+#   1. a line of ${XDG_CONFIG_HOME:-~/.config}/git-guard/custody.grants,
+#      <repo path or glob> TAB <branch glob> (# comments, ~ expanded), matching
+#      this repository ($HYG_CUSTODY_REPO, physical) and the branch ("(detached)"
+#      for a detached worktree); and
+#   2. unless GIT_GUARD_CUSTODY_BUS=0, no agent-bus claim of any status whose
+#      text names the branch or the path. A missing CLI, a failed or bounded-out
+#      read, or output that is not a claims listing keeps the item.
+# The claims listing is read once per drain run.
+hyg_custody() {
+  _cp="$2"; _cb="${3:-}"; [ -n "$_cb" ] || _cb="(detached)"
+  _cg="${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/custody.grants"
+  [ -r "$_cg" ] || { printf 'no custody.grants file'; return 1; }
+  _cgrant=""
+  while IFS='	' read -r _crp _cbp _crest || [ -n "$_crp" ]; do
+    case "$_crp" in ''|\#*) continue ;; \~) _crp="$HOME" ;; \~/*) _crp="$HOME/${_crp#??}" ;; esac
+    [ -n "$_cbp" ] || continue
+    _crp="${_crp%/}"
+    # shellcheck disable=SC2254  # both fields are globs on purpose
+    case "$HYG_CUSTODY_REPO" in $_crp) case "$_cb" in $_cbp) _cgrant="$_crp $_cbp"; break ;; esac ;; esac
+  done < "$_cg"
+  [ -n "$_cgrant" ] || { printf 'not granted in custody.grants'; return 1; }
+  if [ "${GIT_GUARD_CUSTODY_BUS:-1}" != "0" ]; then
+    if [ ! -f "$HYG_TMP/claims" ]; then
+      _cbus="${GIT_GUARD_AGENT_BUS:-agent-bus}"
+      command -v "$_cbus" >/dev/null 2>&1 || { printf 'agent-bus CLI not found (hygiene.custodyBus=false grants without the claims check)'; return 1; }
+      if ! hyg_sync_bounded 20 "$_cbus" claims --encoding json </dev/null > "$HYG_TMP/claims.part" 2>/dev/null ||
+         ! grep -q '"claims"' "$HYG_TMP/claims.part"; then
+        rm -f "$HYG_TMP/claims.part"; printf 'agent-bus claims unreadable'; return 1
+      fi
+      mv -f "$HYG_TMP/claims.part" "$HYG_TMP/claims"
+    fi
+    for _cn in "$_cb" "$_cp"; do
+      case "$_cn" in ''|-|'(detached)') continue ;; esac
+      if grep -Fq -- "$_cn" "$HYG_TMP/claims"; then printf 'an agent-bus claim names %s' "$_cn"; return 1; fi
+    done
+  fi
+  printf 'granted (%s)' "$_cgrant"
+  return 0
+}
+
+# hyg_agent_of TIP — the tip commit's Agent: trailer(s), or "none" (human).
+hyg_agent_of() {
+  _ag="$(git log -1 --format='%(trailers:key=Agent,valueonly,separator=%x2C)' "$1" 2>/dev/null | tr -d '\n')"
+  printf '%s' "${_ag:-none}"
+}
+
+# hyg_drain_record KIND PATH BRANCH TIP HOW BUNDLE AGENT CUSTODY — one removal
+# for sync's manifest, when GIT_GUARD_DRAIN_RECORDS names a file.
+hyg_drain_record() {
+  [ -n "${GIT_GUARD_DRAIN_RECORDS:-}" ] || return 0
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "${2:--}" "${3:--}" "$4" "$5" "${6:--}" "${7:--}" "${8:--}" >> "$GIT_GUARD_DRAIN_RECORDS"
+}
+
 hyg_drain() {
-  _apply=0; _allow_ignored=0
+  _apply=0; _allow_ignored=0; _unatt=0
   for _a in "$@"; do
     case "$_a" in
       --apply) _apply=1 ;;
       --dry-run) _apply=0 ;;
       --allow-ignored) _allow_ignored=1 ;;
+      --unattended) _unatt=1 ;;
       *) hyg_say "git-guard hygiene drain: unknown argument '$_a'"; return 2 ;;
     esac
   done
+  # Unattended removal keeps ignored data (venvs, build output) out of reach:
+  # nothing is ever archived, so a tree that holds any is kept.
+  if [ "$_unatt" = "1" ] && [ "$_allow_ignored" = "1" ]; then
+    hyg_say "git-guard hygiene drain: --unattended refuses --allow-ignored; nothing done"; return 2
+  fi
   hyg_measure "" "" 0
   [ -n "$HYG_TMP" ] || { hyg_say "git-guard hygiene drain: cannot create a temp dir; nothing done"; return 1; }
   # A scan that cannot see every worktree's HEAD and rebase/bisect state
@@ -602,8 +682,12 @@ hyg_drain() {
     return 1
   fi
   _min_age="$(hyg_int hygiene.drainMinAgeMinutes "$HYG_DEFAULT_MIN_AGE")"
+  # A repository's own config must not shorten the unattended age guard.
+  if [ "$_unatt" = "1" ] && [ "$_min_age" -lt "$HYG_DEFAULT_MIN_AGE" ]; then _min_age="$HYG_DEFAULT_MIN_AGE"; fi
+  _cdir="$(git rev-parse --git-common-dir 2>/dev/null)" && _cdir="$(cd "$_cdir" 2>/dev/null && pwd -P)" || _cdir=""
+  HYG_CUSTODY_REPO="$(cd "$_cdir/.." 2>/dev/null && pwd -P)"
   hyg_test_pause start
-  echo "git-guard hygiene drain ($([ "$_apply" = "1" ] && echo apply || echo dry-run)): $(git rev-parse --show-toplevel 2>/dev/null)"
+  echo "git-guard hygiene drain ($([ "$_apply" = "1" ] && echo apply || echo dry-run)$([ "$_unatt" = "1" ] && echo ", unattended")): $(git rev-parse --show-toplevel 2>/dev/null)"
   echo "  (merge state is judged from refs as of the last fetch; run git fetch --prune first)"
   [ -n "$HYG_BASE" ] || echo "  base ref unknown (no <remote>/HEAD, no hygiene.baseRef): nothing is provably merged; skipping."
 
@@ -644,7 +728,14 @@ hyg_drain() {
       if hyg_stashed "$_br"; then echo "  keep   $_path  (a stash was made on $_br)"; continue; fi
       if hyg_remote_moved "$_br" "$HYG_BASE"; then echo "  keep   $_path  (upstream of $_br moved after the merge)"; continue; fi
     fi
-    if [ "$_apply" != "1" ]; then echo "  would remove $_path  (${_br:-detached}, $_how)"; continue; fi
+    _who=""; _cust=""; _agent="$(hyg_agent_of "$_head")"
+    if [ "$_unatt" = "1" ]; then
+      if ! _cust="$(hyg_custody worktree "$_path" "$_br")"; then
+        echo "  keep   $_path  (custody: $_cust; agent: $_agent)"; continue
+      fi
+      _who="; agent: $_agent; custody: $_cust"
+    fi
+    if [ "$_apply" != "1" ]; then echo "  would remove $_path  (${_br:-detached}, $_how$_who)"; continue; fi
     # Not an ancestor of BASE: preserve BEFORE removing anything, and stop
     # this item entirely if preservation fails.
     _bundle=""
@@ -671,9 +762,14 @@ hyg_drain() {
     if ! git worktree remove "$_path" >/dev/null 2>&1; then
       echo "  keep   $_path  (git worktree remove refused)"; continue
     fi
-    echo "  removed $_path  (${_br:-detached}, $_how)${_bundle:+; bundle: $_bundle}"
+    echo "  removed $_path  (${_br:-detached}, $_how$_who)${_bundle:+; bundle: $_bundle}"
+    hyg_drain_record worktree "$_path" "$_br" "$_head" "$_how" "$_bundle" "$_agent" "$_cust"
     if [ -n "$_br" ]; then
-      hyg_delete_branch "$_br" "$_head" "$_how" "$_bundle" || echo "      branch $_br kept (delete refused)"
+      if hyg_delete_branch "$_br" "$_head" "$_how" "$_bundle"; then
+        hyg_drain_record branch "-" "$_br" "$_head" "$_how" "$_bundle" "$_agent" "$_cust"
+      else
+        echo "      branch $_br kept (delete refused)"
+      fi
     fi
   done < "$HYG_TMP/worktrees"
 
@@ -695,11 +791,26 @@ hyg_drain() {
     fi
     if hyg_stashed "$_br"; then echo "  keep   branch $_br  (a stash was made on it)"; continue; fi
     if hyg_remote_moved "$_br" "$HYG_BASE"; then echo "  keep   branch $_br  (upstream moved after the merge)"; continue; fi
+    _who=""; _cust=""; _agent="$(hyg_agent_of "$_tip")"
+    if [ "$_unatt" = "1" ]; then
+      # A branch has no HEAD to age, so its own reflog is the clock; a branch
+      # without one has an unknown age and is kept.
+      _rl="$_cdir/logs/refs/heads/$_br"
+      if [ -z "$_cdir" ] || [ ! -f "$_rl" ]; then echo "  keep   branch $_br  (age unknown: no reflog; agent: $_agent)"; continue; fi
+      _recent="$(find "$_rl" -mmin -"$_min_age" 2>/dev/null)" || _recent="unknown"
+      if [ -n "$_recent" ]; then echo "  keep   branch $_br  (moved within $_min_age minutes; agent: $_agent)"; continue; fi
+      if ! _cust="$(hyg_custody branch "-" "$_br")"; then
+        echo "  keep   branch $_br  (custody: $_cust; agent: $_agent)"; continue
+      fi
+      _who="; agent: $_agent; custody: $_cust"
+    fi
     if [ "$_apply" = "1" ]; then
-      if hyg_delete_branch "$_br" "$_tip" "$_how"; then echo "  removed branch $_br  ($_how)"
+      if hyg_delete_branch "$_br" "$_tip" "$_how"; then
+        echo "  removed branch $_br  ($_how$_who)"
+        hyg_drain_record branch "-" "$_br" "$_tip" "$_how" "$HYG_LAST_BUNDLE" "$_agent" "$_cust"
       else echo "  keep   branch $_br  (PRESERVE FAILED or branch moved; nothing deleted)"; fi
     else
-      echo "  would remove branch $_br  ($_how)"
+      echo "  would remove branch $_br  ($_how$_who)"
     fi
   done < "$HYG_TMP/stale"
   [ "$_apply" = "1" ] || echo "  (dry run: nothing changed; rerun with --apply)"
@@ -916,8 +1027,16 @@ hyg_sync_repo() {
   done < "$HYG_TMP/checkouts"
   if [ "$HYG_SYNC_DRAIN" = "1" ]; then
     _dto="$(cd "$1" && hyg_int hygiene.syncDrainTimeout "$HYG_SYNC_DEFAULT_DRAIN_TIMEOUT")"
-    ( cd "$1" && hyg_sync_bounded "$_dto" sh "$HYG_SELF" drain --dry-run ) </dev/null > "$HYG_TMP/drain" 2>&1
+    # Removal needs the global opt-in; a repository can only opt itself out.
+    _dmode="--dry-run"
+    if [ "$HYG_SYNC_REMOVE" = "1" ] && [ "$(git -C "$1" config --bool --get hygiene.syncRemove 2>/dev/null)" = "true" ]; then
+      if [ "$HYG_SYNC_DRY" = "1" ]; then _dmode="--dry-run --unattended"; else _dmode="--apply --unattended"; fi
+    fi
+    : > "$HYG_TMP/removed"
+    # shellcheck disable=SC2086  # _dmode is one or two flags
+    ( cd "$1" && GIT_GUARD_DRAIN_RECORDS="$HYG_TMP/removed" hyg_sync_bounded "$_dto" sh "$HYG_SELF" drain $_dmode ) </dev/null > "$HYG_TMP/drain" 2>&1
     _drc=$?
+    awk -v r="$1" '{ printf "R\t%s\t%s\n", r, $0 }' "$HYG_TMP/removed" >> "$HYG_SYNC_REC"
     [ "$_drc" = "124" ] && echo "  (drain dry run timed out after ${_dto}s: hygiene.syncDrainTimeout)" >> "$HYG_TMP/drain"
     awk -v r="$1" -v rc="$_drc" '{ printf "D\t%s\t%s\t%s\n", r, rc, $0 } END { if (NR == 0) printf "D\t%s\t%s\t\n", r, rc }' "$HYG_TMP/drain" >> "$HYG_SYNC_REC"
   fi
@@ -944,6 +1063,7 @@ hyg_sync_report() {
     function opt(s) { return (s == "-" ? "null" : esc(s)) }
     $1 == "C" { c[++nc] = sprintf("{\"repo\":%s,\"path\":%s,\"branch\":%s,\"result\":%s,\"reason\":%s,\"before\":%s,\"after\":%s}", esc($2), esc($3), opt($4), esc($5), esc($6), opt($7), opt($8)) }
     $1 == "F" { f[++nf] = sprintf("{\"repo\":%s,\"remote\":%s,\"result\":%s}", esc($2), esc($3), esc($4)) }
+    $1 == "R" { rm[++nr] = sprintf("{\"repo\":%s,\"kind\":%s,\"path\":%s,\"branch\":%s,\"tip\":%s,\"how\":%s,\"bundle\":%s,\"agent\":%s,\"custody\":%s}", esc($2), esc($3), opt($4), opt($5), esc($6), esc($7), opt($8), esc($9), esc($10)) }
     $1 == "D" {
       if (!($2 in di)) { di[$2] = ++nd; dr[nd] = $2; dx[nd] = $3; dl[nd] = "" }
       k = di[$2]; line = $0; sub(/^D\t[^\t]*\t[^\t]*\t/, "", line)
@@ -954,6 +1074,7 @@ hyg_sync_report() {
       n = split(roots, rr, "\n"); s = ""; for (i = 1; i <= n; i++) if (rr[i] != "") { printf "%s%s", s, esc(rr[i]); s = "," }
       printf "],\"checkouts\":["; for (i = 1; i <= nc; i++) printf "%s%s", (i > 1 ? "," : ""), c[i]
       printf "],\"fetches\":["; for (i = 1; i <= nf; i++) printf "%s%s", (i > 1 ? "," : ""), f[i]
+      printf "],\"removals\":["; for (i = 1; i <= nr; i++) printf "%s%s", (i > 1 ? "," : ""), rm[i]
       printf "],\"drain\":["; for (i = 1; i <= nd; i++) printf "%s{\"repo\":%s,\"exit\":%d,\"lines\":[%s]}", (i > 1 ? "," : ""), esc(dr[i]), dx[i], dl[i]
       printf "]}\n"
     }' "$HYG_SYNC_REC" > "$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"
@@ -996,6 +1117,21 @@ hyg_sync_run() {
   HYG_SYNC_REC="$HYG_TMP/records"; : > "$HYG_SYNC_REC"
   HYG_SYNC_ROOTS="$(hyg_sync_roots)"
   hyg_sync_excludes > "$HYG_TMP/excludes"
+  # Removal settings come from the global/system config only (this runs from
+  # /); they reach the drain subprocess as environment, never as git config
+  # that a repository could override.
+  HYG_SYNC_REMOVE=0
+  [ "$(git config --bool --get hygiene.syncRemove 2>/dev/null)" = "true" ] && HYG_SYNC_REMOVE=1
+  if [ -z "${GIT_GUARD_CUSTODY_BUS:-}" ]; then
+    GIT_GUARD_CUSTODY_BUS=1
+    [ "$(git config --bool --get hygiene.custodyBus 2>/dev/null)" = "false" ] && GIT_GUARD_CUSTODY_BUS=0
+  fi
+  if [ -z "${GIT_GUARD_AGENT_BUS:-}" ]; then
+    GIT_GUARD_AGENT_BUS="$(git config --get hygiene.custodyBusCommand 2>/dev/null || true)"
+    [ -n "$GIT_GUARD_AGENT_BUS" ] || GIT_GUARD_AGENT_BUS=agent-bus
+    case "$GIT_GUARD_AGENT_BUS" in \~/*) GIT_GUARD_AGENT_BUS="$HOME/${GIT_GUARD_AGENT_BUS#??}" ;; esac
+  fi
+  export GIT_GUARD_CUSTODY_BUS GIT_GUARD_AGENT_BUS
   printf '%s\n' "$HYG_SYNC_ROOTS" | while IFS= read -r _root; do
     [ -d "$_root" ] || continue
     for _d in "$_root" "$_root"/*; do
@@ -1005,7 +1141,14 @@ hyg_sync_run() {
   done | awk 'NF && !seen[$0]++' > "$HYG_TMP/repos"
   while IFS= read -r _repo; do hyg_sync_repo "$_repo"; done < "$HYG_TMP/repos"
   hyg_sync_report "$_state/sync-report.json" || hyg_say "git-guard sync: could not write $_state/sync-report.json"
-  hyg_say "git-guard sync: $(awk -F '\t' '$1 == "C" { n[$5]++ } END { printf "%d ff, %d would-ff, %d current, %d skip", n["ff"], n["would-ff"], n["current"], n["skip"] }' "$HYG_SYNC_REC") across $(grep -c . "$HYG_TMP/repos" || true) repos; report $_state/sync-report.json"
+  # The report is replaced every pass; removals also go to an append-only
+  # manifest beside it, so what was removed and where its bundle is survive.
+  awk -F '\t' -v host="$(hostname 2>/dev/null || uname -n)" -v at="$(hyg_sync_now)" '
+    function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/[[:cntrl:]]/, " ", s); return "\"" s "\"" }
+    function opt(s) { return (s == "-" ? "null" : esc(s)) }
+    $1 == "R" { printf "{\"at\":%s,\"host\":%s,\"repo\":%s,\"kind\":%s,\"path\":%s,\"branch\":%s,\"tip\":%s,\"how\":%s,\"bundle\":%s,\"agent\":%s,\"custody\":%s}\n", esc(at), esc(host), esc($2), esc($3), opt($4), opt($5), esc($6), esc($7), opt($8), esc($9), esc($10) }
+  ' "$HYG_SYNC_REC" >> "$_state/sync-removals.jsonl" || hyg_say "git-guard sync: could not append $_state/sync-removals.jsonl"
+  hyg_say "git-guard sync: $(awk -F '\t' '$1 == "C" { n[$5]++ } $1 == "R" { n["rm"]++ } END { printf "%d ff, %d would-ff, %d current, %d skip, %d removed", n["ff"], n["would-ff"], n["current"], n["skip"], n["rm"] }' "$HYG_SYNC_REC") across $(grep -c . "$HYG_TMP/repos" || true) repos; report $_state/sync-report.json"
   return 0
 }
 
