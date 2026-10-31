@@ -15,7 +15,8 @@
 #     an integrated worktree (ancestor), a squash-merged worktree (with a
 #     verified bundle) and a merged stale branch; the report and the
 #     append-only sync-removals.jsonl manifest record each one with its Agent
-#     trailer, custody reason and bundle. Each refusal below starts from this
+#     trailer, custody reason and bundle. The ancestor gets no bundle (its
+#     commits are on the remote); the squash-merged tip does (owner, 10-31). Each refusal below starts from this
 #     same fixture, so a refusal that never fires cannot pass by accident.
 #   * Default off: without hygiene.syncRemove, nothing is removed.
 #   * sync --dry-run with removal on removes nothing.
@@ -129,6 +130,11 @@ t_sync_remove_body() {
   if [ -n "$sqb" ] && [ -f "$sqb.sha256" ] && git -C "$SY_REPO" bundle verify -q "$sqb" >/dev/null 2>&1; then
     t_ok "squash-merged tip preserved as a verified bundle with its sha256"
   else t_fail "no verified bundle for the squash-merged tip"; fi
+  # Owner decision (2026-10-31): "bundle first" covers only commits no remote
+  # ref reaches. An ancestor of origin/main is already on the remote, so it is
+  # removed without a bundle; the squash-merged tip above is not, so it is.
+  ls "$XDG_STATE_HOME"/git-guard/preserve/repo/done-*.bundle >/dev/null 2>&1 \
+    && t_fail "ancestor worktree was bundled" || t_ok "ancestor worktree removed without a bundle"
   if gg_has_python; then
     "$(gg_python)" -c '
 import json, sys
@@ -137,6 +143,7 @@ r = {(x["kind"], x["branch"]): x for x in d["removals"]}
 ok = (("worktree", "sq") in r and r[("worktree", "sq")]["bundle"] and r[("worktree", "sq")]["agent"] == "claude"
       and r[("worktree", "sq")]["custody"].startswith("granted") and ("branch", "old") in r and ("worktree", "done") in r)
 m = [json.loads(l) for l in open(sys.argv[2])]
+ok = ok and r[("worktree", "done")]["bundle"] is None and r[("worktree", "done")]["how"] == "ancestor"
 ok = ok and any(x["kind"] == "worktree" and x["branch"] == "sq" and x["bundle"] for x in m)
 sys.exit(0 if ok else 1)' "$report" "$manifest" \
       && t_ok "report removals and the manifest record each removal with agent, custody and bundle" \
