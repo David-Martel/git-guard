@@ -250,6 +250,31 @@ t_sync_body() {
     [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$sy_before" ] && t_ok "unreadable sync.exclude: HEAD not moved" \
       || t_fail "unreadable sync.exclude: a protected checkout moved"
   else t_skip "running as root: mode 000 is still readable"; fi
+  # The other ways a list can exist yet not be read, each from a behind checkout.
+  # t_sync_expect_refused NAME: sync must exit non-zero and leave HEAD alone.
+  t_sync_expect_refused() {
+    sy_before="$(git -C "$SY_REPO" rev-parse HEAD)"
+    t_sync_run "$sylog"; rc=$?
+    [ "$rc" -ne 0 ] && t_ok "$1: sync refuses" || t_fail "$1: sync exited 0"
+    [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$sy_before" ] && t_ok "$1: HEAD not moved" \
+      || t_fail "$1: a protected checkout moved"
+  }
+  sy_xf="$XDG_CONFIG_HOME/git-guard/sync.exclude"
+  t_sync_fixture excldangle && t_sync_advance >/dev/null || t_fail "fixture excldangle"
+  ln -s "$GG_T_TMPROOT/no-such-volume/sync.exclude" "$sy_xf"
+  t_sync_expect_refused "dangling sync.exclude symlink"
+  rm -f "$sy_xf"
+  t_sync_fixture excldir && t_sync_advance >/dev/null || t_fail "fixture excldir"
+  mkdir "$sy_xf"
+  t_sync_expect_refused "sync.exclude is a directory"
+  rmdir "$sy_xf"
+  if [ "$(id -u)" != 0 ]; then
+    t_sync_fixture exclparent && t_sync_advance >/dev/null || t_fail "fixture exclparent"
+    printf '%s\n' "$SY_REPO" > "$sy_xf"
+    chmod 000 "$XDG_CONFIG_HOME/git-guard"
+    t_sync_expect_refused "unsearchable sync.exclude directory"
+    chmod 700 "$XDG_CONFIG_HOME/git-guard"; rm -f "$sy_xf"
+  else t_skip "running as root: an unsearchable directory is still searched"; fi
   # Excluding the root covers everything beneath it.
   t_sync_fixture exclroot && t_sync_advance >/dev/null || t_fail "fixture exclroot"
   git config --file "$GIT_CONFIG_GLOBAL" --add hygiene.syncExclude /

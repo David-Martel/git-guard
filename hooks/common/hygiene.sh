@@ -784,6 +784,7 @@ hyg_sync_excludes() {
       [ -n "$_xr" ] && [ "$_xr" != "$_xp" ] && printf '%s\t%s\n' "$_xs" "$_xr"
     fi
   done
+  return 0  # the loop's last test is not a failure; the caller checks the redirect
 }
 
 # hyg_sync_ancestors — this process and its ancestors (Linux /proc), space
@@ -996,13 +997,23 @@ hyg_sync_run() {
   HYG_SYNC_STARTED="$(hyg_sync_now)"
   HYG_SYNC_REC="$HYG_TMP/records"; : > "$HYG_SYNC_REC"
   HYG_SYNC_ROOTS="$(hyg_sync_roots)"
-  # An exclusion list that cannot be read must not read as an empty one.
+  # An exclusion list that cannot be read must not read as an empty one. Only
+  # "no such file" means absent: a dangling link, a directory, or a path that
+  # cannot be searched is a list this host may rely on.
   _xf="${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"
-  if [ -e "$_xf" ] && [ ! -r "$_xf" ]; then
+  _xe="$(LC_ALL=C ls -d "$_xf" 2>&1 >/dev/null)"
+  case "$_xe" in
+    '') cat "$_xf" >/dev/null 2>&1 || _xe=unreadable ;;
+    *"No such file or directory"*) _xe="" ;;
+  esac
+  if [ -n "$_xe" ]; then
     echo "git-guard sync: cannot read $_xf; refusing to run" >&2
     return 1
   fi
-  hyg_sync_excludes > "$HYG_TMP/excludes"
+  hyg_sync_excludes > "$HYG_TMP/excludes" || {
+    echo "git-guard sync: could not build the exclusion list; refusing to run" >&2
+    return 1
+  }
   printf '%s\n' "$HYG_SYNC_ROOTS" | while IFS= read -r _root; do
     [ -d "$_root" ] || continue
     for _d in "$_root" "$_root"/*; do
