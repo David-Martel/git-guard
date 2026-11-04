@@ -4,7 +4,8 @@
 
 git-guard is a small, dependency-light set of POSIX-`sh` git hooks that compose a
 *safety* layer (secret scanning, reserved-filename hygiene, landed-commit
-feedback, branch & partial-staging warnings) with a *language-gated quality* gate
+feedback, branch & partial-staging warnings, backlog limits and an optional
+fast-forward-only sync of clean checkouts) with a *language-gated quality* gate
 (ast-grep structural rules, `ruff`, `shellcheck`, JSON validation, …). It is
 designed to run **globally across dozens of repos at once** without blocking
 work-in-progress, by following a strict anti-brick policy: **block only on real,
@@ -118,6 +119,19 @@ blocked. `git-guard hygiene report` shows the counts, and
 bundling anything unique first. `GIT_GUARD_HYGIENE=warn|off` softens it. See
 [`docs/QA_TOOLING.md` §12](docs/QA_TOOLING.md#12-backlog-hygiene-limits).
 
+`git-guard sync` (alias of `hygiene sync`) keeps checkouts current so that
+drain has less to judge. It walks `hygiene.syncRoots` (default `~/dev/repos`
+and `~/.claude/repos`), fetches each repository with a bound and no prompts,
+and fast-forwards a checkout only when it is on its default branch (a primary)
+or its own branch (a linked worktree), has nothing ahead, is clean including
+untracked files, has no hidden index entries, no operation in progress, no
+`index.lock`, and no other process working inside it. Everything else is a
+logged skip, and nothing is ever deleted. Each pass writes every repository's
+`drain --dry-run` to `~/.local/state/git-guard/sync-report.json`.
+`git-guard sync install-timer` runs it every 30 minutes under systemd
+`--user`; `git config hygiene.sync false` keeps a repository out. See
+[§12](docs/QA_TOOLING.md#sync-fast-forward-clean-checkouts).
+
 ### Fleet version minimums
 
 `git-guard versions` delegates to the canonical `vigil-utils` checker and policy;
@@ -224,6 +238,8 @@ git-guard install    materialize + install a versioned release (delegates to ins
 git-guard update      --to <tag>  re-point the installed `current` release at another tag (atomic)
 git-guard uninstall   remove hooks (delegates to install.sh --uninstall)
 git-guard hygiene     backlog limits: report | check | drain [--dry-run|--apply] | defaults
+git-guard sync        fast-forward clean checkouts under hygiene.syncRoots + drain report:
+                      [--dry-run] [--no-drain] | install-timer | uninstall-timer
 ```
 
 ## Per-repo overrides

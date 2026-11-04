@@ -21,6 +21,9 @@
 #   hygiene    backlog limits for the current repo: report | check |
 #              drain [--dry-run|--apply] [--allow-ignored] | defaults [--dry-run]
 #              (docs/QA_TOOLING.md §12; pre-push refuses NEW branches over limit)
+#              | sync [--dry-run] [--no-drain] | sync install-timer|uninstall-timer
+#   sync       alias of `hygiene sync`: fast-forward clean checkouts under
+#              hygiene.syncRoots and write the drain report (§12)
 #   help       this message
 #
 # No machine-specific paths: everything resolves relative to this script.
@@ -245,5 +248,6 @@ case "${1:-help}" in
   version|--version|-v) gg_version ;;
   versions)   shift; sh "$GG_ENGINE/fleet_versions.sh" "$@" ;;
   hygiene)    shift; sh "$GG_ENGINE/hygiene.sh" "${@:-report}" ;;
+  sync)       shift; sh "$GG_ENGINE/hygiene.sh" sync "$@" ;;
   help|--help|-h|*) cmd_help ;;
 esac
