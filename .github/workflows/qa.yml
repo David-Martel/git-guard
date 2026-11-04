@@ -58,10 +58,29 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Verify private rootless Docker capability
+      # Fail closed unless the engine is the dedicated, private, resource-bounded one: a
+      # non-root account named for the role, its own rootless socket and data directory,
+      # cgroup v2, and finite memory, CPU and PID ceilings on that account's user slice
+      # (the engine and every container it starts live under it).
+      - name: Verify private rootless Docker engine and resource boundary
         run: |
-          test "$(id -u)" != 0
+          set -eu
+          uid=$(id -u)
+          test "$uid" != 0
+          test "$(id -un)" = ci-gitguard
+          test "$DOCKER_HOST" = "unix:///run/user/$uid/docker.sock"
+          test "$(stat -c %U "/run/user/$uid/docker.sock")" = ci-gitguard
           docker info --format '{{.SecurityOptions}}' | grep -q rootless
+          test "$(docker info --format '{{.DockerRootDir}}')" = "$HOME/.local/share/docker"
+          test "$(docker info --format '{{.CgroupVersion}}')" = 2
+          cg=$(sed -n 's/^0:://p' /proc/self/cgroup)
+          case "$cg" in /user.slice/user-"$uid".slice/*) ;; *) echo "runner is not under its user slice: $cg" >&2; exit 1 ;; esac
+          slice="/sys/fs/cgroup/user.slice/user-${uid}.slice"
+          mem=$(cat "$slice/memory.max"); cpu=$(cut -d' ' -f1 "$slice/cpu.max"); pids=$(cat "$slice/pids.max")
+          echo "slice ceilings: memory=$mem cpu=$cpu pids=$pids"
+          for v in "$mem" "$cpu" "$pids"; do test "$v" != max; done
+          test "$mem" -le 17179869184
+          test "$pids" -le 32768
           docker version --format 'engine {{.Server.Version}}'
 
       - name: Build git-guard QA image
@@ -76,7 +95,7 @@ jobs:
           context=$(mktemp -d)
           trap 'rm -rf -- "$context"' EXIT
           git archive "$source" | tar -x -C "$context"
-          docker build -t "$tag" \
+          docker build --memory=2g -t "$tag" \
             --label "io.vigil.gitguard.source=$source" \
             --label "io.vigil.gitguard.run-id=$GITHUB_RUN_ID" \
             --label "io.vigil.gitguard.run-attempt=$GITHUB_RUN_ATTEMPT" \
@@ -87,7 +106,7 @@ jobs:
 
       - name: Versions (in image)
         run: |
-          docker run --rm --entrypoint sh "$GIT_GUARD_CI_IMAGE" -c '
+          docker run --rm --memory=2g --pids-limit=1024 --cpus=2 --entrypoint sh "$GIT_GUARD_CI_IMAGE" -c '
             set -eu
             for tool in git ast-grep shellcheck jq ruff python3 ssh-keygen; do
               command -v "$tool" >/dev/null
@@ -101,22 +120,22 @@ jobs:
             python3 --version'
 
       - name: git-guard doctor (in image)
-        run: docker run --rm --entrypoint git-guard "$GIT_GUARD_CI_IMAGE" doctor
+        run: docker run --rm --memory=2g --pids-limit=1024 --cpus=2 --entrypoint git-guard "$GIT_GUARD_CI_IMAGE" doctor
 
       - name: git-guard rule manifest (in image)
-        run: docker run --rm --entrypoint git-guard "$GIT_GUARD_CI_IMAGE" rules
+        run: docker run --rm --memory=2g --pids-limit=1024 --cpus=2 --entrypoint git-guard "$GIT_GUARD_CI_IMAGE" rules
 
       - name: git-guard verify — BLOCK trio fires, clean commit passes (in image)
-        run: docker run --rm "$GIT_GUARD_CI_IMAGE" verify
+        run: docker run --rm --memory=2g --pids-limit=1024 --cpus=2 "$GIT_GUARD_CI_IMAGE" verify
 
       # CI=true turns a missing ssh-keygen into a FAILURE instead of a skip, so
       # the identity suite's controls cannot silently stop running.
       - name: git-guard test — comprehensive validation suite (in image)
-        run: docker run --rm -e CI=true --entrypoint git-guard "$GIT_GUARD_CI_IMAGE" test
+        run: docker run --rm --memory=2g --pids-limit=1024 --cpus=2 -e CI=true --entrypoint git-guard "$GIT_GUARD_CI_IMAGE" test
 
       - name: validate bundled example rules (in image)
         run: |
-          docker run --rm --entrypoint sh "$GIT_GUARD_CI_IMAGE" -c '
+          docker run --rm --memory=2g --pids-limit=1024 --cpus=2 --entrypoint sh "$GIT_GUARD_CI_IMAGE" -c '
             cd /opt/git-guard
             fail=0
             for f in $(find rules-examples -name "*.yml"); do
