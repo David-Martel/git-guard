@@ -75,6 +75,13 @@ jobs:
           test "$(docker info --format '{{.CgroupVersion}}')" = 2
           cg=$(sed -n 's/^0:://p' /proc/self/cgroup)
           case "$cg" in /user.slice/user-"$uid".slice/*) ;; *) echo "runner is not under its user slice: $cg" >&2; exit 1 ;; esac
+          # The daemon must sit under the same slice, or its build workers would escape the ceilings.
+          dpids=$(pgrep -u "$uid" -x dockerd)
+          test -n "$dpids"
+          for p in $dpids; do
+            dcg=$(sed -n 's/^0:://p' "/proc/$p/cgroup")
+            case "$dcg" in /user.slice/user-"$uid".slice/*) ;; *) echo "dockerd $p is outside the user slice: $dcg" >&2; exit 1 ;; esac
+          done
           slice="/sys/fs/cgroup/user.slice/user-${uid}.slice"
           mem=$(cat "$slice/memory.max"); cpu=$(cut -d' ' -f1 "$slice/cpu.max"); pids=$(cat "$slice/pids.max")
           echo "slice ceilings: memory=$mem cpu=$cpu pids=$pids"
@@ -103,6 +110,17 @@ jobs:
           image=$(docker image inspect --format '{{.Id}}' "$tag")
           [[ $image =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
           printf 'GIT_GUARD_CI_IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
+
+      # A container started by this engine must also land under the account's user slice.
+      - name: Verify container placement under the user slice
+        run: |
+          set -eu
+          uid=$(id -u)
+          cid=$(docker run -d --rm --memory=2g --pids-limit=1024 --cpus=2 --entrypoint sleep "$GIT_GUARD_CI_IMAGE" 60)
+          pid=$(docker inspect -f '{{.State.Pid}}' "$cid")
+          ccg=$(sed -n 's/^0:://p' "/proc/$pid/cgroup")
+          docker rm -f "$cid" >/dev/null
+          case "$ccg" in /user.slice/user-"$uid".slice/*) echo "container placement ok: $ccg" ;; *) echo "container is outside the user slice: $ccg" >&2; exit 1 ;; esac
 
       - name: Versions (in image)
         run: |
