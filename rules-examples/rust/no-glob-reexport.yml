@@ -17,12 +17,19 @@ files:
   - "**/src/**/*.rs"
   - "!**/tests/**"
   - "!**/_backup*/**"
+ignores:
+  # Upstream API style is retained verbatim; sibling authored Rust stays checked.
+  - "**/vendor/**"
 note: |
   Microsoft Rust Guideline M-NO-GLOB-REEXPORTS:
   Glob re-exports make it impossible to know what's public without resolving
   the glob. They also cause accidental API surface expansion when upstream
   crates add new public items.
   Exception: HAL platform modules (embedded) may use glob re-exports.
+  Vendored upstream code under an exact vendor/ directory component is outside
+  this API style rule. This does not exempt it from other rules or safety gates.
+  Path and composed-gate controls: tests/37-vendor-glob-boundary.t.sh;
+  scoped rationale/review: docs/VENDOR_GLOB_REVIEW.md.
   Fix: Replace with explicit named re-exports:
     pub use foo::{Bar, Baz, Quux};
 
