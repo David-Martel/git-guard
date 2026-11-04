@@ -43,11 +43,12 @@ jobs:
   # then exercise doctor/rules and the bundled-rule validation in-container.
   # ---------------------------------------------------------------------------
   self-test-docker:
-    # Admit only same-repository PRs to the source-qualified ASUS carrier.
-    # Its private rootless engine and exact invocation label exclude host-socket
-    # runners and other runs; carrier qualification is a separate deployment gate.
+    # Admit only same-repository PRs to the Docker carrier. The carrier is a dedicated
+    # rootless engine owned by an unprivileged account; it has no access to a host
+    # socket or to any other runner. The job is selected by the role label alone, so
+    # the host behind it can move without a workflow change.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Linux, X64, asuspro13, git-guard-native-docker, "git-guard-run-${{ github.run_id }}-${{ github.run_attempt }}"]
+    runs-on: [self-hosted, Linux, X64, git-guard-docker]
     # A hung step on a self-hosted runner holds the runner until GitHub's 24h ceiling —
     # we measured a real 24h00m00s job elsewhere in this fleet. This suite finishes in
     # ~2 min; 20 is generous and still fails fast.
@@ -57,10 +58,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Verify private native Docker capability
+      - name: Verify private rootless Docker capability
         run: |
-          test "$DOCKER_HOST" = "unix:///run/user/$(id -u)/nebula-docker.sock"
-          /usr/bin/python3 /usr/local/libexec/vigil-nebula-docker/install_native_docker.py verify --require-engine
+          test "$(id -u)" != 0
+          docker info --format '{{.SecurityOptions}}' | grep -q rootless
+          docker version --format 'engine {{.Server.Version}}'
 
       - name: Build git-guard QA image
         run: |
@@ -130,7 +132,7 @@ jobs:
   # ---------------------------------------------------------------------------
   self-test-native:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Linux, X64, git-guard-local, asuspro13]
+    runs-on: [self-hosted, Linux, X64, git-guard-local]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
