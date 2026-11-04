@@ -155,6 +155,7 @@ t_case_windows_ssh_adapter
 t_case_windows_ssh_adapter_install
 t_case_precommit_provider
 t_case_precommit_submodules
+t_case_secret_scan_diff_parsing
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------
