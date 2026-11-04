@@ -835,7 +835,8 @@ own, so the backlog drains with less effort. `git-guard sync` (the same as
      is no `index.lock`;
    - no index entry is skip-worktree or assume-unchanged;
    - `git status` shows nothing, untracked files included (ignored files are
-     fine);
+     fine, but the fast-forward refuses to overwrite one that upstream now
+     tracks, logged as `merge-refused`);
    - the branch has no commits ahead of its upstream and is behind it;
    - no process other than `sync` and its ancestors has its working
      directory in the tree, read from `/proc/<pid>/cwd`. Services run from
