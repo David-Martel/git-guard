@@ -72,13 +72,16 @@ _sd_generate() {
       pool[npool++] = "\\ No newline at end of file"
       pool[npool++] = " leading space"
       pool[npool++] = "-"
+      pool[npool++] = "x:@@ y"
+      pool[npool++] = "x:diff --git a b"
+      pool[npool++] = "a:+b"
       pool[npool++] = "+"
       n = 1 + next_rand(12)
       plant_at = (next_rand(3) == 0) ? 0 : 1 + next_rand(n)
       block = 0
       for (i = 1; i <= n; i++) {
         if (i == plant_at) {
-          kind = next_rand(6)
+          kind = next_rand(8)
           secret = (next_rand(2) == 0) ? aws : gh
           prefix = (kind == 0) ? "++" : (kind == 1) ? "+++" : (kind == 2) ? "++ " : ""
           line = prefix "token = \"" secret "\""
@@ -86,6 +89,8 @@ _sd_generate() {
           if (kind == 4) { line = secret; }
           if (kind == 5) line = "++ /dev/null"
           if (kind == 5) { print line > out; line = "key: " secret }
+          if (kind == 6) line = "x=" secret " :@@ z"
+          if (kind == 7) { print "x:diff --git a b" > out; print "++ /dev/null" > out; line = "key: " secret }
           if (next_rand(4) == 0) { line = line pragma } else { block = 1 }
           print line > out
         } else {
@@ -116,6 +121,16 @@ token = \"${_key}\""
 token = \"${_key}\""
   _sd_expect_block "$_r" "secret after '+++' and '++' lines" d.txt "+++
 ++
+token = \"${_key}\""
+
+  # The hunk state is decided on the START of the diff line. A content line that merely
+  # CONTAINS ":@@ " or ":diff --git " (or begins "a:+") must not be read as structure.
+  _sd_expect_block "$_r" "secret followed by ' :@@ x' on the same line" i.txt "token = \"${_key}\" :@@ x"
+  _sd_expect_block "$_r" "content line 'x:diff --git a b' does not end the hunk" j.txt "x:diff --git a b
+++ /dev/null
+token = \"${_key}\""
+  _sd_expect_block "$_r" "content line 'a:+b' is still content" k.txt "a:+b
+-a:+b
 token = \"${_key}\""
 
   # An unquoted credential in a config file is a literal there but code in a source

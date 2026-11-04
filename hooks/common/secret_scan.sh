@@ -411,7 +411,7 @@ hit_label=""
 # preserves leading spaces, so use read -r with IFS unset.
 while IFS= read -r diffline; do
   case "$in_hunk:$diffline" in
-    *:"diff --git "*) in_hunk=0 ;;
+    ?:"diff --git "*) in_hunk=0 ;;
     0:"+++ "*)
       # New-file path: "+++ b/path/to/file" or "+++ /dev/null".
       p="${diffline#+++ }"
@@ -421,7 +421,7 @@ while IFS= read -r diffline; do
         *)         cur_file="$p" ;;
       esac
       ;;
-    *:"@@ "*)
+    ?:"@@ "*)
       # Hunk header: @@ -old,cnt +new,cnt @@ ...  Extract the new-file start.
       newpart="$(printf '%s' "$diffline" | sed -E 's/^@@ [^+]*\+([0-9]+).*/\1/')"
       case "$newpart" in
@@ -431,7 +431,7 @@ while IFS= read -r diffline; do
       in_hunk=1
       ;;
     0:"+++"*) : ;;  # stray, outside a hunk; inside one it is content (below)
-    *:"+"*)
+    ?:"+"*)
       # An added content line (but not the +++ header).
       content="${diffline#+}"
       if [ -n "$cur_file" ]; then
@@ -467,7 +467,7 @@ while IFS= read -r diffline; do
       fi
       new_lineno=$((new_lineno + 1))
       ;;
-    *:"-"*)
+    ?:"-"*)
       # Removed line: does not advance the new-file counter.
       : ;;
     *)
