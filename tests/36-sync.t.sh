@@ -275,6 +275,19 @@ t_sync_body() {
     t_sync_expect_refused "unsearchable sync.exclude directory"
     chmod 700 "$XDG_CONFIG_HOME/git-guard"; rm -f "$sy_xf"
   else t_skip "running as root: an unsearchable directory is still searched"; fi
+  # One component higher: the config directory itself is a dangling link.
+  t_sync_fixture excldanglep && t_sync_advance >/dev/null || t_fail "fixture excldanglep"
+  mv "$XDG_CONFIG_HOME/git-guard" "$XDG_CONFIG_HOME/git-guard.real"
+  ln -s "$GG_T_TMPROOT/no-such-volume/git-guard" "$XDG_CONFIG_HOME/git-guard"
+  t_sync_expect_refused "dangling config directory"
+  rm -f "$XDG_CONFIG_HOME/git-guard"; mv "$XDG_CONFIG_HOME/git-guard.real" "$XDG_CONFIG_HOME/git-guard"
+  # The other exclusion source: an unreadable global Git config.
+  if [ "$(id -u)" != 0 ]; then
+    t_sync_fixture exclgcfg && t_sync_advance >/dev/null || t_fail "fixture exclgcfg"
+    chmod 000 "$GIT_CONFIG_GLOBAL"
+    t_sync_expect_refused "unreadable global Git config"
+    chmod 600 "$GIT_CONFIG_GLOBAL"
+  else t_skip "running as root: mode 000 is still readable"; fi
   # Excluding the root covers everything beneath it.
   t_sync_fixture exclroot && t_sync_advance >/dev/null || t_fail "fixture exclroot"
   git config --file "$GIT_CONFIG_GLOBAL" --add hygiene.syncExclude /

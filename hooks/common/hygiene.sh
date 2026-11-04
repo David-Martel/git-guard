@@ -787,6 +787,22 @@ hyg_sync_excludes() {
   return 0  # the loop's last test is not a failure; the caller checks the redirect
 }
 
+# hyg_sync_unreadable PATH — true when PATH may hold content that cannot be
+# read. Only "no such file", with no dangling link on the way to it, is absent.
+hyg_sync_unreadable() {
+  _ud="$1"
+  while :; do
+    if [ -L "$_ud" ] && [ ! -e "$_ud" ]; then return 0; fi
+    _un="$(dirname "$_ud")"; [ "$_un" = "$_ud" ] && break; _ud="$_un"
+  done
+  _ue="$(LC_ALL=C ls -d "$1" 2>&1 >/dev/null)"
+  case "$_ue" in
+    '') if cat "$1" >/dev/null 2>&1; then return 1; fi; return 0 ;;
+    *"No such file or directory"*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 # hyg_sync_ancestors — this process and its ancestors (Linux /proc), space
 # separated: the shell that ran `sync` from inside a checkout is not a user of
 # that checkout.
@@ -997,19 +1013,13 @@ hyg_sync_run() {
   HYG_SYNC_STARTED="$(hyg_sync_now)"
   HYG_SYNC_REC="$HYG_TMP/records"; : > "$HYG_SYNC_REC"
   HYG_SYNC_ROOTS="$(hyg_sync_roots)"
-  # An exclusion list that cannot be read must not read as an empty one. Only
-  # "no such file" means absent: a dangling link, a directory, or a path that
-  # cannot be searched is a list this host may rely on.
-  _xf="${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"
-  _xe="$(LC_ALL=C ls -d "$_xf" 2>&1 >/dev/null)"
-  case "$_xe" in
-    '') cat "$_xf" >/dev/null 2>&1 || _xe=unreadable ;;
-    *"No such file or directory"*) _xe="" ;;
-  esac
-  if [ -n "$_xe" ]; then
-    echo "git-guard sync: cannot read $_xf; refusing to run" >&2
-    return 1
-  fi
+  # An exclusion source that cannot be read must not read as an empty one.
+  for _xf in "${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"     "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config"; do
+    if hyg_sync_unreadable "$_xf"; then
+      echo "git-guard sync: cannot read $_xf; refusing to run" >&2
+      return 1
+    fi
+  done
   hyg_sync_excludes > "$HYG_TMP/excludes" || {
     echo "git-guard sync: could not build the exclusion list; refusing to run" >&2
     return 1
