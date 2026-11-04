@@ -870,7 +870,7 @@ hyg_sync_checkout() {
     hyg_sync_note would-ff "$_wt" "$_br" "$_behind commit(s) from ${_up#refs/remotes/} (dry run)" "$_before" "$(git -C "$_wt" rev-parse "$_up" 2>/dev/null)"
     return 0
   fi
-  git -C "$_wt" merge --ff-only --quiet "$_up" </dev/null >/dev/null 2>&1
+  git -C "$_wt" merge --ff-only --no-overwrite-ignore --quiet "$_up" </dev/null >/dev/null 2>&1
   _after="$(git -C "$_wt" rev-parse HEAD 2>/dev/null)"
   if [ "$_after" = "$_before" ]; then hyg_sync_note skip "$_wt" "$_br" merge-refused "$_before" "$_after"; return 0; fi
   hyg_sync_note ff "$_wt" "$_br" "$_behind commit(s) from ${_up#refs/remotes/}" "$_before" "$_after"

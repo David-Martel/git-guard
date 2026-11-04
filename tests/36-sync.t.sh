@@ -186,6 +186,17 @@ t_sync_body() {
     t_sync_expect_skip "modified file" "dirty"
   t_sync_fixture untracked && t_sync_advance >/dev/null && printf 'x\n' > "$SY_REPO/new.txt" &&
     t_sync_expect_skip "untracked file" "untracked"
+  # An ignored local file that upstream starts tracking: a plain fast-forward
+  # overwrites it, and it was never in Git, so sync must refuse.
+  t_sync_fixture ignored && printf 'local.db
+' >> "$SY_REPO/.git/info/exclude" &&
+    printf 'mine
+' > "$SY_REPO/local.db" &&
+    ( cd "$SY_SEED" && printf 'upstream
+' > local.db && git add local.db &&
+      git commit -q -m 'track local.db' && git push -q origin main 2>/dev/null ) &&
+    t_sync_expect_skip "ignored file upstream now tracks" "merge-refused"
+  [ "$(cat "$SY_REPO/local.db" 2>/dev/null)" = mine ] && t_ok "the ignored local file keeps its contents"     || t_fail "sync overwrote an ignored local file"
   t_sync_fixture ahead && t_sync_advance >/dev/null &&
     ( cd "$SY_REPO" && printf 'mine\n' > mine.txt && git add mine.txt && git commit -q -m mine ) &&
     t_sync_expect_skip "local commit ahead" "ahead"
