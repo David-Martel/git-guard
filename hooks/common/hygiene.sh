@@ -717,12 +717,14 @@ hyg_defaults() {
       echo "  FAILED to set $_k (continuing)" >&2
     fi
   done
-  # Fleet infrastructure lock namespaces (release trees, fleet-build pins),
-  # the same ones vigil-utils policy/backlog-caps.toml treats as infrastructure.
+  # Fleet infrastructure lock namespaces: operator release trees, fleet-build
+  # pins and vigil-spark operator-build worktrees (scripts/operator_build.py
+  # creates them, operator_build_prune.py retires them). Keep this list in step
+  # with vigil-utils policy/backlog-caps.toml lock_reason_prefixes.
   if [ -n "$(git config --global --get-all hygiene.exemptLockPrefix 2>/dev/null || true)" ]; then
     echo "  ok (kept): hygiene.exemptLockPrefix (already set)"
   else
-    for _p in "vigil.operator-release/" "vigil.fleet-build/"; do
+    for _p in "vigil.operator-release/" "vigil.fleet-build/" "vigil.operator-build/"; do
       if [ "$_dry" = "1" ]; then echo "  DRY: git config --global --add hygiene.exemptLockPrefix $_p"
       elif git config --global --add hygiene.exemptLockPrefix "$_p"; then echo "  set: hygiene.exemptLockPrefix += $_p"
       else echo "  FAILED to add hygiene.exemptLockPrefix $_p (continuing)" >&2
