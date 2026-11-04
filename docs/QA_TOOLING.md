@@ -711,7 +711,7 @@ when the repo is over a limit, and never fails.
 | `hygiene.maxWorktrees` | 3 | linked worktrees, primary excluded; `0` turns the check off |
 | `hygiene.maxStaleBranches` | 5 | local branches whose upstream is gone or whose tip is merged into `<remote>/HEAD`; `main`, `master`, `preserve/*` and branches a worktree uses (checked out, or under an in-progress rebase, `rebase --update-refs` or bisect) are excluded; `0` is off |
 | `hygiene.maxOpenPRs` | unset (off) | open non-bot PRs on the GitHub remote, through `gh api` REST; set it to enable |
-| `hygiene.exemptLockPrefix` | `vigil.operator-release/`, `vigil.fleet-build/` (set by `defaults` when none is configured) | multi-valued; a worktree locked with a reason that starts with one of these is infrastructure (for example `vigil.operator-release/`, `vigil.fleet-build/`) and is never counted or drained |
+| `hygiene.exemptLockPrefix` | `vigil.operator-release/`, `vigil.fleet-build/`, `vigil.operator-build/` (set by `defaults` when none is configured) | multi-valued; a worktree locked with a reason that starts with one of these is infrastructure (for example `vigil.operator-release/`, `vigil.fleet-build/`, or a vigil-spark `vigil.operator-build/v1` build worktree that `operator_build_prune.py` retires) and is never counted or drained |
 | `hygiene.baseRef` | unset | integration ref used when `refs/remotes/<remote>/HEAD` is not set; without either, `refs/remotes/<remote>/main` or `/master` is tried, and if none exists the merged test is skipped |
 | `hygiene.drainMinAgeMinutes` | 1440 | `drain` keeps a worktree whose HEAD moved (worktree add, checkout, commit) within this many minutes, because a fresh worktree is clean and "merged" but may be another agent's live checkout; `0` disables |
 | `hygiene.preserveDir` | `${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve` | where `drain` writes bundles |
@@ -777,9 +777,11 @@ reported, because the drive may simply be offline.
 **Global defaults.** `install.sh` (and `git-guard hygiene defaults`) sets these
 global keys only when they are unset: `fetch.prune=true`,
 `worktree.guessRemote=true`, `rerere.enabled=true`, `hygiene.maxWorktrees=3`,
-`hygiene.maxStaleBranches=5`, and the two infrastructure lock prefixes above
+`hygiene.maxStaleBranches=5`, and the three infrastructure lock prefixes above
 (seeded only when no `hygiene.exemptLockPrefix` is set globally, so removing
-one of them is respected).
+one of them is respected). Because of that rule, a host that already has the
+older two prefixes does not gain `vigil.operator-build/` from `defaults`; add it
+with `git config --global --add hygiene.exemptLockPrefix vigil.operator-build/`.
 Two keys are deliberately left alone. Shortening `gc.worktreePruneExpire` would
 prune the registration of a worktree whose drive is merely offline.
 `fetch.pruneTags` would delete local-only tags on every fetch.
