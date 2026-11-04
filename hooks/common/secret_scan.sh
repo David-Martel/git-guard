@@ -399,6 +399,10 @@ fi
 
 cur_file=""
 new_lineno=0
+# In a hunk (after an "@@" line, until the next "diff --git") every line is file
+# CONTENT, however much it looks like diff structure: an added line "++ /dev/null"
+# is the diff line "+++ /dev/null". "+++ " is a header only outside a hunk.
+in_hunk=0
 hit_file=""
 hit_line=""
 hit_label=""
@@ -406,8 +410,9 @@ hit_label=""
 # Read the unified diff line by line. We need POSIX-safe iteration that
 # preserves leading spaces, so use read -r with IFS unset.
 while IFS= read -r diffline; do
-  case "$diffline" in
-    "+++ "*)
+  case "$in_hunk:$diffline" in
+    *:"diff --git "*) in_hunk=0 ;;
+    0:"+++ "*)
       # New-file path: "+++ b/path/to/file" or "+++ /dev/null".
       p="${diffline#+++ }"
       case "$p" in
@@ -416,16 +421,17 @@ while IFS= read -r diffline; do
         *)         cur_file="$p" ;;
       esac
       ;;
-    "@@ "*)
+    *:"@@ "*)
       # Hunk header: @@ -old,cnt +new,cnt @@ ...  Extract the new-file start.
       newpart="$(printf '%s' "$diffline" | sed -E 's/^@@ [^+]*\+([0-9]+).*/\1/')"
       case "$newpart" in
         ''|*[!0-9]*) new_lineno=0 ;;
         *) new_lineno="$newpart" ;;
       esac
+      in_hunk=1
       ;;
-    "+++"*) : ;;  # already handled by "+++ "* above; guard stray
-    "+"*)
+    0:"+++"*) : ;;  # stray, outside a hunk; inside one it is content (below)
+    *:"+"*)
       # An added content line (but not the +++ header).
       content="${diffline#+}"
       if [ -n "$cur_file" ]; then
@@ -461,7 +467,7 @@ while IFS= read -r diffline; do
       fi
       new_lineno=$((new_lineno + 1))
       ;;
-    "-"*)
+    *:"-"*)
       # Removed line: does not advance the new-file counter.
       : ;;
     *)
