@@ -157,6 +157,8 @@ t_case_sync
 t_case_windows_ssh_adapter
 t_case_windows_ssh_adapter_install
 t_case_precommit_provider
+t_case_prepush_provider_git_env
+t_case_prepush_provider_git_env_fail_closed
 t_case_precommit_submodules
 t_case_secret_scan_diff_parsing
 "

@@ -186,7 +186,21 @@ fi
 # hook-impl is the framework backend used by its generated Git hooks. It
 # translates remote argv/admitted ref stdin and retains stage filtering.
 if [ "$stage" = pre-push ]; then
-  "$provider" hook-impl --config "$config" --hook-type "$stage" --hook-dir "$hook_dir" -- "$@" < "$refs"
+  # The admission checks above read the caller's GIT_DIR and GIT_INDEX_FILE.
+  # Only now, at the provider boundary, run from the worktree root without the
+  # repository-locating Git variables, as hooks/pre-push git_guard_scrubbed does
+  # (keep the two in step). A pre-commit stage keeps them: `git commit -a` hands
+  # the hook a temporary GIT_INDEX_FILE that is the content being committed.
+  (
+    cd "$root" || exit 1
+    for _gg_git_var in $(git rev-parse --local-env-vars); do
+      case "$_gg_git_var" in
+        GIT_CONFIG_PARAMETERS | GIT_CONFIG_COUNT) ;;
+        *) unset "$_gg_git_var" ;;
+      esac
+    done
+    exec "$provider" hook-impl --config "$config" --hook-type "$stage" --hook-dir "$hook_dir" -- "$@" < "$refs"
+  )
 else
   "$provider" hook-impl --config "$config" --hook-type "$stage" --hook-dir "$hook_dir" -- "$@"
 fi
