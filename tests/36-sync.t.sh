@@ -233,6 +233,28 @@ t_sync_body() {
   git config --file "$GIT_CONFIG_GLOBAL" --add hygiene.syncExclude "$GG_T_TMPROOT/sync-excllink/via-link/repo/"
   t_sync_expect_excluded "exclude written through a symlink" "hygiene.syncExclude"
   git config --file "$GIT_CONFIG_GLOBAL" --unset-all hygiene.syncExclude
+  # A last line with no newline still counts.
+  t_sync_fixture exclnonl && t_sync_sibling || t_fail "fixture exclnonl"
+  printf '%s' "$SY_REPO" > "$XDG_CONFIG_HOME/git-guard/sync.exclude"
+  t_sync_expect_excluded "sync.exclude without a final newline" "sync.exclude"
+  rm -f "$XDG_CONFIG_HOME/git-guard/sync.exclude"
+  # A list that cannot be read must not read as empty. Root reads anything.
+  if [ "$(id -u)" != 0 ]; then
+    t_sync_fixture exclunread && t_sync_advance >/dev/null || t_fail "fixture exclunread"
+    printf '%s\n' "$SY_REPO" > "$XDG_CONFIG_HOME/git-guard/sync.exclude"
+    chmod 000 "$XDG_CONFIG_HOME/git-guard/sync.exclude"
+    sy_before="$(git -C "$SY_REPO" rev-parse HEAD)"
+    t_sync_run "$sylog"; rc=$?
+    chmod 600 "$XDG_CONFIG_HOME/git-guard/sync.exclude"; rm -f "$XDG_CONFIG_HOME/git-guard/sync.exclude"
+    [ "$rc" -ne 0 ] && t_ok "unreadable sync.exclude: sync refuses" || t_fail "unreadable sync.exclude: sync exited 0"
+    [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$sy_before" ] && t_ok "unreadable sync.exclude: HEAD not moved" \
+      || t_fail "unreadable sync.exclude: a protected checkout moved"
+  else t_skip "running as root: mode 000 is still readable"; fi
+  # Excluding the root covers everything beneath it.
+  t_sync_fixture exclroot && t_sync_advance >/dev/null || t_fail "fixture exclroot"
+  git config --file "$GIT_CONFIG_GLOBAL" --add hygiene.syncExclude /
+  t_sync_expect_skip "exclude of the filesystem root" "excluded (hygiene.syncExclude:"
+  git config --file "$GIT_CONFIG_GLOBAL" --unset-all hygiene.syncExclude
 
   # A process (not this sync) working inside the tree: services run from
   # checkouts. Linux only: the check reads /proc/<pid>/cwd.

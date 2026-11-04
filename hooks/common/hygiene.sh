@@ -773,10 +773,11 @@ hyg_sync_excludes() {
   _xf="${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"
   { git config --get-all hygiene.syncExclude 2>/dev/null | sed 's/^/hygiene.syncExclude	/'
     [ -r "$_xf" ] && sed 's/^/sync.exclude	/' "$_xf"
-  } | while IFS='	' read -r _xs _xp; do
+  } | while IFS='	' read -r _xs _xp || [ -n "$_xs" ]; do
     _xp="$(printf '%s' "$_xp" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     case "$_xp" in ''|\#*) continue ;; \~) _xp="$HOME" ;; \~/*) _xp="$HOME/${_xp#??}" ;; esac
-    _xp="${_xp%/}"; [ -n "$_xp" ] || continue
+    # Only slashes means the filesystem root, so every path; otherwise drop one trailing slash.
+    case "$_xp" in *[!/]*) _xp="${_xp%/}" ;; *) _xp='*' ;; esac
     printf '%s\t%s\n' "$_xs" "$_xp"
     if [ -d "$_xp" ]; then
       _xr="$(cd "$_xp" 2>/dev/null && pwd -P)"
@@ -995,6 +996,12 @@ hyg_sync_run() {
   HYG_SYNC_STARTED="$(hyg_sync_now)"
   HYG_SYNC_REC="$HYG_TMP/records"; : > "$HYG_SYNC_REC"
   HYG_SYNC_ROOTS="$(hyg_sync_roots)"
+  # An exclusion list that cannot be read must not read as an empty one.
+  _xf="${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"
+  if [ -e "$_xf" ] && [ ! -r "$_xf" ]; then
+    echo "git-guard sync: cannot read $_xf; refusing to run" >&2
+    return 1
+  fi
   hyg_sync_excludes > "$HYG_TMP/excludes"
   printf '%s\n' "$HYG_SYNC_ROOTS" | while IFS= read -r _root; do
     [ -d "$_root" ] || continue
