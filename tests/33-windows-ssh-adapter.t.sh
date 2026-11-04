@@ -217,7 +217,9 @@ check('spawn_error_and_signal_do_not_become_success', () => {
 // No-terminal pack commands run asynchronously so the wrapper can see the
 // server's first byte. Real inert children stand in for ssh.exe; only the
 // 300000ms first-response timer is shortened, at the sandbox timer boundary.
-function invokeAsync(env, args, execute, { firstResponseMs = 80 } = {}) {
+// The default bound outlasts a child's startup on a loaded or CPU-capped runner; only the
+// silent-server case needs it shorter than startup.
+function invokeAsync(env, args, execute, { firstResponseMs = 2000 } = {}) {
   return new Promise((resolve, reject) => {
     let actual;
     let exitCode;
@@ -225,7 +227,7 @@ function invokeAsync(env, args, execute, { firstResponseMs = 80 } = {}) {
     const messages = [];
     const timers = [];
     const chunks = [];
-    const guard = setTimeout(() => reject(new Error('wrapper did not settle within 3000ms')), 3000);
+    const guard = setTimeout(() => reject(new Error('wrapper did not settle within 8000ms')), 8000);
     const finish = (exit) => {
       if (settled) return;
       settled = true;
@@ -301,7 +303,8 @@ checkAsync('missing_terminal_pack_commands_wait_only_for_first_response', async 
 checkAsync('missing_terminal_transfer_after_first_byte_is_not_cut', async () => {
   // First byte, then silence well past the (shortened) first-response bound.
   const result = await invokeAsync({}, ['host', "git-receive-pack 'owner/repo.git'"], (_file, _argv, options) =>
-    inertChild(`process.stdout.write("a");${sleep(400)};process.stdout.write("b")`, options));
+    inertChild(`process.stdout.write("a");${sleep(2000)};process.stdout.write("b")`, options),
+    { firstResponseMs: 1500 });
   assert.equal(result.stdout, 'ab');
   assert.equal(result.exit, 0);
   assert.deepEqual(result.messages, []);
@@ -310,7 +313,7 @@ checkAsync('missing_terminal_silent_server_is_stopped', async () => {
   const started = Date.now();
   // The child self-exits 0 after 1s, so a removed kill reads as exit 0 and fails.
   const result = await invokeAsync({}, ['host', "git-upload-pack 'owner/repo.git'"], (_file, _argv, options) =>
-    inertChild(sleep(1000), options));
+    inertChild(sleep(1000), options), { firstResponseMs: 80 });
   assert.equal(result.exit, 1);
   assert.ok(result.messages.some(message => /no server response within 300000ms.*#90/.test(message)),
     JSON.stringify(result.messages));
