@@ -409,3 +409,107 @@ EOF
   t_expect_rc 0 "$?" 'older releases without dispatcher keep original admission semantics'
   gg_rmrepo "$r"; rm -f "$log"
 }
+
+# Protects: the pushing repository from a provider whose test fixtures run git in
+# temp directories. Git exports GIT_DIR and friends to hooks; on 2026-10-28 a
+# vigil-ai-tpm pre-push pytest run used them and set core.bare=true, a fixture
+# user.name and fixture commits in the real shared .git.
+# Detects: a provider that still inherits GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE,
+# or whose `git init` + `git config` in a temp dir lands in the pushing repo.
+t_case_prepush_provider_git_env() {
+  t_begin '31b pre-push providers do not inherit the hook Git environment'
+  r="$(gg_mktemp_repo)"
+  log="$(gg_tmp_log)"
+  bin="$GG_T_TMPROOT/envguard-bin"
+  seen="$GG_T_TMPROOT/envguard-seen"
+  fixture="$GG_T_TMPROOT/envguard-fixture"
+  mkdir -p "$bin"
+  cat > "$bin/pre-commit" <<EOF
+#!/bin/sh
+cat > /dev/null
+env | grep -E '^GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY)=' > '$seen'
+git init -q '$fixture' && git -C '$fixture' config user.name Fixture && git -C '$fixture' config core.bare true
+exit 0
+EOF
+  chmod +x "$bin/pre-commit"
+  printf 'repos: []\n' > "$r/.pre-commit-config.yaml"
+  printf 'envguard\n' > "$r/a.txt"
+  (cd "$r" && git add .pre-commit-config.yaml a.txt && git -c core.hooksPath=/dev/null commit -q -m envguard)
+  head="$(git -C "$r" rev-parse HEAD)"
+  record="refs/heads/main $head refs/heads/main 0000000000000000000000000000000000000000"
+  # Exactly the environment Git gives a pre-push hook, made explicit.
+  printf '%s\n' "$record" | (cd "$r" && env PATH="$bin:$PATH" GIT_DIR="$r/.git" GIT_WORK_TREE="$r" \
+    GIT_INDEX_FILE="$r/.git/index" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+  t_expect_rc 0 "$?" 'pre-push with an exported hook environment runs the provider'
+  if [ -f "$seen" ] && [ ! -s "$seen" ]; then rc=0; else rc=1; fi
+  t_assert "$rc" 'provider sees no GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE'
+  if [ -d "$fixture/.git" ]; then rc=0; else rc=1; fi
+  t_assert "$rc" "provider's git init created its own temp repository"
+  if [ "$(git -C "$r" config --local --get user.name 2>/dev/null)" = Fixture ]; then
+    t_fail 'fixture user.name leaked into the pushing repository'
+  else
+    t_ok 'pushing repository config untouched by the fixture'
+  fi
+  [ "$(git -C "$r" config --local --get core.bare)" = false ]; t_assert $? 'pushing repository is still non-bare'
+  gg_rmrepo "$r"; rm -rf "$fixture" "$bin" "$seen" "$log"
+}
+
+# Protects: the declared pre-push gate when the hook's Git environment is the
+# only thing that locates the repository (#88 review finding 2, gemini-autopilot
+# REQUEST CHANGES at 15fb6f76).
+# Detects: (a) `git --git-dir=<repo>/.git push` run from outside the worktree,
+# where clearing GIT_DIR before git-guard's own declaration checks made them
+# fail silently and the hook exit 0; (b) a staged change held only in the
+# caller's alternate GIT_INDEX_FILE, which the clean-workspace admission check
+# missed once GIT_INDEX_FILE was cleared and it read .git/index instead.
+# Needs: a temp repository and a stub pre-commit; no network.
+t_case_prepush_provider_git_env_fail_closed() {
+  t_begin '31c pre-push keeps the hook Git environment until providers run'
+  r="$(gg_mktemp_repo)"
+  log="$(gg_tmp_log)"
+  bin="$GG_T_TMPROOT/envclosed-bin"
+  ran="$GG_T_TMPROOT/envclosed-ran"
+  outside="$GG_T_TMPROOT/envclosed-outside"
+  alt="$GG_T_TMPROOT/envclosed-index"
+  mkdir -p "$bin" "$outside"
+  printf '%s\n' '#!/bin/sh' 'cat > /dev/null' "printf 'ran\\n' >> '$ran'" 'exit 0' > "$bin/pre-commit"
+  chmod +x "$bin/pre-commit"
+  printf 'repos: []\n' > "$r/.pre-commit-config.yaml"
+  printf 'pushed\n' > "$r/a.txt"
+  (cd "$r" && git add .pre-commit-config.yaml a.txt && git -c core.hooksPath=/dev/null commit -q -m envclosed)
+  head="$(git -C "$r" rev-parse HEAD)"
+  record="refs/heads/main $head refs/heads/main 0000000000000000000000000000000000000000"
+
+  # (a) GIT_DIR alone, from outside the worktree, as `git --git-dir=... push` does.
+  printf '%s\n' "$record" | (cd "$outside" && env PATH="$bin:$PATH" GIT_DIR="$r/.git" \
+    sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    t_ok '--git-dir push from outside the worktree is refused'
+  else
+    t_fail '--git-dir push from outside the worktree exited 0 (fail open)'
+  fi
+  grep -qF 'git-guard BLOCK: pre-push providers would not run against the repository being pushed' "$log"
+  t_assert $? 'refusal names the repository mismatch'
+  if [ -s "$ran" ]; then t_fail 'provider ran against the wrong directory'; else t_ok 'provider did not run'; fi
+  : > "$ran"
+
+  # (b) A staged change that exists only in the caller's alternate index.
+  (cd "$r" && GIT_INDEX_FILE="$alt" git read-tree HEAD)
+  printf 'staged-only\n' > "$r/a.txt"
+  (cd "$r" && GIT_INDEX_FILE="$alt" git add a.txt)
+  git -C "$r" checkout -q -- a.txt
+  printf '%s\n' "$record" | (cd "$r" && env PATH="$bin:$PATH" GIT_DIR="$r/.git" GIT_WORK_TREE="$r" \
+    GIT_INDEX_FILE="$alt" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+  t_expect_rc 1 "$?" 'staged change in the caller GIT_INDEX_FILE is refused'
+  grep -qF 'needs a clean tracked HEAD workspace' "$log"; t_assert $? 'refusal is the clean-workspace admission check'
+  if [ -s "$ran" ]; then t_fail 'provider ran despite the staged change'; else t_ok 'provider did not run'; fi
+
+  # Control: the same push with the ordinary hook environment still runs the provider.
+  : > "$ran"
+  printf '%s\n' "$record" | (cd "$r" && env PATH="$bin:$PATH" GIT_DIR="$r/.git" GIT_WORK_TREE="$r" \
+    GIT_INDEX_FILE="$r/.git/index" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
+  t_expect_rc 0 "$?" 'ordinary hook environment still admits the push'
+  [ -s "$ran" ]; t_assert $? 'provider ran for the ordinary push'
+  gg_rmrepo "$r"; rm -rf "$bin" "$ran" "$outside" "$alt" "$log"
+}
