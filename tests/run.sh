@@ -119,6 +119,8 @@ t_case_prepush
 t_case_backends
 t_case_rule_integrity
 t_case_rule_behaviour
+t_case_vendor_glob_paths
+t_case_vendor_glob_gate
 t_case_panic_set
 t_case_silent_failures
 t_case_quality_mandate
@@ -151,10 +153,12 @@ t_case_reserved_path_nested_scope
 t_case_preserve_exemption
 t_case_gate_controls
 t_case_hygiene
+t_case_sync
 t_case_windows_ssh_adapter
 t_case_windows_ssh_adapter_install
 t_case_precommit_provider
 t_case_precommit_submodules
+t_case_secret_scan_diff_parsing
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------
