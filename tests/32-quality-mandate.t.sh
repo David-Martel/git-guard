@@ -88,6 +88,16 @@ _qm_min_bin() {
     # only, never either tool directory. No conflicting DLL may be overwritten.
     _qm_git_runtime="$(cygpath -u "$(git --exec-path)")/../../bin"
     _qm_sh_runtime="/usr/bin"
+    # A git.exe copied into a flat directory cannot derive its runtime prefix
+    # and falls back to the build machine's, reading D:/git-sdk-64/etc/gitconfig.
+    # Where D: is a removable drive with no media (dtm-p1gen7's card reader)
+    # that read fails with EACCES, which Git treats as fatal, so every
+    # restricted run became "TOOL ERROR [git]: exit 128". Hand the copy the
+    # system config the real git reads (none if it reads none).
+    _qm_sysconf="$(git config --system --list --show-origin 2>/dev/null |
+      awk -F '\t' 'NR == 1 { sub(/^file:/, "", $1); print $1 }')"
+    if [ -n "$_qm_sysconf" ]; then GIT_CONFIG_SYSTEM="$_qm_sysconf"; export GIT_CONFIG_SYSTEM
+    else GIT_CONFIG_NOSYSTEM=1; export GIT_CONFIG_NOSYSTEM; fi
     "$(gg_python)" -I -c '
 import hashlib, json, pathlib, shutil, sys
 git_source, sh_source, target = map(pathlib.Path, sys.argv[1:4])
@@ -732,8 +742,9 @@ t_case_quality_mandate() {
   rm -rf "$r/.venv"
   _qm_bin="$(_qm_path_dir "$GG_T_TMPROOT/qm-noruff-bin")"
   _qm_min_bin "$_qm_bin" sh git dirname env ast-grep sort tr
-  # The interpreter itself, not a version-manager shim that needs PATH to work.
-  _qm_p="$("$(gg_python)" -c 'import sys; print(sys.executable)' 2>/dev/null)" &&
+  # The base installation's interpreter, not a shim or relocated copy that needs PATH
+  # to start (gg_python_exe).
+  _qm_p="$(gg_python_exe 2>/dev/null)" &&
     _qm_forward "$_qm_bin/python3" "$_qm_p"
   ( PATH="$_qm_bin" python3 -I -c 'import shutil; assert shutil.which("ruff") is None' ) >/dev/null 2>"$log"; rc=$?
   t_expect_rc 0 "$rc" "the restricted interpreter runs and cannot discover ruff"
@@ -1011,7 +1022,7 @@ t_case_quality_mandate() {
   _qm_has "$GG_QM_MARKER" "astgrep-empty" "the empty-version ast-grep payload actually ran"
   _qm_sgbin="$(_qm_path_dir "$GG_T_TMPROOT/qm-sg-bin")"
   _qm_min_bin "$_qm_sgbin" sh git dirname env sort tr ruff
-  _qm_p="$("$(gg_python)" -c 'import sys; print(sys.executable)' 2>/dev/null)" &&
+  _qm_p="$(gg_python_exe 2>/dev/null)" &&
     _qm_forward "$_qm_sgbin/python3" "$_qm_p"
   # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation
   _qm_payload "$_qm_sgbin/sg" '#!/bin/sh\nprintf "util-sg\\n" >> "$GG_QM_MARKER"\necho "sg from util-linux 2.39"\n'

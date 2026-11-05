@@ -60,6 +60,29 @@ gg_python() { if have python; then echo python; else echo python3; fi; }
 gg_has_pyyaml()     { "$(gg_python)" -c "import yaml" >/dev/null 2>&1; }
 gg_has_docker()     { have docker && docker info >/dev/null 2>&1; }
 
+# gg_python_exe — absolute path of an interpreter binary that starts with a
+# restricted PATH. Why: sys.executable can be a relocated copy of python.exe
+# that finds its pythonXY.dll only through PATH (dtm-p1gen7 keeps such copies
+# in ~/bin and ~/.local/bin), or a version-manager shim; forwarding either into
+# a minimal PATH makes the interpreter fail to start (rc 127) and the
+# restricted-PATH cases fail for a reason unrelated to the hook. The base
+# installation's own binary carries its runtime beside it.
+gg_python_exe() {
+  "$(gg_python)" -I -c 'import os, sys
+v = "%d.%d" % sys.version_info[:2]
+cands = [os.path.join(sys.base_prefix, "python.exe"),
+         os.path.join(sys.base_prefix, "bin", "python" + v),
+         os.path.join(sys.base_prefix, "bin", "python3"),
+         getattr(sys, "_base_executable", ""), sys.executable]
+print(next(p for p in cands if p and os.path.isfile(p)))'
+}
+
+# gg_git_path DIR — DIR's work-tree root in the form Git itself prints. Why:
+# fixtures hold MSYS paths (/tmp/...) while native Git for Windows reports
+# C:/Users/.../Temp/..., so any assertion that greps a hook's or a report's
+# path must compare against Git's form to mean the same thing on every host.
+gg_git_path() { git -C "$1" rev-parse --show-toplevel; }
+
 # Are we on native Windows (Git-Bash/MSYS/Cygwin)? Reserved-name (NUL) files
 # cannot be created there, so the NUL-cleanup case skips on Windows.
 gg_is_windows() {
