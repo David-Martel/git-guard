@@ -294,6 +294,28 @@ t_sync_body() {
   t_sync_expect_skip "exclude of the filesystem root" "excluded (hygiene.syncExclude:"
   git config --file "$GIT_CONFIG_GLOBAL" --unset-all hygiene.syncExclude
 
+  # The system config supplies exclusions too, so a dangling one refuses the run.
+  t_sync_fixture exclsys && t_sync_advance >/dev/null || t_fail "fixture exclsys"
+  sy_sys="$GG_T_TMPROOT/system-gitconfig"
+  ln -sf "$GG_T_TMPROOT/no-such-volume/gitconfig" "$sy_sys"
+  export GIT_CONFIG_SYSTEM="$sy_sys"
+  t_sync_expect_refused "dangling system Git config"
+  unset GIT_CONFIG_SYSTEM
+  rm -f "$sy_sys"
+  # An excluded linked worktree: the drain dry run reports it and leaves its index alone.
+  t_sync_fixture exclwt && t_sync_advance >/dev/null || t_fail "fixture exclwt"
+  git -C "$SY_REPO" worktree add -q -b wt-x "$SY_ROOT/repo-x" HEAD >/dev/null 2>&1 || t_fail "worktree add exclwt"
+  sy_idx="$SY_REPO/.git/worktrees/repo-x/index"
+  sleep 1; touch "$SY_ROOT/repo-x/one.txt"
+  sy_idx_before="$(cksum < "$sy_idx")"
+  git config --file "$GIT_CONFIG_GLOBAL" --add hygiene.syncExclude "$SY_ROOT/repo-x"
+  git config --file "$GIT_CONFIG_GLOBAL" --add hygiene.drainMinAgeMinutes 0
+  t_sync_run "$sylog"
+  [ "$(cksum < "$sy_idx")" = "$sy_idx_before" ] && t_ok "excluded worktree: drain left its index alone" \
+    || t_fail "excluded worktree: drain rewrote its index"
+  git config --file "$GIT_CONFIG_GLOBAL" --unset-all hygiene.syncExclude
+  git config --file "$GIT_CONFIG_GLOBAL" --unset-all hygiene.drainMinAgeMinutes
+
   # A process (not this sync) working inside the tree: services run from
   # checkouts. Linux only: the check reads /proc/<pid>/cwd.
   if [ -r /proc/self/cwd ] && [ "$(uname -s)" = "Linux" ]; then

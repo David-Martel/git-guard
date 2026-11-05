@@ -592,6 +592,11 @@ hyg_drain() {
   done
   hyg_measure "" "" 0
   [ -n "$HYG_TMP" ] || { hyg_say "git-guard hygiene drain: cannot create a temp dir; nothing done"; return 1; }
+  # Started by sync: a worktree the host excludes is reported, never inspected,
+  # because the `git status` below can rewrite its index.
+  if [ -n "${HYG_SYNC_EXCLUDES_FROM:-}" ] && ! cp "$HYG_SYNC_EXCLUDES_FROM" "$HYG_TMP/excludes" 2>/dev/null; then
+    hyg_say "git-guard hygiene drain: refused: cannot read the exclusion list from sync"; return 1
+  fi
   # A scan that cannot see every worktree's HEAD and rebase/bisect state
   # cannot say which branches are in use, so every branch is: refuse the whole
   # drain, dry run included, and name what could not be read.
@@ -617,6 +622,7 @@ hyg_drain() {
       prunable) echo "  keep   $_path  (registration only; confirm the path is gone, then: git worktree prune)"; continue ;;
     esac
     if [ -n "$_reason" ]; then echo "  keep   $_path  (locked: $_reason)"; continue; fi
+    if [ -n "${HYG_SYNC_EXCLUDES_FROM:-}" ] && hyg_sync_excluded "$_path"; then echo "  keep   $_path  ($HYG_SYNC_WHY)"; continue; fi
     [ -n "$HYG_BASE" ] && [ -n "$_head" ] || { echo "  keep   $_path  (base or HEAD unknown)"; continue; }
     _gd="$(git -C "$_path" rev-parse --absolute-git-dir 2>/dev/null)" || { echo "  keep   $_path  (cannot inspect)"; continue; }
     # Recent HEAD movement (worktree add, checkout, commit) means it may be a
@@ -763,6 +769,17 @@ hyg_sync_excluded() {
     case "$1" in $_xp|$_xp/*) HYG_SYNC_WHY="excluded ($_xs: $_xp)"; return 0 ;; esac
   done < "$HYG_TMP/excludes"
   return 1
+}
+
+# hyg_sync_system_config — the system Git config path, which also supplies
+# exclusions; nothing when GIT_CONFIG_NOSYSTEM turns it off. Git reports a
+# path only when it can read the file, so an unreadable one falls back to
+# GIT_CONFIG_SYSTEM or /etc/gitconfig and hyg_sync_unreadable judges that.
+hyg_sync_system_config() {
+  case "${GIT_CONFIG_NOSYSTEM:-}" in 1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn]) return 0 ;; esac
+  if [ -n "${GIT_CONFIG_SYSTEM:-}" ]; then printf '%s\n' "$GIT_CONFIG_SYSTEM"; return 0; fi
+  _xo="$(git config --system --show-origin --list 2>/dev/null | sed -n '1s/^file:\([^	]*\)	.*/\1/p')"
+  printf '%s\n' "${_xo:-/etc/gitconfig}"
 }
 
 # hyg_sync_excludes — <source>\t<pattern> lines for hyg_sync_excluded. Run
@@ -934,7 +951,7 @@ hyg_sync_repo() {
   done < "$HYG_TMP/checkouts"
   if [ "$HYG_SYNC_DRAIN" = "1" ]; then
     _dto="$(cd "$1" && hyg_int hygiene.syncDrainTimeout "$HYG_SYNC_DEFAULT_DRAIN_TIMEOUT")"
-    ( cd "$1" && hyg_sync_bounded "$_dto" sh "$HYG_SELF" drain --dry-run ) </dev/null > "$HYG_TMP/drain" 2>&1
+    ( cd "$1" && HYG_SYNC_EXCLUDES_FROM="$HYG_TMP/excludes" hyg_sync_bounded "$_dto" sh "$HYG_SELF" drain --dry-run ) </dev/null > "$HYG_TMP/drain" 2>&1
     _drc=$?
     [ "$_drc" = "124" ] && echo "  (drain dry run timed out after ${_dto}s: hygiene.syncDrainTimeout)" >> "$HYG_TMP/drain"
     awk -v r="$1" -v rc="$_drc" '{ printf "D\t%s\t%s\t%s\n", r, rc, $0 } END { if (NR == 0) printf "D\t%s\t%s\t\n", r, rc }' "$HYG_TMP/drain" >> "$HYG_SYNC_REC"
@@ -1014,7 +1031,8 @@ hyg_sync_run() {
   HYG_SYNC_REC="$HYG_TMP/records"; : > "$HYG_SYNC_REC"
   HYG_SYNC_ROOTS="$(hyg_sync_roots)"
   # An exclusion source that cannot be read must not read as an empty one.
-  for _xf in "${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"     "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config"; do
+  _xsys="$(hyg_sync_system_config)"
+  for _xf in "${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"     "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" ${_xsys:+"$_xsys"}; do
     if hyg_sync_unreadable "$_xf"; then
       echo "git-guard sync: cannot read $_xf; refusing to run" >&2
       return 1
