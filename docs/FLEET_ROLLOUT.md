@@ -71,6 +71,11 @@ it comes from (`git config --show-scope --show-origin`). A local hooks dir whose
   checks them too, and starts them.
 - Each distro needs its own git-guard install (`sh install.sh` inside the
   distro). A Windows install does not cover WSL.
+- git-guard's hooks run on git older than 2.36 (Ubuntu 22.04 ships 2.34.1).
+  Until this release, the pre-commit provider's push checks used
+  `git ls-tree --format`, which needs 2.36, so every push from such a host in a
+  repo declaring `.pre-commit-config.yaml` was refused with "submodule listing
+  ... failed". Install this release or newer there.
 - git older than 2.36 has no `includeIf "hasconfig:remote.*.url:..."`. `--wsl`
   flags those versions. Any config you scope with `hasconfig:` does not apply
   there, so set `core.hooksPath` unconditionally in that distro's global config.
