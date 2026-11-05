@@ -170,6 +170,25 @@ sys.exit(0 if ok else 1)' "$report" "$manifest" \
   : > "$RM_CLAIMS.fail"
   t_rm_expect_kept "agent-bus claims read fails" "custody: agent-bus claims unreadable"
   rm -f "$RM_CLAIMS.fail"
+  # A listing that is not one fails closed (autopilot review of #107, P1).
+  t_rm_fixture badclaim || t_fail "fixture badclaim"
+  printf 'null' > "$RM_CLAIMS"
+  t_rm_expect_kept "claims listing holds a non-object claim" "custody: agent-bus claims unreadable"
+  t_rm_fixture errclaim || t_fail "fixture errclaim"
+  printf '],"error":"backend unavailable","x":[' > "$RM_CLAIMS"
+  t_rm_expect_kept "claims listing carries an error" "custody: agent-bus claims unreadable"
+  # Claims are matched decoded: JSON escapes must not hide the names.
+  t_rm_fixture escclaim || t_fail "fixture escclaim"
+  # The path's slashes as \/ and the branch names as \u escapes: valid JSON
+  # that a raw text search of the listing cannot match.
+  rm_esc_path="$(printf '%s' "$RM_DONE" | sed 's#/#\\/#g')"
+  printf '%s%s%s' '{"resource":"repo:x:branch:\u0073q"},{"resource":"repo:x:branch:\u006fld"},{"resource":"' \
+    "$rm_esc_path" '"}' > "$RM_CLAIMS"
+  if grep -Fq 'branch:\u0073q' "$RM_CLAIMS" && ! grep -Fq "$RM_DONE" "$RM_CLAIMS"; then
+    t_ok "escaped-claims fixture hides the names from a raw text search"
+  else t_fail "escaped-claims fixture is not escaped"; fi
+  t_rm_expect_kept "JSON-escaped claims name the items" "custody: an agent-bus claim names"
+  : > "$RM_CLAIMS"
   t_rm_fixture nobus || t_fail "fixture nobus"
   rm_bus_keep="$GIT_GUARD_AGENT_BUS"; GIT_GUARD_AGENT_BUS="$GG_T_TMPROOT/no-such-agent-bus"
   t_rm_expect_kept "no agent-bus CLI" "custody: agent-bus CLI not found"
@@ -189,6 +208,21 @@ sys.exit(0 if ok else 1)' "$report" "$manifest" \
   t_sync_run "$sylog"
   [ -d "$RM_DONE/build" ] && t_ok "worktree with ignored data kept (nothing archived)" || t_fail "worktree with ignored data removed"
   grep -Fq "ignored paths" "$report" && t_ok "report names the ignored data" || t_fail "report lacks the ignored-data reason"
+  # skip-worktree and assume-unchanged hide modified bytes from `git status`
+  # (autopilot review of #107, P1): such a worktree is kept, bytes intact.
+  for rm_flag in skip-worktree assume-unchanged; do
+    t_rm_fixture "hidden-$rm_flag" || t_fail "fixture hidden-$rm_flag"
+    rm_tracked="$(git -C "$RM_DONE" ls-files | head -1)"
+    printf 'local edit\n' >> "$RM_DONE/$rm_tracked"
+    git -C "$RM_DONE" update-index "--$rm_flag" "$rm_tracked"
+    touch -t 202001010000 "$SY_REPO/.git/worktrees/repo-done/logs/HEAD"
+    t_sync_run "$sylog"
+    if [ -d "$RM_DONE" ] && grep -Fq 'local edit' "$RM_DONE/$rm_tracked"; then
+      t_ok "$rm_flag entry: worktree and its hidden edit kept"
+    else t_fail "$rm_flag entry: worktree or its hidden edit removed"; fi
+    grep -Fq "skip-worktree or assume-unchanged entries" "$report" && t_ok "$rm_flag entry: report names the reason" \
+      || t_fail "$rm_flag entry: report lacks the reason"
+  done
   t_rm_fixture young || t_fail "fixture young"
   git -C "$SY_REPO" config hygiene.drainMinAgeMinutes 0
   touch "$SY_REPO/.git/worktrees/repo-done/logs/HEAD" "$SY_REPO/.git/logs/refs/heads/old"

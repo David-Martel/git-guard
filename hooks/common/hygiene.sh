@@ -598,6 +598,44 @@ hyg_delete_branch() {
   return 0
 }
 
+# hyg_claims_decode FILE — print every string inside an agent-bus claims
+# listing, JSON-decoded, one per line (newlines folded to spaces). Fails, so
+# the caller keeps the item, unless FILE is an object whose "claims" is a list
+# of objects and whose "error" (if any) is empty, or when no Python 3 exists.
+hyg_claims_decode() {
+  for _cpy in python3 python; do
+    command -v "$_cpy" >/dev/null 2>&1 || continue
+    "$_cpy" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1 || continue
+    "$_cpy" -I -S -c '
+import json, sys
+try:
+    with open(sys.argv[1], "rb") as fh:
+        doc = json.loads(fh.read().decode("utf-8"))
+except Exception:
+    sys.exit(2)
+if not isinstance(doc, dict) or doc.get("error") or not isinstance(doc.get("claims"), list):
+    sys.exit(3)
+out = []
+def walk(v):
+    if isinstance(v, str):
+        out.append(v.replace("\r", " ").replace("\n", " "))
+    elif isinstance(v, dict):
+        for x in v.values():
+            walk(x)
+    elif isinstance(v, list):
+        for x in v:
+            walk(x)
+for claim in doc["claims"]:
+    if not isinstance(claim, dict):
+        sys.exit(4)
+    walk(claim)
+sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8", "surrogateescape"))
+' "$1"
+    return $?
+  done
+  return 1
+}
+
 # hyg_custody KIND PATH BRANCH — prints why removing this item is or is not
 # granted; true only when it is. Owner rule (2026-10-31): unattended removal
 # never touches another lane's work unless custody is proven. Proof is
@@ -626,11 +664,18 @@ hyg_custody() {
     if [ ! -f "$HYG_TMP/claims" ]; then
       _cbus="${GIT_GUARD_AGENT_BUS:-agent-bus}"
       command -v "$_cbus" >/dev/null 2>&1 || { printf 'agent-bus CLI not found (hygiene.custodyBus=false grants without the claims check)'; return 1; }
-      if ! hyg_sync_bounded 20 "$_cbus" claims --encoding json </dev/null > "$HYG_TMP/claims.part" 2>/dev/null ||
-         ! grep -q '"claims"' "$HYG_TMP/claims.part"; then
+      if ! hyg_sync_bounded 20 "$_cbus" claims --encoding json </dev/null > "$HYG_TMP/claims.part" 2>/dev/null; then
         rm -f "$HYG_TMP/claims.part"; printf 'agent-bus claims unreadable'; return 1
       fi
-      mv -f "$HYG_TMP/claims.part" "$HYG_TMP/claims"
+      # Match decoded strings, never the serialized text: JSON escapes (\" or
+      # \u00e9) would otherwise hide a claim. Anything that is not an object
+      # with a "claims" list of objects, or that carries an "error", keeps
+      # the item; so does a host with no Python 3 to parse it.
+      if ! hyg_claims_decode "$HYG_TMP/claims.part" > "$HYG_TMP/claims.txt"; then
+        rm -f "$HYG_TMP/claims.part" "$HYG_TMP/claims.txt"; printf 'agent-bus claims unreadable (not a valid claims listing, or no Python 3 to parse it)'; return 1
+      fi
+      rm -f "$HYG_TMP/claims.part"
+      mv -f "$HYG_TMP/claims.txt" "$HYG_TMP/claims"
     fi
     for _cn in "$_cb" "$_cp"; do
       case "$_cn" in ''|-|'(detached)') continue ;; esac
@@ -639,6 +684,15 @@ hyg_custody() {
   fi
   printf 'granted (%s)' "$_cgrant"
   return 0
+}
+
+# hyg_no_hidden_entries WORKTREE — true only when the index has no
+# skip-worktree (S) or assume-unchanged (lowercase tag) entries. Such entries
+# hide modified bytes from `git status`, so removal could lose them. A failed
+# read counts as hidden.
+hyg_no_hidden_entries() {
+  _hv="$(git -C "$1" ls-files -v 2>/dev/null)" || return 1
+  ! printf '%s\n' "$_hv" | grep -q '^[a-zS] '
 }
 
 # hyg_agent_of TIP — the tip commit's Agent: trailer(s), or "none" (human).
@@ -724,6 +778,9 @@ hyg_drain() {
     if [ -n "$(git -C "$_path" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
       echo "  keep   $_path  (uncommitted or untracked changes)"; continue
     fi
+    if ! hyg_no_hidden_entries "$_path"; then
+      echo "  keep   $_path  (skip-worktree or assume-unchanged entries can hide local changes)"; continue
+    fi
     _ign="$(git -C "$_path" status --porcelain --ignored --untracked-files=all 2>/dev/null | grep -c '^!!' || true)"
     if [ "$_ign" -gt 0 ] && [ "$_allow_ignored" = "0" ]; then
       echo "  keep   $_path  ($_ign ignored paths, e.g. build output; review, then rerun with --allow-ignored)"; continue
@@ -762,7 +819,7 @@ hyg_drain() {
       _now_status="$(printf '%s\n' "$_now_status" | sed '/^!!/d')"
     fi
     if [ "$_now_head" != "$_head" ] || [ "$_now_br" != "$_br" ] ||
-       [ -n "$_now_status" ] || hyg_op_in_progress "$_gd"; then
+       [ -n "$_now_status" ] || hyg_op_in_progress "$_gd" || ! hyg_no_hidden_entries "$_path"; then
       echo "  keep   $_path  (changed since inspection; may be in use)"; continue
     fi
     if ! git worktree remove "$_path" >/dev/null 2>&1; then

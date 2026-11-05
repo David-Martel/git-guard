@@ -887,9 +887,16 @@ verdicts and removes nothing). `--unattended` is ordinary drain plus:
   `<repo path or glob><TAB><branch glob>` (`#` comments, `~` expanded),
   must match the repository's physical path and the branch (`(detached)`
   for a detached worktree). Then, unless `hygiene.custodyBus=false`, no
-  agent-bus claim of any status may name the branch or the path. A missing
-  CLI, a failed or timed-out read (20 s) or output that is not a claims
-  listing keeps every item. The CLI is read once per repository per pass.
+  agent-bus claim of any status may name the branch or the path. The
+  listing is parsed with Python 3 and matched on decoded strings, so a JSON
+  escape (`\/`, `\u00e9`, `\"`) cannot hide a name. A missing CLI, a failed
+  or timed-out read (20 s), output that is not an object with a `claims`
+  list of objects, one that carries an `error`, or a host with no Python 3
+  keeps every item. The CLI is read once per repository per pass.
+
+Every drain, attended or not, also keeps a worktree whose index has
+`skip-worktree` or `assume-unchanged` entries: they hide modified bytes from
+`git status`, so its clean check cannot see them.
 
 Each drain line names the tip's `Agent:` trailer and the custody verdict.
 Each removal is recorded in the report's `removals` array and appended to
