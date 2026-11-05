@@ -96,7 +96,11 @@ Some properties of this block, each of them deliberate and tested:
   the file, so no `SSH_AUTH_SOCK` is needed. That matters for both launchers
   (see below).
 - **`GIT_GUARD_AGENT`** is the explicit selector `prepare-commit-msg` prefers
-  over `CODEX_THREAD_ID` / `CLAUDECODE` detection.
+  over `CODEX_THREAD_ID` / `CLAUDECODE` detection. It accepts `claude`, `codex`
+  and `gemini`; Antigravity exports no marker, so a Gemini session sets
+  `GIT_GUARD_AGENT=gemini`. Any other value refuses the commit. Outside an agent
+  shell, an `Agent:` trailer must name a known agent (`claude`, `codex`,
+  `gemini`, `jules`); a commit with no trailer passes untouched.
 - `env` refuses (exit 1) when the key does not exist. A block naming a missing
   key would make **every** commit fail to sign. Pass `--allow-missing` to draft a
   snippet before `keygen`.
