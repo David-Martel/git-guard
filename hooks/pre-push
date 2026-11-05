@@ -203,16 +203,18 @@ git_guard_scan_pushed() {
   # shellcheck disable=SC2086  # git rev-list emits full commit ids; the scanner validates each
   sh "$git_guard_hook_dir/common/secret_scan.sh" --commits $_gg_commits
 }
-if [ ! -t 0 ] && [ -z "$git_guard_stdin" ]; then
-  git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)" ||
-    git_guard_stdin="$(mktemp /tmp/git-guard-prepush.XXXXXX 2>/dev/null)" || {
-      printf '%s\n' "git-guard BLOCK: cannot create the pushed-ref buffer the secret scan needs." >&2
-      exit 1
-    }
-  trap 'rm -f "$git_guard_stdin"' EXIT
-  git_guard_read_refs
-fi
-if [ -n "$git_guard_stdin" ]; then
+# Present in every release that ships this hook (pre-commit runs it the same
+# way); a partial hook copy without it keeps the checks it does carry.
+if [ -f "$git_guard_hook_dir/common/secret_scan.sh" ] && [ ! -t 0 ]; then
+  if [ -z "$git_guard_stdin" ]; then
+    git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)" ||
+      git_guard_stdin="$(mktemp /tmp/git-guard-prepush.XXXXXX 2>/dev/null)" || {
+        printf '%s\n' "git-guard BLOCK: cannot create the pushed-ref buffer the secret scan needs." >&2
+        exit 1
+      }
+    trap 'rm -f "$git_guard_stdin"' EXIT
+    git_guard_read_refs
+  fi
   git_guard_scan_pushed "${1:-}" || exit 1
 fi
 

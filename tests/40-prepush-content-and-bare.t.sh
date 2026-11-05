@@ -111,6 +111,9 @@ t_case_prepush_content_and_bare() {
   bare="$pc_dir/scratch.git"
   git clone -q --bare "$r" "$bare"
   git -C "$bare" config core.hooksPath "$GG_ROOT/hooks"
+  # A clone does not copy the fixture identity, and CI has no global one.
+  git -C "$bare" config user.email tester@git-guard.local
+  git -C "$bare" config user.name git-guard-tester
   # A pushed commit that declares pre-commit: the provider path used to fail
   # here with a misleading "configuration is missing" message.
   printf 'repos: []\n' > "$pc_dir/pcc.yaml"
