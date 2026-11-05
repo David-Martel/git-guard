@@ -795,9 +795,12 @@ hyg_sync_config_chain() {
     [ -f "$_cf" ] || continue
     hyg_sync_unreadable "$_cf" && continue
     _cd="$(dirname "$_cf")"
-    git config --file "$_cf" --get-regexp '^include(if\..*)?\.path$' 2>/dev/null | cut -d' ' -f2- > "$HYG_TMP/config-paths"
+    # --type=path resolves ~/ and ~user/ the way Git does when it follows the include.
+    git config --file "$_cf" --type=path --get-regexp '^include(if\..*)?\.path$' > "$HYG_TMP/config-raw" 2>/dev/null
+    case $? in 0|1) ;; *) echo "git-guard sync: cannot resolve the includes of $_cf" >&2; return 1 ;; esac
+    cut -d' ' -f2- "$HYG_TMP/config-raw" > "$HYG_TMP/config-paths"
     while IFS= read -r _cp; do
-      case "$_cp" in \~/*) _cp="$HOME/${_cp#??}" ;; /*|[A-Za-z]:*) ;; *) _cp="$_cd/$_cp" ;; esac
+      case "$_cp" in /*|[A-Za-z]:*) ;; *) _cp="$_cd/$_cp" ;; esac
       grep -Fxq -- "$_cp" "$_cw" || printf '%s\n' "$_cp" >> "$_cw"
     done < "$HYG_TMP/config-paths"
   done
@@ -1057,7 +1060,7 @@ hyg_sync_run() {
   HYG_SYNC_ROOTS="$(hyg_sync_roots)"
   # An exclusion source that cannot be read must not read as an empty one.
   _xsys="$(hyg_sync_system_config)"
-  hyg_sync_config_chain "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" ${_xsys:+"$_xsys"} > "$HYG_TMP/config-sources"
+  hyg_sync_config_chain "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" ${_xsys:+"$_xsys"} > "$HYG_TMP/config-sources" || return 1
   printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude" >> "$HYG_TMP/config-sources"
   while IFS= read -r _xf; do
     if hyg_sync_unreadable "$_xf"; then

@@ -316,6 +316,16 @@ t_sync_body() {
   t_sync_expect_refused "dangling config included by an included config"
   rm -f "$sy_inc/real/second"
   git config --file "$sy_inc/first" --unset-all include.path
+  # ~user/ is resolved as Git resolves it, through the password database and not $HOME.
+  sy_me="$(id -un)"; sy_pwhome="$(eval "printf %s ~$sy_me")"
+  if sy_pwd="$(mktemp -d "$sy_pwhome/.git-guard-t.XXXXXX" 2>/dev/null)"; then
+    t_sync_fixture exclnamed && t_sync_advance >/dev/null || t_fail "fixture exclnamed"
+    ln -s "$GG_T_TMPROOT/no-such-volume/gitconfig" "$sy_pwd/inc"
+    git config --file "$sy_inc/first" --add include.path "~$sy_me/${sy_pwd##*/}/inc"
+    t_sync_expect_refused "dangling config included through ~user/"
+    rm -rf "$sy_pwd"
+    git config --file "$sy_inc/first" --unset-all include.path
+  else t_skip "cannot write under the password-database home"; fi
   t_sync_fixture exclcond && t_sync_advance >/dev/null || t_fail "fixture exclcond"
   ln -s "$GG_T_TMPROOT/no-such-volume/gitconfig" "$sy_inc/third"
   git config --file "$sy_inc/first" --add "includeIf.gitdir:/no-such-dir/.path" "$sy_inc/third"
