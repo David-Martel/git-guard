@@ -85,9 +85,38 @@ t_sync_expect_skip() {
   t_sync_run "$sylog"
   if [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$_before" ]; then t_ok "$1: HEAD not moved"
   else t_fail "$1: HEAD moved"; fi
-  if grep -F "skip $SY_REPO" "$sylog" | grep -Fq "$2"; then t_ok "$1: logged as skip ($2)"
+  if t_sync_logged skip "$SY_REPO" | grep -Fq "$2"; then t_ok "$1: logged as skip ($2)"
   else t_fail "$1: no skip line naming '$2'"; sed 's/^/      /' "$sylog" >&2; fi
 }
+
+# t_sync_forms PATH — PATH in every spelling a sync log or report can use on
+# this host, one per line. Why: sync names a checkout by the path Git reports
+# (C:/... under Git for Windows) while fixtures hold MSYS /tmp/... paths, so a
+# one-spelling grep fails on Windows even though sync did the right thing.
+t_sync_forms() {
+  printf '%s\n' "$1"
+  if gg_is_windows; then
+    cygpath -m "$1" 2>/dev/null
+    gg_git_path "$1" 2>/dev/null
+  fi
+}
+
+# t_sync_logged KIND PATH — the lines of $sylog that say "KIND PATH", for any
+# spelling of PATH.
+t_sync_logged() {
+  t_sync_forms "$2" | sort -u | while IFS= read -r _sf; do grep -F "$1 $_sf" "$sylog"; done
+}
+
+# t_sync_report_has RESULT PATH — the JSON report records RESULT for PATH.
+t_sync_report_has() {
+  t_sync_forms "$2" | "$(gg_python)" -c 'import json,sys; d=json.load(open(sys.argv[1])); forms={l.strip() for l in sys.stdin if l.strip()}; sys.exit(0 if any(c["result"]==sys.argv[2] and c["path"] in forms for c in d["checkouts"]) else 1)' "$report" "$1"
+}
+
+# t_sync_can_ff — this host can prove no process has its cwd in a checkout,
+# the last check before a fast-forward (hooks/common/hygiene.sh
+# hyg_sync_cwd_user). docs/QA_TOOLING.md (hygiene sync, step 3): off Linux
+# every otherwise-eligible candidate is skipped with cwd-check-unavailable.
+t_sync_can_ff() { [ "$(uname -s 2>/dev/null)" = "Linux" ] && [ -r /proc/self/cwd ]; }
 
 t_case_sync() {
   t_begin "36 hygiene sync (bounded fetch, fast-forward only when safe, drain report, timer)"
@@ -112,23 +141,36 @@ t_sync_body() {
 
   # --- positive control ----------------------------------------------------
   t_sync_fixture ff || { t_fail "could not build the sync fixture"; return 0; }
+  before="$(git -C "$SY_REPO" rev-parse HEAD)"
   tip="$(t_sync_advance)"
   t_sync_run "$sylog"; rc=$?
   t_expect_rc 0 "$rc" "sync exits 0"
-  [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$tip" ] && t_ok "clean, behind primary on main is fast-forwarded" \
-    || { t_fail "clean, behind primary was NOT fast-forwarded"; sed 's/^/      /' "$sylog" >&2; }
+  if t_sync_can_ff; then
+    want=ff
+    [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$tip" ] && t_ok "clean, behind primary on main is fast-forwarded" \
+      || { t_fail "clean, behind primary was NOT fast-forwarded"; sed 's/^/      /' "$sylog" >&2; }
+    t_sync_logged ff "$SY_REPO" | grep -q . && t_ok "fast-forward is logged" || t_fail "no ff line in the log"
+  else
+    want=skip
+    [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$before" ] && t_ok "off Linux: the eligible checkout is not moved" \
+      || t_fail "off Linux: HEAD moved without a cwd check"
+    t_sync_logged skip "$SY_REPO" | grep -Fq cwd-check-unavailable \
+      && t_ok "off Linux: the skip names cwd-check-unavailable" \
+      || { t_fail "off Linux: no cwd-check-unavailable skip"; sed 's/^/      /' "$sylog" >&2; }
+  fi
   [ -s "$sylog.out" ] && t_fail "sync wrote to stdout" || t_ok "sync writes nothing to stdout"
-  grep -Fq "ff $SY_REPO" "$sylog" && t_ok "fast-forward is logged" || t_fail "no ff line in the log"
   if [ -f "$report" ]; then
     t_ok "report written to \$XDG_STATE_HOME/git-guard/sync-report.json"
     if gg_has_python; then
-      "$(gg_python)" -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if any(c["result"]=="ff" and c["path"]==sys.argv[2] for c in d["checkouts"]) else 1)' \
-        "$report" "$SY_REPO" && t_ok "report is valid JSON and records the ff" \
-        || t_fail "report is not valid JSON or lacks the ff record"
+      t_sync_report_has "$want" "$SY_REPO" && t_ok "report is valid JSON and records the $want" \
+        || t_fail "report is not valid JSON or lacks the $want record"
     else t_skip "python absent: report JSON not parsed"; fi
   else t_fail "no report written"; fi
+  # Off Linux nothing fast-forwarded above; bring the checkout up to date so the
+  # up-to-date decision, which precedes the cwd check, is still exercised.
+  t_sync_can_ff || git -C "$SY_REPO" merge -q --ff-only "$tip" >/dev/null 2>&1
   t_sync_run "$sylog"
-  grep -Fq "current $SY_REPO" "$sylog" && t_ok "an up-to-date checkout is logged as current" \
+  t_sync_logged current "$SY_REPO" | grep -q . && t_ok "an up-to-date checkout is logged as current" \
     || t_fail "up-to-date checkout not logged as current"
 
   # --dry-run decides the same way but moves nothing.
@@ -136,10 +178,14 @@ t_sync_body() {
   dtip="$(t_sync_advance)"; dbefore="$(git -C "$SY_REPO" rev-parse HEAD)"
   t_sync_run "$sylog" --dry-run
   [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$dbefore" ] && t_ok "--dry-run moves nothing" || t_fail "--dry-run moved HEAD"
-  grep -Fq "would-ff $SY_REPO" "$sylog" && t_ok "--dry-run logs would-ff" || t_fail "--dry-run did not log would-ff"
-  t_sync_run "$sylog"
-  [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$dtip" ] && t_ok "the same checkout fast-forwards without --dry-run" \
-    || t_fail "checkout did not fast-forward after the dry run"
+  if t_sync_can_ff; then
+    t_sync_logged would-ff "$SY_REPO" | grep -q . && t_ok "--dry-run logs would-ff" || t_fail "--dry-run did not log would-ff"
+    t_sync_run "$sylog"
+    [ "$(git -C "$SY_REPO" rev-parse HEAD)" = "$dtip" ] && t_ok "the same checkout fast-forwards without --dry-run" \
+      || t_fail "checkout did not fast-forward after the dry run"
+  else
+    t_skip "off Linux: no cwd check, so neither would-ff nor the follow-up fast-forward can happen"
+  fi
 
   # --- refusals (each on a fresh fixture that is behind) --------------------
   t_sync_fixture dirty && t_sync_advance >/dev/null && printf 'edit\n' >> "$SY_REPO/one.txt" &&
@@ -209,12 +255,18 @@ t_sync_body() {
   wtip="$(t_sync_advance topic)"
   keep_before="$(git -C "$SY_ROOT/repo-keep" rev-parse HEAD)"
   t_sync_run "$sylog"
-  [ "$(git -C "$SY_ROOT/repo-topic" rev-parse HEAD)" = "$wtip" ] \
-    && t_ok "clean linked worktree fast-forwards on its own branch" \
-    || { t_fail "linked worktree was not fast-forwarded"; sed 's/^/      /' "$sylog" >&2; }
+  if t_sync_can_ff; then
+    [ "$(git -C "$SY_ROOT/repo-topic" rev-parse HEAD)" = "$wtip" ] \
+      && t_ok "clean linked worktree fast-forwards on its own branch" \
+      || { t_fail "linked worktree was not fast-forwarded"; sed 's/^/      /' "$sylog" >&2; }
+  else
+    t_sync_logged skip "$SY_ROOT/repo-topic" | grep -Fq cwd-check-unavailable \
+      && t_ok "off Linux: the eligible linked worktree reaches the cwd check and is skipped" \
+      || { t_fail "off Linux: linked worktree not skipped with cwd-check-unavailable"; sed 's/^/      /' "$sylog" >&2; }
+  fi
   [ "$(git -C "$SY_ROOT/repo-keep" rev-parse HEAD)" = "$keep_before" ] \
     && t_ok "preserve/* worktree is not moved" || t_fail "preserve/* worktree moved"
-  grep -F "skip $SY_ROOT/repo-keep" "$sylog" | grep -Fq "preserve" \
+  t_sync_logged skip "$SY_ROOT/repo-keep" | grep -Fq "preserve" \
     && t_ok "preserve/* skip is logged" || t_fail "preserve/* skip not logged"
 
   # --- drain report ---------------------------------------------------------
@@ -227,8 +279,8 @@ t_sync_body() {
   git -C "$SY_REPO" rev-parse -q --verify refs/heads/merged-gone >/dev/null \
     && t_ok "drain dry run in sync deletes nothing" || t_fail "sync deleted a branch"
   if gg_has_python; then
-    "$(gg_python)" -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if any(r["repo"]==sys.argv[2] and any("would remove branch merged-gone" in l for l in r["lines"]) for r in d["drain"]) else 1)' \
-      "$report" "$SY_REPO" && t_ok "report carries the repo's drain dry run" \
+    t_sync_forms "$SY_REPO" | "$(gg_python)" -c 'import json,sys; d=json.load(open(sys.argv[1])); forms={l.strip() for l in sys.stdin if l.strip()}; sys.exit(0 if any(r["repo"] in forms and any("would remove branch merged-gone" in l for l in r["lines"]) for r in d["drain"]) else 1)' \
+      "$report" && t_ok "report carries the repo's drain dry run" \
       || t_fail "report lacks the drain dry run for the repo"
   else
     grep -q 'would remove branch merged-gone' "$report" && t_ok "report carries the drain dry run" \
@@ -246,9 +298,15 @@ t_sync_body() {
   t_expect_rc 0 "$rc" "install-timer succeeds"
   svc="$units/git-guard-sync.service"; tmr="$units/git-guard-sync.timer"
   [ -f "$svc" ] && [ -f "$tmr" ] && t_ok "service and timer units written" || t_fail "units not written"
-  grep -Fq "\"$store/current/bin/git-guard\" hygiene sync" "$svc" 2>/dev/null \
-    && t_ok "service starts the release through the store's current link" \
-    || t_fail "service does not start through current/ ($(grep ExecStart "$svc" 2>/dev/null))"
+  # MSYS ln -s copies the directory unless native symlinks are enabled; the
+  # installer then correctly has no link to start through (systemd is Linux-only).
+  if [ -L "$store/current" ]; then
+    grep -Fq "\"$store/current/bin/git-guard\" hygiene sync" "$svc" 2>/dev/null \
+      && t_ok "service starts the release through the store's current link" \
+      || t_fail "service does not start through current/ ($(grep ExecStart "$svc" 2>/dev/null))"
+  else
+    t_skip "ln -s made no symlink on this host: the current/ link is not exercised"
+  fi
   grep -q '^Nice=19$' "$svc" 2>/dev/null && grep -q '^IOSchedulingClass=idle$' "$svc" 2>/dev/null \
     && t_ok "service runs at Nice=19 and idle IO" || t_fail "service lacks Nice=19 / idle IO"
   grep -q '^Type=oneshot$' "$svc" 2>/dev/null && t_ok "service is oneshot" || t_fail "service is not oneshot"
