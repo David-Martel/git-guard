@@ -364,25 +364,60 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # The gate already honors repo *config* (it passes no --select when pyproject
 # declares [tool.ruff]); honoring the repo's *binary* is the same principle.
 # The repo's pin is authoritative for the repo.
+#
+# A linked worktree (`git worktree add`) normally has no .venv of its own, so the
+# main checkout's .venv is the project environment there. Measured 2026-11-05 on
+# dtm-p1gen7 (vigil-audio worktree, git-guard v0.2.17): without this step the
+# lookup fell through to ~/.local/bin/mypy, which cannot import the repo's
+# `pydantic.mypy` plugin, and every Python commit was blocked with a bare
+# "mypy type errors." qa_py_tool_from_env tells a project-env tool from a PATH
+# fallback, so a fallback that fails can say so (see qa_check_python).
+qa_main_checkout_root() {
+  # The main checkout owns the common dir `<main>/.git`; a linked worktree's
+  # REPO_ROOT differs from it. Empty when not in a linked worktree.
+  _qmc_common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  case "$_qmc_common" in
+    */.git) _qmc_main="${_qmc_common%/.git}" ;;
+    *) return 0 ;;
+  esac
+  [ -n "$REPO_ROOT" ] && [ "$_qmc_main" != "$REPO_ROOT" ] && printf '%s\n' "$_qmc_main"
+  return 0
+}
+
 qa_py_tool() {
   _qpt_name="$1"
-  # Repo-local virtualenv first (POSIX layout, then the Windows Scripts/ layout).
-  for _qpt_cand in \
-    "$REPO_ROOT/.venv/bin/$_qpt_name" \
-    "$REPO_ROOT/.venv/Scripts/$_qpt_name.exe"
-  do
-    if [ -x "$_qpt_cand" ]; then printf '%s\n' "$_qpt_cand"; return 0; fi
+  _qpt_main="$(qa_main_checkout_root)"
+  # Repo-local virtualenv first, then the main checkout's when this is a linked
+  # worktree (POSIX layout, then the Windows Scripts/ layout for each).
+  for _qpt_root in "$REPO_ROOT" ${_qpt_main:+"$_qpt_main"}; do
+    for _qpt_cand in \
+      "$_qpt_root/.venv/bin/$_qpt_name" \
+      "$_qpt_root/.venv/Scripts/$_qpt_name.exe"
+    do
+      if [ -x "$_qpt_cand" ]; then printf '%s\n' "$_qpt_cand"; return 0; fi
+    done
   done
-  # An ACTIVE virtualenv is next best. Guarded on non-empty: unset VIRTUAL_ENV
-  # would otherwise build the absolute path "/bin/<tool>" and can match a real
-  # system binary, silently reintroducing the ambient-tool bug this fixes.
-  if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/$_qpt_name" ]; then
-    printf '%s\n' "$VIRTUAL_ENV/bin/$_qpt_name"
-    return 0
+  # An ACTIVE virtualenv is next best (both layouts). Guarded on non-empty: unset
+  # VIRTUAL_ENV would otherwise build the absolute path "/bin/<tool>" and can match
+  # a real system binary, silently reintroducing the ambient-tool bug this fixes.
+  if [ -n "${VIRTUAL_ENV:-}" ]; then
+    for _qpt_cand in "$VIRTUAL_ENV/bin/$_qpt_name" "$VIRTUAL_ENV/Scripts/$_qpt_name.exe"; do
+      if [ -x "$_qpt_cand" ]; then printf '%s\n' "$_qpt_cand"; return 0; fi
+    done
   fi
   # Fall back to PATH. `|| true` so `set -u`/`set -e` callers see empty, not a
   # non-zero exit, when the tool is absent everywhere.
   command -v "$_qpt_name" 2>/dev/null || true
+}
+
+# True when a tool path from qa_py_tool belongs to a project environment (a .venv
+# or the active VIRTUAL_ENV) rather than an ambient PATH install.
+qa_py_tool_from_env() {
+  case "$1" in */.venv/*) return 0 ;; esac
+  if [ -n "${VIRTUAL_ENV:-}" ]; then
+    case "$1" in "$VIRTUAL_ENV"/*) return 0 ;; esac
+  fi
+  return 1
 }
 
 QA_FIND="find"
@@ -957,13 +992,29 @@ qa_check_python() {
       fi
     elif [ -z "$mp_files" ]; then
       qa_dbg "no staged Python files are inside the configured mypy scope"
-    elif ! ( cd "$REPO_ROOT" && "$QA_MYPY" --ignore-missing-imports --no-error-summary $mp_files >/dev/null 2>&1 ); then
-      if [ "$mp_mode" = "block" ]; then
-        qa_block "mypy type errors."
+    elif ! ( cd "$REPO_ROOT" && "$QA_MYPY" --ignore-missing-imports --no-error-summary $mp_files >/tmp/qa_mypy.$$ 2>&1 ); then
+      [ "$QA_DEBUG" = "1" ] && cat /tmp/qa_mypy.$$ >&2
+      # A mypy that is not the project's own (PATH fallback) usually fails on the
+      # project config itself, e.g. "Error importing plugin 'pydantic.mypy'". That
+      # is a missing environment, not a type error: name the env and the fix.
+      if ! qa_py_tool_from_env "$QA_MYPY" \
+        && grep -Eqi "error importing plugin|no module named|invalid config|error constructing plugin" /tmp/qa_mypy.$$ 2>/dev/null; then
+        mp_main="$(qa_main_checkout_root)"
+        mp_msg="mypy from PATH ($QA_MYPY) cannot load this project's mypy configuration; the project environment is missing."
+        if [ -n "$mp_main" ]; then
+          mp_msg="$mp_msg This linked worktree has no .venv and neither has its main checkout ($mp_main). Fix: run \`uv sync\` in $mp_main (its .venv is used for worktrees too), or create .venv in $REPO_ROOT."
+        else
+          mp_msg="$mp_msg Fix: create the project environment in $REPO_ROOT (\`uv sync\`), or activate it (VIRTUAL_ENV)."
+        fi
+        if [ "$mp_mode" = "block" ]; then qa_block "$mp_msg"; else qa_warn "$mp_msg (non-blocking)"; fi
+      elif [ "$mp_mode" = "block" ]; then
+        qa_block "mypy type errors ($QA_MYPY):"
       else
         qa_warn "mypy type findings (non-blocking)."
       fi
+      if [ "$mp_mode" = "block" ]; then head -20 /tmp/qa_mypy.$$ >&2 2>/dev/null || true; fi
     fi
+    rm -f /tmp/qa_mypy.$$
   fi
 
   # basedpyright (often absent -> skip silently)
