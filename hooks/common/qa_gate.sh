@@ -53,7 +53,13 @@ QA_GLOBAL_CONF="$QA_SELF_DIR/qa-gate.conf"
 QA_RULES_BUNDLED="$QA_SELF_DIR/../../rules-examples"
 QA_RULES_DIR=""   # finalized below, after the conf files are parsed
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
-[ -n "$REPO_ROOT" ] || exit 0   # not in a repo; nothing to do
+if [ -z "$REPO_ROOT" ]; then
+  # Config queries still answer in a BARE repository: hooks/pre-push lets
+  # preserve/* custody pushes through from one, and preserve.sh asks for
+  # `preserve_exemption`. Everything else needs a worktree; nothing to do.
+  case "${1:-}" in --get|--get-prefix) : ;; *) exit 0 ;; esac
+  [ "$(git rev-parse --is-bare-repository 2>/dev/null)" = true ] || exit 0
+fi
 
 # Per-repo override search (first hit wins).
 QA_REPO_CONF=""
@@ -71,9 +77,20 @@ if [ "${1:-}" = "--get-prefix" ] && [ "${3:-}" = "--repo-conf" ]; then
     exit 1
   fi
 fi
-if [ "$QA_REPO_CONF_EXPLICIT" = "0" ]; then
+if [ "$QA_REPO_CONF_EXPLICIT" = "0" ] && [ -n "$REPO_ROOT" ]; then
   for cand in "$REPO_ROOT/.qa-gate.conf" "$REPO_ROOT/.git-guard/qa-gate.conf"; do
     if [ -f "$cand" ]; then QA_REPO_CONF="$cand"; break; fi
+  done
+elif [ "$QA_REPO_CONF_EXPLICIT" = "0" ]; then
+  # Bare repository: the repo layer is the conf committed at HEAD (same
+  # search order), so a repo's opt-out still applies without a worktree.
+  for cand in .qa-gate.conf .git-guard/qa-gate.conf; do
+    if [ "$(git cat-file -t "HEAD:$cand" 2>/dev/null)" = blob ]; then
+      QA_REPO_CONF="$(mktemp "${TMPDIR:-/tmp}/git-guard-bare-conf.XXXXXX")" || exit 1
+      trap 'rm -f "$QA_REPO_CONF"' EXIT
+      git cat-file blob "HEAD:$cand" > "$QA_REPO_CONF" || exit 1
+      break
+    fi
   done
 fi
 

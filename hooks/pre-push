@@ -2,9 +2,11 @@
 #
 # git-guard pre-push — generic, optional downstream chaining.
 #
-# git-guard's enforcement is at pre-commit; this pre-push is a thin, OPTIONAL
-# hook that chains a downstream pusher's heavy gate (tests/clippy/typecheck) if
-# one is configured, and otherwise no-ops. No machine-specific paths.
+# git-guard's enforcement is at pre-commit. This pre-push refuses pushes from a
+# bare repository, secret-scans every commit the push publishes (commits made
+# where no hook ran included), and chains a downstream pusher's heavy gate
+# (tests/clippy/typecheck) if one is configured. On success it prints a
+# one-line receipt to stderr. No machine-specific paths.
 #
 # Bypass: `GIT_GUARD=0 git push ...`. Do NOT use --no-verify.
 
@@ -109,6 +111,17 @@ if [ "$git_guard_identity_mode" != "off" ] && [ ! -t 0 ] &&
   fi
 fi
 
+# One line on stderr for every push this hook lets through, so "the hooks ran"
+# is observable: a push whose output lacks this line ran no git-guard pre-push.
+git_guard_receipt() {
+  _gg_ref_count=0
+  if [ -n "$git_guard_stdin" ]; then
+    _gg_ref_count="$(grep -c . "$git_guard_stdin" 2>/dev/null)" || _gg_ref_count=0
+  fi
+  _gg_version="$(cat "$git_guard_hook_dir/../VERSION" 2>/dev/null)" || _gg_version=""
+  printf 'git-guard pre-push %s: %s ref(s) checked\n' "${_gg_version:-unknown}" "$_gg_ref_count" >&2
+}
+
 # preserve/* exemption (common/preserve.sh, docs/QA_TOOLING.md): a push whose
 # every updated ref is refs/heads/preserve/* or refs/preserve/*, and whose new
 # commits all carry a valid `Preserve-Of:` trailer, gets a secret scan of those
@@ -123,8 +136,84 @@ if [ -x "$git_guard_hook_dir/common/preserve.sh" ] && [ ! -t 0 ]; then
   if [ -n "$git_guard_stdin" ]; then
     "$git_guard_hook_dir/common/preserve.sh" pre-push "$@" < "$git_guard_stdin"
     git_guard_preserve_rc=$?
-    [ "$git_guard_preserve_rc" -eq 3 ] || exit "$git_guard_preserve_rc"
+    if [ "$git_guard_preserve_rc" -ne 3 ]; then
+      [ "$git_guard_preserve_rc" -ne 0 ] || git_guard_receipt
+      exit "$git_guard_preserve_rc"
+    fi
   fi
+fi
+
+# A bare repository has no worktree, so the repo's declared pre-push checks
+# cannot run against the pushed source (the provider dispatch below needs one).
+# Refuse here with the supported routes rather than let a provider fail with a
+# misleading message. preserve/* custody pushes were already let through above.
+if [ "$(git rev-parse --is-bare-repository 2>/dev/null)" = true ]; then
+  printf '%s\n' \
+    "git-guard BLOCK: this push comes from a bare repository. git-guard runs the repo's" \
+    "pre-push checks in a worktree, and a bare repository has none." \
+    "Supported ways to publish:" \
+    "  * push from a worktree: git worktree add <dir> <branch>, then run git push inside <dir>" \
+    "    (the worktree shares this repository's objects, so nothing is copied);" \
+    "  * keep unreviewed work in custody: push it to preserve/<name> or refs/preserve/<name>" \
+    "    with a 'Preserve-Of: <ref-or-sha>' trailer on every new commit." \
+    "There is no override for this check. Do NOT use --no-verify." >&2
+  exit 1
+fi
+
+# Pushed-range secret scan. pre-commit scans the lines a commit adds, but a
+# commit made on a host without git-guard, written by plumbing, made in a web
+# editor or rebased onto unscanned history reaches the remote through this host
+# without ever meeting that scan. So scan every commit this push publishes: new
+# commits reachable from the pushed refs and not from the remote's tracking
+# refs or the refs' old values. Newest 500 at most, and the hook says so.
+git_guard_scan_cap=500
+git_guard_scan_pushed() {
+  _gg_tips=""; _gg_known=""
+  while read -r _gg_lref _gg_lsha _gg_rref _gg_rsha _gg_more; do
+    [ -n "${_gg_lsha:-}" ] || continue
+    case "$_gg_lsha" in *[!0]*) : ;; *) continue ;; esac   # deletion
+    # A tag of a tree or blob publishes no commits.
+    _gg_tip="$(git rev-parse --verify --quiet "${_gg_lsha}^{commit}" 2>/dev/null)" || continue
+    _gg_tips="$_gg_tips $_gg_tip"
+    case "${_gg_rsha:-}" in
+      *[!0]*)
+        if _gg_old="$(git rev-parse --verify --quiet "${_gg_rsha}^{commit}" 2>/dev/null)"; then
+          _gg_known="$_gg_known $_gg_old"
+        fi ;;
+    esac
+  done < "$git_guard_stdin"
+  [ -n "$_gg_tips" ] || return 0
+  # A push to a URL names no remote; every remote-tracking ref is the floor then.
+  if git remote 2>/dev/null | grep -Fqx -- "${1:-}"; then
+    _gg_remotes="--remotes=$1"
+  else
+    _gg_remotes="--remotes"
+  fi
+  # shellcheck disable=SC2086  # word-split lists of full commit ids
+  if ! _gg_total="$(git rev-list --count $_gg_tips --not $_gg_known "$_gg_remotes")" ||
+     ! _gg_commits="$(git rev-list --max-count="$git_guard_scan_cap" $_gg_tips --not $_gg_known "$_gg_remotes")"; then
+    printf '%s\n' "git-guard BLOCK: cannot list the commits this push publishes, so they cannot be scanned. Do NOT use --no-verify." >&2
+    return 1
+  fi
+  [ "$_gg_total" -gt 0 ] || return 0
+  if [ "$_gg_total" -gt "$git_guard_scan_cap" ]; then
+    printf 'git-guard pre-push: %s new commits; scanning the newest %s for secrets.\n' \
+      "$_gg_total" "$git_guard_scan_cap" >&2
+  fi
+  # shellcheck disable=SC2086  # git rev-list emits full commit ids; the scanner validates each
+  sh "$git_guard_hook_dir/common/secret_scan.sh" --commits $_gg_commits
+}
+if [ ! -t 0 ] && [ -z "$git_guard_stdin" ]; then
+  git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)" ||
+    git_guard_stdin="$(mktemp /tmp/git-guard-prepush.XXXXXX 2>/dev/null)" || {
+      printf '%s\n' "git-guard BLOCK: cannot create the pushed-ref buffer the secret scan needs." >&2
+      exit 1
+    }
+  trap 'rm -f "$git_guard_stdin"' EXIT
+  git_guard_read_refs
+fi
+if [ -n "$git_guard_stdin" ]; then
+  git_guard_scan_pushed "${1:-}" || exit 1
 fi
 
 # Backlog hygiene (common/hygiene.sh, docs/QA_TOOLING.md §12): refuse a push
@@ -337,4 +426,5 @@ elif { [ -e "$git_guard_repo_root/.pre-commit-config.yaml" ] || [ -L "$git_guard
   sh "$git_guard_hook_dir/common/precommit-provider.sh" pre-push "$@" || exit $?
 fi
 
+git_guard_receipt
 exit 0

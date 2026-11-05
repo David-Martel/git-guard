@@ -5,6 +5,18 @@
 # Subcommands:
 #   status     show install state, version, resolved rules dir
 #   doctor     check prerequisites (git, ast-grep, shellcheck, ruff, cygpath…)
+#              and host coverage; exits non-zero on any [FAIL] and ends with
+#              "git-guard doctor: COVERED" or "NOT COVERED (...)". Options:
+#                --require-installed  unset hooksPath or a stale legacy hooks
+#                                     copy (no VERSION) is a FAIL
+#                --repo DIR           (repeatable) effective core.hooksPath,
+#                                     repo-local overrides, declared providers
+#                                     (pre-commit / lefthook) and PyYAML
+#                --strict             coverage warnings become failures
+#                --wsl                core.hooksPath in each RUNNING WSL distro
+#                                     (Git Bash on Windows; stopped ones skipped)
+#                --wsl-start          like --wsl, but also starts stopped distros
+#              (docs/FLEET_ROLLOUT.md)
 #   rules      print the rule manifest (categories, counts, the BLOCK trio)
 #   verify     self-test: BLOCK trio fires, clean commit passes (scratch repo)
 #   test       run the comprehensive validation suite (tests/), hermetic temp repos
@@ -110,7 +122,168 @@ cmd_status() {
 # True only when `sg` on PATH is genuinely ast-grep (not util-linux set-group).
 sg_is_astgrep() { have sg && sg --version 2>/dev/null | grep -qi 'ast-grep'; }
 astgrep_is_astgrep() { have ast-grep && ast-grep --version 2>/dev/null | grep -qi 'ast-grep'; }
+# --- doctor: coverage ---------------------------------------------------------
+# A hook cannot report its own absence, so "is this host covered?" has to be a
+# command that exits non-zero. Each [FAIL] is counted; a coverage [warn] becomes
+# a [FAIL] under --strict. See docs/FLEET_ROLLOUT.md.
+dr_fail() { printf '  [FAIL] %s\n' "$*"; doctor_fails=$((doctor_fails + 1)); }
+dr_cov_warn() {
+  if [ "$doctor_strict" = 1 ]; then dr_fail "$* (--strict)"; else printf '  [warn] %s\n' "$*"; fi
+}
+
+# Echo the lefthook config file name at repo root $1 (same stems as the hooks).
+dr_lefthook_config() {
+  for _dr_stem in lefthook .lefthook .config/lefthook; do
+    for _dr_ext in yml yaml json toml; do
+      if [ -e "$1/$_dr_stem.$_dr_ext" ] || [ -L "$1/$_dr_stem.$_dr_ext" ]; then
+        printf '%s' "$_dr_stem.$_dr_ext"; return 0
+      fi
+    done
+  done
+  return 1
+}
+
+# Does hook file $1 hand off to git-guard? A repo-local hooks dir only keeps
+# git-guard's checks if its own hooks call them.
+dr_hook_delegates() { [ -f "$1" ] && grep -Eq 'git-guard|\.git-hooks' "$1" 2>/dev/null; }
+
+# --repo DIR: does git-guard actually run in this repository?
+dr_check_repo() {
+  dr_repo="$1"
+  echo "  repo $dr_repo"
+  if ! git -C "$dr_repo" rev-parse --git-dir >/dev/null 2>&1; then
+    dr_fail "repo           $dr_repo is not a git repository"
+    return 0
+  fi
+  if [ "$(git -C "$dr_repo" rev-parse --is-bare-repository 2>/dev/null)" = true ]; then
+    printf '  [--]   repo           bare repository: git-guard pre-push refuses pushes from it; push from a worktree (git worktree add <dir> <branch>)\n'
+    return 0
+  fi
+  dr_top="$(git -C "$dr_repo" rev-parse --show-toplevel 2>/dev/null)" || dr_top="$dr_repo"
+
+  # Effective core.hooksPath and where it comes from.
+  dr_scope_val="$(git -C "$dr_repo" config --show-scope --get core.hooksPath 2>/dev/null)" || dr_scope_val=""
+  dr_origin="$(git -C "$dr_repo" config --show-origin --get core.hooksPath 2>/dev/null)" || dr_origin=""
+  dr_scope="${dr_scope_val%%	*}"
+  dr_hp="${dr_scope_val#*	}"
+  dr_gg_phys="$doctor_gg_phys"
+  if [ -z "$dr_scope_val" ]; then
+    dr_hooks_dir="$(git -C "$dr_repo" rev-parse --git-path hooks 2>/dev/null)" || dr_hooks_dir=""
+    case "$dr_hooks_dir" in /*|[A-Za-z]:*) : ;; *) dr_hooks_dir="$dr_top/$dr_hooks_dir" ;; esac
+    dr_where="no core.hooksPath in effect; git runs $dr_hooks_dir"
+  else
+    # shellcheck disable=SC2088  # literal "~/" in a stored config value
+    case "$dr_hp" in
+      "~/"*) dr_hooks_dir="$HOME/${dr_hp#\~/}" ;;
+      /*|[A-Za-z]:*) dr_hooks_dir="$dr_hp" ;;
+      *) dr_hooks_dir="$dr_top/$dr_hp" ;;   # relative: git resolves it from the worktree root
+    esac
+    dr_where="core.hooksPath=$dr_hp ($dr_scope: ${dr_origin%%	*})"
+  fi
+  dr_phys="$(cd "$dr_hooks_dir" 2>/dev/null && pwd -P)" || dr_phys=""
+  if [ -n "$dr_phys" ] && [ -n "$dr_gg_phys" ] && [ "$dr_phys" = "$dr_gg_phys" ]; then
+    printf '  [ok]   repo-hooks     %s -> git-guard hooks\n' "$dr_where"
+  else
+    dr_missing=""
+    for dr_h in pre-commit pre-push; do
+      dr_hook_delegates "$dr_hooks_dir/$dr_h" || dr_missing="$dr_missing $dr_h"
+    done
+    if [ -z "$dr_missing" ]; then
+      dr_cov_warn "repo-hooks     $dr_where; its pre-commit and pre-push name git-guard (delegation not verified by running them)"
+    else
+      dr_fail "repo-hooks     $dr_where; git-guard hooks never run here (no delegation in:$dr_missing)"
+    fi
+  fi
+
+  # Declared providers must be runnable, or pre-push refuses every push.
+  if dr_lh="$(dr_lefthook_config "$dr_top")"; then
+    if have lefthook; then printf '  [ok]   provider       %s declared; lefthook %s\n' "$dr_lh" "$(command -v lefthook)"
+    else dr_fail "provider       $dr_lh declared but lefthook is not on PATH (pre-push will refuse)"; fi
+  fi
+  if [ -e "$dr_top/.pre-commit-config.yaml" ] || [ -e "$dr_top/.pre-commit-config.yml" ]; then
+    if have pre-commit; then printf '  [ok]   provider       .pre-commit-config declared; pre-commit %s\n' "$(command -v pre-commit)"
+    else dr_fail "provider       .pre-commit-config declared but pre-commit is not on PATH (pre-push will refuse)"; fi
+  fi
+}
+
+# The YAML checks need a Python that imports yaml (python first, as the gate).
+dr_check_pyyaml() {
+  for dr_py in python python3; do
+    if have "$dr_py" && "$dr_py" -c 'import yaml' >/dev/null 2>&1; then
+      printf '  [ok]   pyyaml         %s imports yaml\n' "$(command -v "$dr_py")"
+      return 0
+    fi
+  done
+  dr_cov_warn "pyyaml         no python/python3 on PATH imports yaml (YAML checks degrade; install PyYAML for that interpreter)"
+}
+
+# --wsl: global core.hooksPath in each WSL distro (Git Bash on Windows only).
+# Running a command in a stopped distro STARTS it, so stopped distros are
+# skipped unless --wsl-start is given. wsl.exe prints its own lists as UTF-16.
+dr_wsl_list() { wsl.exe "$@" </dev/null 2>/dev/null | tr -d '\000\r'; }
+# Script run inside a distro; prints "<git version>|<hooksPath>|<ok|missing>",
+# or "nogit".
+# shellcheck disable=SC2016  # expanded by the distro's sh, not here
+DR_WSL_PROBE='command -v git >/dev/null 2>&1 || { echo nogit; exit 0; }
+v="$(git --version 2>/dev/null | sed "s/^git version //")"
+hp="$(git config --global --get core.hooksPath 2>/dev/null)"
+case "$hp" in "~/"*) d="$HOME/${hp#??}" ;; *) d="$hp" ;; esac
+if [ -n "$hp" ] && [ -x "$d/pre-commit" ]; then s=ok; else s=missing; fi
+echo "$v|$hp|$s"'
+dr_check_wsl() {
+  case "$(uname -s 2>/dev/null || echo)" in
+    MINGW*|MSYS*|CYGWIN*) : ;;
+    *) printf '  [--]   wsl            not a Windows host; nothing to check\n'; return 0 ;;
+  esac
+  if ! have wsl.exe; then printf '  [--]   wsl            wsl.exe not found; nothing to check\n'; return 0; fi
+  dr_distros="$(dr_wsl_list -l -q)"
+  dr_running="$(dr_wsl_list -l -q --running)"
+  if [ -z "$dr_distros" ]; then printf '  [--]   wsl            no distros installed\n'; return 0; fi
+  # Distro names cannot contain whitespace, so word splitting is safe here.
+  for dr_d in $dr_distros; do
+    if ! printf '%s\n' "$dr_running" | grep -Fqx -- "$dr_d" && [ "$doctor_wsl_start" != 1 ]; then
+      dr_cov_warn "wsl            $dr_d: stopped, not checked (--wsl-start starts it to check)"
+      continue
+    fi
+    dr_out="$(wsl.exe -d "$dr_d" -e sh -c "$DR_WSL_PROBE" </dev/null 2>/dev/null | tr -d '\000\r')" || dr_out=""
+    case "$dr_out" in
+      nogit) printf '  [--]   wsl            %s: git not installed; nothing to cover\n' "$dr_d"; continue ;;
+      *'|'*'|'*) : ;;
+      *) dr_fail "wsl            $dr_d: could not query git in the distro"; continue ;;
+    esac
+    dr_v="${dr_out%%|*}"; dr_rest="${dr_out#*|}"; dr_hp="${dr_rest%%|*}"; dr_s="${dr_rest#*|}"
+    # includeIf "hasconfig:remote.*.url" needs git 2.36 or newer.
+    case "$dr_v" in
+      1.*|2.[0-9].*|2.[12][0-9].*|2.3[0-5].*) dr_v="$dr_v, older than 2.36: no hasconfig: includes" ;;
+    esac
+    if [ -z "$dr_hp" ]; then
+      dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath unset; pushes from this distro run no git-guard hooks"
+    elif [ "$dr_s" != ok ]; then
+      dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp has no executable pre-commit"
+    else
+      printf '  [ok]   wsl            %s (git %s): core.hooksPath=%s\n' "$dr_d" "$dr_v" "$dr_hp"
+    fi
+  done
+}
+
 cmd_doctor() {
+  doctor_require=0; doctor_strict=0; doctor_wsl=0; doctor_wsl_start=0; doctor_repos=""
+  doctor_fails=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --require-installed) doctor_require=1; shift ;;
+      --strict) doctor_strict=1; shift ;;
+      --wsl) doctor_wsl=1; shift ;;
+      --wsl-start) doctor_wsl=1; doctor_wsl_start=1; shift ;;
+      --repo)
+        [ -n "${2:-}" ] || { echo "git-guard doctor: --repo needs a directory" >&2; return 2; }
+        # Newline-separated so a path may contain spaces.
+        doctor_repos="${doctor_repos}$2
+"
+        shift 2 ;;
+      *) echo "git-guard doctor: unknown argument '$1' (want --require-installed, --strict, --repo DIR, --wsl, --wsl-start)" >&2; return 2 ;;
+    esac
+  done
   echo "git-guard doctor — prerequisite check"
   echo "  installed version: $(gg_installed_version)"
   doctor_rc=0
@@ -131,24 +304,52 @@ cmd_doctor() {
   # git-guard installed at all. That is normal, not an incident, and must not
   # fail doctor -- conflating the two here previously broke CI outright,
   # since CI never installs git-guard before running this.
+  # A system-level core.hooksPath covers the host as well as a global one.
   ghp="$(git config --global core.hooksPath 2>/dev/null || echo '')"
+  ghp_scope=global
   if [ -z "$ghp" ]; then
-    printf '  [--]   hooks-path     core.hooksPath is unset (git-guard not installed here -- fine for a dev checkout or CI; run `git-guard install` on a host that should be gated)\n'
+    ghp="$(git config --system core.hooksPath 2>/dev/null || echo '')"
+    ghp_scope=system
+  fi
+  doctor_gg_phys=""
+  if [ -z "$ghp" ]; then
+    if [ "$doctor_require" = 1 ]; then
+      dr_fail 'hooks-path     core.hooksPath is unset globally and system-wide: git-guard hooks never run on this host (fix: git-guard install)'
+    else
+      printf '  [--]   hooks-path     core.hooksPath is unset (git-guard not installed here -- fine for a dev checkout or CI; run `git-guard install` on a host that should be gated)\n'
+    fi
   else
     # shellcheck disable=SC2088  # intentional literal "~/" match, see bin/git-guard's other use.
     case "$ghp" in "~/"*) ghp="$HOME/${ghp#\~/}" ;; esac
     if hooks_phys="$(cd "$ghp" 2>/dev/null && pwd -P)"; then
       if [ -x "$hooks_phys/pre-commit" ]; then
         printf '  [ok]   hooks-path     %s -> %s (pre-commit present + executable)\n' "$ghp" "$hooks_phys"
+        doctor_gg_phys="$hooks_phys"
       else
         printf '  [FAIL] hooks-path     %s -> %s, but pre-commit is MISSING or not executable\n' "$ghp" "$hooks_phys"
         doctor_rc=1
+      fi
+      # A release carries VERSION beside hooks/. A real directory without one
+      # is a stale legacy copy that install.sh did not replace (Carbon,
+      # 2026-11-05: a 959-byte pre-push from an old release kept running).
+      if [ ! -r "$(dirname "$hooks_phys")/VERSION" ]; then
+        if [ -L "$ghp" ]; then
+          dr_stale="$ghp ($ghp_scope) links to $hooks_phys, which has no git-guard VERSION beside it"
+        else
+          dr_stale="$ghp ($ghp_scope) is a real directory with no git-guard VERSION beside it: a stale legacy copy"
+        fi
+        if [ "$doctor_require" = 1 ]; then
+          dr_fail "hooks-version  $dr_stale (fix: git-guard install, which moves it to $ghp.pre-git-guard-backup[.<UTC time>])"
+        else
+          dr_cov_warn "hooks-version  $dr_stale (fix: git-guard install)"
+        fi
       fi
     else
       printf '  [FAIL] hooks-path     %s does NOT RESOLVE (dangling symlink/missing dir) -- git is running NO hooks anywhere on this host right now\n' "$ghp"
       doctor_rc=1
     fi
   fi
+  [ "$doctor_rc" = 0 ] || doctor_fails=$((doctor_fails + 1))
 
   for t in git sg ast-grep shellcheck ruff python pwsh cygpath dotnet cargo; do
     if [ "$t" = sg ]; then
@@ -160,7 +361,33 @@ cmd_doctor() {
   done
   echo ""
   if sg_is_astgrep || astgrep_is_astgrep; then echo "  ast-grep present -> structural BLOCK trio active"; else echo "  ast-grep ABSENT -> ast-grep layer self-skips (trio inactive)"; fi
-  return "$doctor_rc"
+
+  if [ -n "$doctor_repos" ]; then
+    echo ""
+    while IFS= read -r dr_r; do
+      [ -n "$dr_r" ] && dr_check_repo "$dr_r"
+    done <<DOCTOR_REPOS
+$doctor_repos
+DOCTOR_REPOS
+    dr_check_pyyaml
+  fi
+  if [ "$doctor_wsl" = 1 ]; then
+    echo ""
+    dr_check_wsl
+  fi
+
+  echo ""
+  if [ "$doctor_fails" -gt 0 ]; then
+    echo "git-guard doctor: NOT COVERED ($doctor_fails failures)"
+    return 1
+  fi
+  if [ -z "$ghp" ]; then
+    # Not a failure without --require-installed, but never reported as covered.
+    echo "git-guard doctor: NOT COVERED (git-guard is not installed here; --require-installed makes this a failure)"
+    return 0
+  fi
+  echo "git-guard doctor: COVERED"
+  return 0
 }
 
 cmd_rules() {
@@ -237,7 +464,7 @@ cmd_help() {
 
 case "${1:-help}" in
   status)     cmd_status ;;
-  doctor)     cmd_doctor ;;
+  doctor)     shift; cmd_doctor "$@" ;;
   rules)      cmd_rules ;;
   verify)     cmd_verify ;;
   test)       shift; cmd_test "$@" ;;
