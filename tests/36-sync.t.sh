@@ -302,6 +302,30 @@ t_sync_body() {
   t_sync_expect_refused "dangling system Git config"
   unset GIT_CONFIG_SYSTEM
   rm -f "$sy_sys"
+  # A config reached through include.path supplies exclusions too: a dangling link
+  # refuses the run, relative or nested includes included, and so does a broken file.
+  sy_inc="$GG_T_TMPROOT/sync-includes"; mkdir -p "$sy_inc/real"
+  t_sync_fixture exclinc && t_sync_advance >/dev/null || t_fail "fixture exclinc"
+  ln -s "$GG_T_TMPROOT/no-such-volume/gitconfig" "$sy_inc/first"
+  git config --file "$GIT_CONFIG_GLOBAL" --add include.path "$sy_inc/first"
+  t_sync_expect_refused "dangling included config"
+  rm -f "$sy_inc/first"
+  t_sync_fixture exclnest && t_sync_advance >/dev/null || t_fail "fixture exclnest"
+  ln -s "$GG_T_TMPROOT/no-such-volume/gitconfig" "$sy_inc/real/second"
+  git config --file "$sy_inc/first" --add include.path real/second
+  t_sync_expect_refused "dangling config included by an included config"
+  rm -f "$sy_inc/real/second"
+  git config --file "$sy_inc/first" --unset-all include.path
+  t_sync_fixture exclcond && t_sync_advance >/dev/null || t_fail "fixture exclcond"
+  ln -s "$GG_T_TMPROOT/no-such-volume/gitconfig" "$sy_inc/third"
+  git config --file "$sy_inc/first" --add "includeIf.gitdir:/no-such-dir/.path" "$sy_inc/third"
+  t_sync_expect_refused "dangling conditionally included config"
+  rm -f "$sy_inc/third" "$sy_inc/first"
+  t_sync_fixture exclbad && t_sync_advance >/dev/null || t_fail "fixture exclbad"
+  printf '[broken\n' > "$sy_inc/first"
+  t_sync_expect_refused "included config Git cannot parse"
+  rm -f "$sy_inc/first"
+  git config --file "$GIT_CONFIG_GLOBAL" --unset-all include.path
   # An excluded linked worktree: the drain dry run reports it and leaves its index alone.
   t_sync_fixture exclwt && t_sync_advance >/dev/null || t_fail "fixture exclwt"
   git -C "$SY_REPO" worktree add -q -b wt-x "$SY_ROOT/repo-x" HEAD >/dev/null 2>&1 || t_fail "worktree add exclwt"

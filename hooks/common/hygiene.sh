@@ -782,11 +782,36 @@ hyg_sync_system_config() {
   printf '%s\n' "${_xo:-/etc/gitconfig}"
 }
 
+# hyg_sync_config_chain FILE... — FILE and every config it includes, one per
+# line, followed through include.path and includeIf.*.path whether or not the
+# condition holds, because an included file can supply exclusions and Git
+# skips one it cannot read without saying so.
+hyg_sync_config_chain() {
+  _cw="$HYG_TMP/config-walk"; : > "$_cw"
+  for _cf in "$@"; do printf '%s\n' "$_cf" >> "$_cw"; done
+  _ci=1
+  while _cf="$(sed -n "${_ci}p" "$_cw")"; [ -n "$_cf" ]; do
+    _ci=$((_ci + 1))
+    [ -f "$_cf" ] || continue
+    hyg_sync_unreadable "$_cf" && continue
+    _cd="$(dirname "$_cf")"
+    git config --file "$_cf" --get-regexp '^include(if\..*)?\.path$' 2>/dev/null | cut -d' ' -f2- > "$HYG_TMP/config-paths"
+    while IFS= read -r _cp; do
+      case "$_cp" in \~/*) _cp="$HOME/${_cp#??}" ;; /*|[A-Za-z]:*) ;; *) _cp="$_cd/$_cp" ;; esac
+      grep -Fxq -- "$_cp" "$_cw" || printf '%s\n' "$_cp" >> "$_cw"
+    done < "$HYG_TMP/config-paths"
+  done
+  cat "$_cw"
+}
+
 # hyg_sync_excludes — <source>\t<pattern> lines for hyg_sync_excluded. Run
 # from / so that no repository's own config is read; ~ is expanded, blank
 # lines and # comments are dropped, and an existing directory is also listed
 # under its physical path (the paths sync compares are physical).
 hyg_sync_excludes() {
+  # Exit 1 is "no such key". Anything else is a config Git could not parse.
+  git config --get-all hygiene.syncExclude >/dev/null 2>&1
+  case $? in 0|1) ;; *) return 1 ;; esac
   _xf="${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"
   { git config --get-all hygiene.syncExclude 2>/dev/null | sed 's/^/hygiene.syncExclude	/'
     [ -r "$_xf" ] && sed 's/^/sync.exclude	/' "$_xf"
@@ -1032,12 +1057,14 @@ hyg_sync_run() {
   HYG_SYNC_ROOTS="$(hyg_sync_roots)"
   # An exclusion source that cannot be read must not read as an empty one.
   _xsys="$(hyg_sync_system_config)"
-  for _xf in "${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude"     "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" ${_xsys:+"$_xsys"}; do
+  hyg_sync_config_chain "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" ${_xsys:+"$_xsys"} > "$HYG_TMP/config-sources"
+  printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/git-guard/sync.exclude" >> "$HYG_TMP/config-sources"
+  while IFS= read -r _xf; do
     if hyg_sync_unreadable "$_xf"; then
       echo "git-guard sync: cannot read $_xf; refusing to run" >&2
       return 1
     fi
-  done
+  done < "$HYG_TMP/config-sources"
   hyg_sync_excludes > "$HYG_TMP/excludes" || {
     echo "git-guard sync: could not build the exclusion list; refusing to run" >&2
     return 1
