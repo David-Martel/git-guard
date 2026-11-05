@@ -147,6 +147,10 @@ utf16() {
     printf '\r\000\n\000'
   done
 }
+if [ -n "${GG_T_WSL_NONE:-}" ]; then
+  utf16 'Windows Subsystem for Linux has no installed distributions.'
+  exit 255
+fi
 case "$*" in
   "-l -q") utf16 Alpha Beta Gamma Delta ;;
   "-l -q --running") utf16 Alpha Beta Delta ;;
@@ -176,6 +180,12 @@ STUB
   grep -qx Gamma "$dr_started" 2>/dev/null
   t_assert $? "--wsl-start queries (and so starts) the stopped distro"
   t_dr_has "$dr_log" '^  \[FAIL\] wsl +Gamma .*core\.hooksPath unset' "--wsl-start checks the started distro"
+  ( PATH="$dr_wsl:$PATH"; GG_T_WSL_STARTED="$dr_started"; GG_T_WSL_NONE=1
+    export PATH GG_T_WSL_STARTED GG_T_WSL_NONE
+    t_dr_run "$dr_home" "$dr_log" --wsl ); rc=$?
+  t_expect_rc 0 "$rc" "--wsl with no distros installed is not a failure"
+  t_dr_has "$dr_log" '^  \[--\]   wsl +no distros installed' "--wsl reads wsl.exe's no-distro message as no distros"
+  t_dr_lacks "$dr_log" 'wsl +(Windows|Subsystem|installed\.)' "--wsl never treats that message as distro names"
 
   printf '#!/bin/sh\necho Linux\n' > "$dr_wsl/uname"
   ( PATH="$dr_wsl:$PATH"; GG_T_WSL_STARTED="$dr_started"; export PATH GG_T_WSL_STARTED

@@ -220,7 +220,18 @@ dr_check_pyyaml() {
 # --wsl: global core.hooksPath in each WSL distro (Git Bash on Windows only).
 # Running a command in a stopped distro STARTS it, so stopped distros are
 # skipped unless --wsl-start is given. wsl.exe prints its own lists as UTF-16.
-dr_wsl_list() { wsl.exe "$@" </dev/null 2>/dev/null | tr -d '\000\r'; }
+# With no distro installed, `wsl.exe -l` prints a sentence and exits non-zero;
+# that must read as "no distros", never as distro names.
+dr_wsl_list() {
+  _dr_tmp="$(mktemp "${TMPDIR:-/tmp}/git-guard-wsl.XXXXXX")" || return 1
+  if wsl.exe "$@" </dev/null >"$_dr_tmp" 2>/dev/null; then
+    tr -d '\000\r' < "$_dr_tmp"; _dr_rc=0
+  else
+    _dr_rc=1
+  fi
+  rm -f "$_dr_tmp"
+  return "$_dr_rc"
+}
 # Script run inside a distro; prints "<git version>|<hooksPath>|<ok|missing>",
 # or "nogit".
 # shellcheck disable=SC2016  # expanded by the distro's sh, not here
@@ -236,8 +247,9 @@ dr_check_wsl() {
     *) printf '  [--]   wsl            not a Windows host; nothing to check\n'; return 0 ;;
   esac
   if ! have wsl.exe; then printf '  [--]   wsl            wsl.exe not found; nothing to check\n'; return 0; fi
-  dr_distros="$(dr_wsl_list -l -q)"
-  dr_running="$(dr_wsl_list -l -q --running)"
+  dr_distros="$(dr_wsl_list -l -q)" || dr_distros=""
+  # If the running list cannot be read, every distro counts as stopped.
+  dr_running="$(dr_wsl_list -l -q --running)" || dr_running=""
   if [ -z "$dr_distros" ]; then printf '  [--]   wsl            no distros installed\n'; return 0; fi
   # Distro names cannot contain whitespace, so word splitting is safe here.
   for dr_d in $dr_distros; do
