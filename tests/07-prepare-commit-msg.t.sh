@@ -544,7 +544,9 @@ t_case_attribution_known_agents() {
   grep -q "unknown Agent trailer 'gemnii'" "$r/typo.log"
   t_assert "$?" "the refusal names the unknown Agent value"
 
-  for known in claude codex gemini jules; do
+  # Lane-suffixed ids are what fleet history uses (vigil-oto gemini-dtm-oto-mesh,
+  # vigil-spark codex-asus); copilot is a stable fleet agent id.
+  for known in claude codex gemini copilot jules gemini-dtm-oto-mesh codex-asus; do
     printf 'recorded\n\nAgent: %s\n' "$known" > "$r/known-message"
     cp "$r/known-message" "$r/known-before"
     (cd "$r" && "$hook" "$r/known-message") >/dev/null 2>&1
@@ -552,6 +554,22 @@ t_case_attribution_known_agents() {
     cmp -s "$r/known-before" "$r/known-message"
     t_assert "$?" "known Agent: $known message is byte-identical"
   done
+
+  # A lane suffix does not launder a misspelt base id.
+  printf 'lane typo
+
+Agent: gemnii-dtm-oto
+' > "$r/lanetypo-message"
+  (cd "$r" && "$hook" "$r/lanetypo-message") >/dev/null 2>&1
+  t_expect_rc 1 "$?" "a lane suffix on an unknown base id is refused"
+
+  # copilot selector: stamped like gemini.
+  printf 'copilot
+' > "$r/copilot-message"
+  (cd "$r" && GIT_GUARD_AGENT=copilot "$hook" "$r/copilot-message") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "GIT_GUARD_AGENT=copilot is accepted"
+  n="$(git interpret-trailers --parse "$r/copilot-message" | grep -c '^Agent: copilot$')"
+  t_expect_rc 1 "$n" "copilot commit carries exactly one Agent: copilot"
 
   # A human commit with no trailer stays untouched.
   printf 'plain human\n' > "$r/human-message"
