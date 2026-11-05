@@ -126,7 +126,9 @@ and fast-forwards a checkout only when it is on its default branch (a primary)
 or its own branch (a linked worktree), has nothing ahead, is clean including
 untracked files, has no hidden index entries, no operation in progress, no
 `index.lock`, and no other process working inside it. Everything else is a
-logged skip, and nothing is ever deleted. Each pass writes every repository's
+logged skip, and nothing is ever deleted. A host keeps `sync` off a checkout
+it must not write to with a line in `~/.config/git-guard/sync.exclude` (or a
+global `hygiene.syncExclude`), without touching that repository. Each pass writes every repository's
 `drain --dry-run` to `~/.local/state/git-guard/sync-report.json`.
 `git-guard sync install-timer` runs it every 30 minutes under systemd
 `--user`; `git config hygiene.sync false` keeps a repository out. See
