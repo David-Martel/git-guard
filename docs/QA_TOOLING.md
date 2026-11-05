@@ -207,13 +207,19 @@ no tool is required. The table shows where each reads its config.
 | Tool | Resolution | Its config |
 |---|---|---|
 | sg / ast-grep | `PATH` | generated `qa-rules/sgconfig.generated.yml` → validated rule cache |
-| ruff | `PATH` | repo `pyproject.toml [tool.ruff]`, else `--select E,F --isolated` |
-| mypy | repo `.venv`, active venv, then `PATH` | repo `[tool.mypy]`; staged paths filtered by `files` |
-| basedpyright | repo `.venv`, active venv, then `PATH` | repo `[tool.basedpyright]`; staged paths filtered by `include`/`exclude` |
+| ruff | same lookup as mypy (repo `.venv`, main checkout's `.venv`, active venv, `PATH`) | repo `pyproject.toml [tool.ruff]`, else `--select E,F --isolated` |
+| mypy | repo `.venv`, then the main checkout's `.venv` in a linked worktree, active venv (`bin/` or `Scripts/`), then `PATH` | repo `[tool.mypy]`; staged paths filtered by `files` |
+| basedpyright | repo `.venv`, then the main checkout's `.venv` in a linked worktree, active venv (`bin/` or `Scripts/`), then `PATH` | repo `[tool.basedpyright]`; staged paths filtered by `include`/`exclude` |
 | shellcheck | `PATH` | none |
 | cargo | `PATH` | repo `rustfmt.toml` / `Cargo.toml` |
 | dotnet | `PATH` | repo `.editorconfig` |
 | Reserved-path inventory | bundled Rust source + `rustc` on Linux x64/ARM64; physical POSIX scan otherwise | external `NUKENUL_BIN` is never executed |
+
+A blocking mypy that fails shows its first 20 lines of output. When the only mypy
+found is a `PATH` install and it cannot load the project's configuration (for
+example `Error importing plugin 'pydantic.mypy'`), the gate reports the missing
+project environment and the fix (`uv sync` in the main checkout or the repo)
+instead of a generic "mypy type errors." (tests/38-python-worktree-env.t.sh).
 
 Reserved-path hygiene traverses the full eligible metadata tree, not only a
 staged-file delta. Its availability and cost therefore depend on that tree.
