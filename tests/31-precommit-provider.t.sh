@@ -1,6 +1,24 @@
 #!/bin/sh
 # Declared pre-commit providers must actually run; PATH-only lefthook cannot steal them.
 # shellcheck shell=sh
+
+# _pp_names_path FILE PATH — FILE has a line naming PATH. Why: Git for Windows
+# hands a hook C:/... paths, and the MSYS shell spells the same directory
+# /c/... or, under its /tmp mount, /tmp/...; on Linux a symlinked checkout
+# differs from the hook's physical (pwd -P) form. Comparing canonical forms
+# asserts the same directory on every host instead of one spelling of it.
+_pp_names_path() {
+  if gg_is_windows; then
+    _pp_want="$(cygpath -m "$2")"
+    while IFS= read -r _pp_line; do
+      case "$_pp_line" in -*|'') continue ;; esac
+      [ "$(cygpath -m "$_pp_line" 2>/dev/null)" = "$_pp_want" ] && return 0
+    done < "$1"
+    return 1
+  fi
+  grep -qxF "$2" "$1"
+}
+
 t_case_precommit_provider() {
   t_begin '31 declared pre-commit provider and pushed-source binding'
   r="$(gg_mktemp_repo)"
@@ -34,7 +52,7 @@ EOF
   (cd "$r" && env PATH="$path" git commit -m provider-positive) > "$log" 2>&1 </dev/null
   t_expect_rc 0 "$?" 'real Git commit succeeds when declared provider succeeds'
   grep -qxF -- '--hook-dir' "$args_copy"; t_assert $? 'commit framework receives hook directory option'
-  grep -qxF "$GG_ROOT/hooks" "$args_copy"; t_assert $? 'commit framework receives physically pinned hook directory'
+  _pp_names_path "$args_copy" "$(cd "$GG_ROOT/hooks" && pwd -P)"; t_assert $? 'commit framework receives physically pinned hook directory'
   remote="$GG_T_TMPROOT/framework-remote.git"
   git init --bare -q "$remote"
   (cd "$r" && git remote add fixture "$remote")
@@ -56,7 +74,7 @@ EOF
   grep -qxF 'pre-push' "$args_copy"; t_assert $? 'provider received correct hook stage'
   grep -qxF 'inert://no-network' "$args_copy"; t_assert $? 'provider received original remote argv'
   grep -qxF -- '--hook-dir' "$args_copy"; t_assert $? 'framework receives required hook directory option'
-  grep -qxF "$GG_ROOT/hooks" "$args_copy"; t_assert $? 'framework receives physically pinned hook directory'
+  _pp_names_path "$args_copy" "$(cd "$GG_ROOT/hooks" && pwd -P)"; t_assert $? 'framework receives physically pinned hook directory'
   # A checkout deletion does not undeclare the gate in the published commit.
   rm "$r/.pre-commit-config.yaml"
   (cd "$r" && env PATH="$path" FRAMEWORK_RC=8 git push fixture HEAD:refs/heads/missing-config) > "$log" 2>&1
@@ -270,16 +288,16 @@ EOF
   git -C "$r" mv .pre-commit-config.yaml .pre-commit-config.yml
   (cd "$r" && env PATH="$path" git commit -m yml-config) > "$log" 2>&1 </dev/null
   t_expect_rc 0 "$?" 'new staged .yml framework configuration remains committable'
-  grep -qxF "$r/.pre-commit-config.yml" "$args_copy"; t_assert $? 'commit dispatch selects explicit .yml config'
+  _pp_names_path "$args_copy" "$(gg_git_path "$r")/.pre-commit-config.yml"; t_assert $? 'commit dispatch selects explicit .yml config'
   head="$(git -C "$r" rev-parse HEAD)"
   record="refs/heads/main $head refs/heads/main $zero"
   printf '%s\n' "$record" | (cd "$r" && env PATH="$path" sh "$GG_ROOT/hooks/pre-push" origin 'inert://no-network') > "$log" 2>&1
   t_expect_rc 0 "$?" '.yml config belongs to pushed HEAD and reaches framework'
-  grep -qxF "$r/.pre-commit-config.yml" "$args_copy"; t_assert $? 'push dispatch selects explicit .yml config'
+  _pp_names_path "$args_copy" "$(gg_git_path "$r")/.pre-commit-config.yml"; t_assert $? 'push dispatch selects explicit .yml config'
   printf 'repos: []\n' > "$r/.pre-commit-config.yaml"
   (cd "$r" && env PATH="$path" sh "$GG_ROOT/hooks/pre-commit") > "$log" 2>&1 </dev/null
   t_expect_rc 0 "$?" 'both supported configs keep deterministic selection'
-  grep -qxF "$r/.pre-commit-config.yaml" "$args_copy"; t_assert $? '.yaml takes documented precedence over .yml'
+  _pp_names_path "$args_copy" "$(gg_git_path "$r")/.pre-commit-config.yaml"; t_assert $? '.yaml takes documented precedence over .yml'
   rm "$r/.pre-commit-config.yaml"
   git -C "$r" mv .pre-commit-config.yml .pre-commit-config.yaml
   (cd "$r" && env PATH="$path" git commit -m yaml-precedence-fixture) > "$log" 2>&1 </dev/null

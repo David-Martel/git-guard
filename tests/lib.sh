@@ -77,6 +77,12 @@ cands = [os.path.join(sys.base_prefix, "python.exe"),
 print(next(p for p in cands if p and os.path.isfile(p)))'
 }
 
+# gg_git_path DIR — DIR's work-tree root in the form Git itself prints. Why:
+# fixtures hold MSYS paths (/tmp/...) while native Git for Windows reports
+# C:/Users/.../Temp/..., so any assertion that greps a hook's or a report's
+# path must compare against Git's form to mean the same thing on every host.
+gg_git_path() { git -C "$1" rev-parse --show-toplevel; }
+
 # Are we on native Windows (Git-Bash/MSYS/Cygwin)? Reserved-name (NUL) files
 # cannot be created there, so the NUL-cleanup case skips on Windows.
 gg_is_windows() {
