@@ -130,12 +130,33 @@ native_link_error() {
   echo "  Enable Windows Developer Mode or grant native symlink privileges, then retry." >&2
 }
 
-backup_once() {  # $1 path -> back up to <path>.pre-git-guard-backup, once
-  p="$1"; bk="${p}.pre-git-guard-backup"
-  if [ -e "$p" ] && [ ! -L "$p" ] && [ ! -e "$bk" ]; then
+# Where a real (non-link) $1 is moved aside: <path>.pre-git-guard-backup, or,
+# when that already holds an earlier original, <path>.pre-git-guard-backup.<UTC
+# timestamp>. A backup is never overwritten or deleted. Why: a stale real
+# ~/.git-hooks next to an existing backup used to be left in place (or refused
+# on Windows), so the host kept running a legacy pre-push (Carbon, 2026-11-05).
+backup_dest() {
+  bd="$1.pre-git-guard-backup"
+  if [ -e "$bd" ] || [ -L "$bd" ]; then
+    bd_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    bd="$1.pre-git-guard-backup.$bd_stamp"
+    bd_n=1
+    while [ -e "$bd" ] || [ -L "$bd" ]; do
+      bd="$1.pre-git-guard-backup.$bd_stamp.$bd_n"
+      bd_n=$((bd_n + 1))
+    done
+  fi
+  printf '%s' "$bd"
+}
+
+backup_once() {  # $1 path [$2 destination] -> move a real $1 aside (see backup_dest)
+  p="$1"; bk="${2:-}"
+  if [ -e "$p" ] && [ ! -L "$p" ]; then
+    [ -n "$bk" ] || bk="$(backup_dest "$p")"
     run "mv \"$p\" \"$bk\"" && echo "  backed up: $p -> $bk"
   fi
 }
+HOOKS_BACKUP_DEST=""
 
 # Snapshot only the four links/files this installer may replace. Native links
 # are copied before promotion so rollback needs atomic renames, not fresh
@@ -147,8 +168,11 @@ snapshot_windows_link() {
     cp -P "$snapshot_path" "$WINDOWS_LINK_TRANSACTION/$snapshot_key" || return 2
   elif [ -f "$snapshot_path" ]; then
     cp -p "$snapshot_path" "$WINDOWS_LINK_TRANSACTION/$snapshot_key" || return 2
-  elif [ -d "$snapshot_path" ] && [ "$snapshot_key" = "hooks" ] && [ ! -e "$snapshot_path.pre-git-guard-backup" ]; then
-    : > "$WINDOWS_LINK_TRANSACTION/$snapshot_key.directory"
+  elif [ -d "$snapshot_path" ] && [ "$snapshot_key" = "hooks" ]; then
+    # The marker records where backup_once will move the directory, so a
+    # rollback moves that exact copy back, timestamped or not.
+    HOOKS_BACKUP_DEST="$(backup_dest "$snapshot_path")"
+    printf '%s\n' "$HOOKS_BACKUP_DEST" > "$WINDOWS_LINK_TRANSACTION/$snapshot_key.directory" || return 2
   elif [ -e "$snapshot_path" ]; then
     echo "git-guard install: refusing to replace unexpected non-link directory/type at '$snapshot_path'." >&2
     return 2
@@ -174,9 +198,11 @@ restore_windows_link() {
   if [ -L "$WINDOWS_LINK_TRANSACTION/$restore_key" ] || [ -f "$WINDOWS_LINK_TRANSACTION/$restore_key" ]; then
     mv -T "$WINDOWS_LINK_TRANSACTION/$restore_key" "$restore_path" || return 2
   elif [ -f "$WINDOWS_LINK_TRANSACTION/$restore_key.directory" ]; then
+    restore_backup="$(cat "$WINDOWS_LINK_TRANSACTION/$restore_key.directory")" || return 2
+    [ -n "$restore_backup" ] || restore_backup="$restore_path.pre-git-guard-backup"
     [ ! -L "$restore_path" ] || rm -f "$restore_path" || return 2
     if [ ! -e "$restore_path" ]; then
-      mv "$restore_path.pre-git-guard-backup" "$restore_path" || return 2
+      mv "$restore_backup" "$restore_path" || return 2
     fi
   elif [ -f "$WINDOWS_LINK_TRANSACTION/$restore_key.absent" ]; then
     if [ -L "$restore_path" ] || [ -f "$restore_path" ]; then
@@ -338,6 +364,13 @@ qa_verify_materialized_tree() {
     return 2
   fi
   rm -f /tmp/gg-verify-err.$$
+  # qa_gate.sh sources its interpreter rule; a release that does must carry it.
+  if grep -q 'qa_python.sh' "$t/hooks/common/qa_gate.sh" 2>/dev/null; then
+    if [ ! -f "$t/hooks/common/qa_python.sh" ] || ! sh -n "$t/hooks/common/qa_python.sh"; then
+      echo 'git-guard install: VERIFY FAILED — qa_gate.sh needs hooks/common/qa_python.sh, which is missing or malformed.' >&2
+      return 2
+    fi
+  fi
   # Old releases have no framework dispatcher. A release that references it
   # must carry the helper before current can be changed, including re-use of
   # an existing materialized version directory.
@@ -446,7 +479,7 @@ if [ "$DEV_SYMLINK" = "1" ]; then
   echo "  mode: --dev-symlink (LEGACY, live checkout — see header comment)"
   qa_verify_materialized_tree "$GG_ROOT" || exit 2
   begin_windows_link_transaction || exit 2
-  backup_once "$HOME_HOOKS"
+  backup_once "$HOME_HOOKS" "$HOOKS_BACKUP_DEST"
   ln_symlink "$GG_HOOKS" "$HOME_HOOKS" || { if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then exit 2; fi; }
   DOCS_SRC="$GG_DOCS"
   RULES_LOCAL_TARGET="$GG_HOOKS/common/qa-gate.conf.local"
@@ -480,6 +513,9 @@ else
   fi
   begin_windows_link_transaction || exit 2
   flip_current "$VER_DIR" || exit 2
+  # A real ~/.git-hooks (a pre-git-guard or legacy copy) must be moved aside:
+  # `ln -sfn` would otherwise plant the link INSIDE it and leave it in use.
+  backup_once "$HOME_HOOKS" "$HOOKS_BACKUP_DEST"
   ln_symlink "$STORE_ROOT/current/hooks" "$HOME_HOOKS" || { if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then exit 2; fi; }
   DOCS_SRC="$STORE_ROOT/current/docs"
   RULES_LOCAL_TARGET="$STORE_ROOT/current/hooks/common/qa-gate.conf.local"
