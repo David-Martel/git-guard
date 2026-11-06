@@ -187,8 +187,11 @@ t_case_doctor_coverage() {
   t_expect_rc 1 "$rc" "--strict fails on missing PyYAML"
 
   # --- E. --wsl with stubs: never the real wsl.exe ----------------------------
+  # The stub runs doctor's REAL in-distro probe with a per-distro fake HOME, so
+  # the same hook rules as the host are exercised, not canned answers.
   dr_wsl="$dr_root/wsl-bin"; mkdir -p "$dr_wsl"
   dr_started="$dr_root/wsl-started"
+  dr_distro_root="$dr_root/distros"
   printf '#!/bin/sh\necho MINGW64_NT-10.0-26100\n' > "$dr_wsl/uname"
   # Distro lists come back as UTF-16LE with CRLF, as the real tool prints them.
   cat > "$dr_wsl/wsl.exe" <<'STUB'
@@ -204,44 +207,72 @@ if [ -n "${GG_T_WSL_NONE:-}" ]; then
   exit 255
 fi
 case "$*" in
-  "-l -q") utf16 Alpha Beta Gamma Delta ;;
-  "-l -q --running") utf16 Alpha Beta Delta ;;
-  "-d "*)
+  "-l -q") utf16 ${GG_T_WSL_ONLY:-Alpha Beta Gamma Delta Epsilon Zeta} ;;
+  "-l -q --running") utf16 ${GG_T_WSL_ONLY:-Alpha Beta Delta Epsilon Zeta} ;;
+  "-d "*" -e sh -c "*)
     printf '%s\n' "$2" >> "$GG_T_WSL_STARTED"
-    case "$2" in
-      Alpha) printf '2.43.0|~/.git-hooks|ok\r\n' ;;
-      Beta)  printf '2.43.0||missing\r\n' ;;
-      Gamma) printf '2.39.2||missing\r\n' ;;
-      Delta) printf '2.34.1|/home/d/.git-hooks|ok\r\n' ;;
-    esac ;;
+    h="$GG_T_WSL_ROOT/$2"; mkdir -p "$h"
+    p="$PATH"; [ -d "$h/bin" ] && p="$h/bin:$PATH"
+    HOME="$h" GIT_CONFIG_GLOBAL="$h/.gitconfig" GIT_CONFIG_NOSYSTEM=1 PATH="$p" sh -c "$6" | sed 's/$/\r/' ;;
   *) exit 9 ;;
 esac
 STUB
   chmod +x "$dr_wsl/uname" "$dr_wsl/wsl.exe"
-  ( PATH="$dr_wsl:$PATH"; GG_T_WSL_STARTED="$dr_started"; export PATH GG_T_WSL_STARTED
-    t_dr_run "$dr_home" "$dr_log" --wsl ); rc=$?
-  t_expect_rc 1 "$rc" "--wsl fails when a running distro has no hooks path"
-  t_dr_has "$dr_log" '^  \[ok\]   wsl +Alpha \(git 2\.43\.0\): core\.hooksPath=~/\.git-hooks' "--wsl reports a covered distro"
-  t_dr_has "$dr_log" '^  \[FAIL\] wsl +Beta .*core\.hooksPath unset' "--wsl fails the uncovered distro"
+  # dr_distro NAME HOOKS VERSION — a fake distro home with a release whose
+  # hooks dir holds HOOKS (space-separated) and, if VERSION=yes, a VERSION.
+  dr_distro() {
+    _dh="$dr_distro_root/$1"; _drel="$_dh/.local/share/git-guard/v1"
+    mkdir -p "$_drel/hooks"
+    [ "$3" = yes ] && printf '1\n' > "$_drel/VERSION"
+    for _dk in $2; do printf '#!/bin/sh\nexit 0\n' > "$_drel/hooks/$_dk"; chmod +x "$_drel/hooks/$_dk"; done
+    # shellcheck disable=SC2088  # a literal ~/ value, expanded by the probe
+    git config --file "$_dh/.gitconfig" core.hooksPath '~/.local/share/git-guard/v1/hooks'
+  }
+  dr_distro Alpha "pre-commit pre-push" yes
+  mkdir -p "$dr_distro_root/Beta" "$dr_distro_root/Gamma"
+  dr_distro Delta "pre-commit pre-push" yes
+  mkdir -p "$dr_distro_root/Delta/bin"
+  printf '#!/bin/sh\nif [ "$1" = --version ]; then echo "git version 2.34.1"; exit 0; fi\nexec "$GG_T_REAL_GIT" "$@"\n' \
+    > "$dr_distro_root/Delta/bin/git"
+  chmod +x "$dr_distro_root/Delta/bin/git"
+  dr_distro Epsilon "pre-commit" yes
+  dr_distro Zeta "pre-commit pre-push" no
+  dr_wsl_run() {
+    ( PATH="$dr_wsl:$PATH"; GG_T_WSL_STARTED="$dr_started"; GG_T_WSL_ROOT="$dr_distro_root"
+      GG_T_REAL_GIT="$(command -v git)"
+      export PATH GG_T_WSL_STARTED GG_T_WSL_ROOT GG_T_REAL_GIT
+      t_dr_run "$dr_home" "$dr_log" "$@" )
+  }
+  dr_wsl_run --wsl; rc=$?
+  t_expect_rc 1 "$rc" "--wsl fails when a running distro is not covered"
+  t_dr_has "$dr_log" '^  \[ok\]   wsl +Alpha \(git [0-9.]+[^)]*\): core\.hooksPath=~/\.local/share/git-guard/v1/hooks' "--wsl reports a covered distro"
+  t_dr_has "$dr_log" '^  \[FAIL\] wsl +Beta .*core\.hooksPath unset' "--wsl fails a distro with no hooks path"
   t_dr_has "$dr_log" '^  \[warn\] wsl +Gamma: stopped, not checked' "--wsl reports a stopped distro as not checked"
   t_dr_has "$dr_log" 'Delta \(git 2\.34\.1, older than 2\.36' "--wsl flags git older than 2.36"
+  t_dr_has "$dr_log" '^  \[FAIL\] wsl +Epsilon .*but pre-push MISSING or not executable' \
+    "--wsl fails a distro whose hooks dir lacks pre-push (same rule as the host)"
+  t_dr_has "$dr_log" '^  \[warn\] wsl +Zeta .*no git-guard VERSION' "--wsl warns on a distro's stale hooks copy"
   if grep -qx Gamma "$dr_started" 2>/dev/null; then t_fail "--wsl started a stopped distro"
   else t_ok "--wsl did not start the stopped distro"; fi
-  ( PATH="$dr_wsl:$PATH"; GG_T_WSL_STARTED="$dr_started"; export PATH GG_T_WSL_STARTED
-    t_dr_run "$dr_home" "$dr_log" --wsl-start ); rc=$?
+  dr_wsl_run --wsl --require-installed; rc=$?
+  t_dr_has "$dr_log" '^  \[FAIL\] wsl +Zeta .*no git-guard VERSION' "--require-installed fails a distro's stale hooks copy"
+  ( GG_T_WSL_ONLY="Alpha"; export GG_T_WSL_ONLY; dr_wsl_run --wsl --require-installed --strict ); rc=$?
+  t_expect_rc 0 "$rc" "--wsl --require-installed --strict passes a fully covered distro"
+  t_dr_has "$dr_log" '^git-guard doctor: COVERED$' "a fully covered distro gives COVERED"
+  ( GG_T_WSL_ONLY="Epsilon"; export GG_T_WSL_ONLY; dr_wsl_run --wsl ); rc=$?
+  t_expect_rc 1 "$rc" "a distro missing pre-push alone makes the host NOT COVERED"
+  t_dr_has "$dr_log" '^git-guard doctor: NOT COVERED' "the verdict is NOT COVERED"
+  dr_wsl_run --wsl-start; rc=$?
   grep -qx Gamma "$dr_started" 2>/dev/null
   t_assert $? "--wsl-start queries (and so starts) the stopped distro"
   t_dr_has "$dr_log" '^  \[FAIL\] wsl +Gamma .*core\.hooksPath unset' "--wsl-start checks the started distro"
-  ( PATH="$dr_wsl:$PATH"; GG_T_WSL_STARTED="$dr_started"; GG_T_WSL_NONE=1
-    export PATH GG_T_WSL_STARTED GG_T_WSL_NONE
-    t_dr_run "$dr_home" "$dr_log" --wsl ); rc=$?
+  ( GG_T_WSL_NONE=1; export GG_T_WSL_NONE; dr_wsl_run --wsl ); rc=$?
   t_expect_rc 0 "$rc" "--wsl with no distros installed is not a failure"
   t_dr_has "$dr_log" '^  \[--\]   wsl +no distros installed' "--wsl reads wsl.exe's no-distro message as no distros"
   t_dr_lacks "$dr_log" 'wsl +(Windows|Subsystem|installed\.)' "--wsl never treats that message as distro names"
 
   printf '#!/bin/sh\necho Linux\n' > "$dr_wsl/uname"
-  ( PATH="$dr_wsl:$PATH"; GG_T_WSL_STARTED="$dr_started"; export PATH GG_T_WSL_STARTED
-    t_dr_run "$dr_home" "$dr_log" --wsl ); rc=$?
+  dr_wsl_run --wsl; rc=$?
   t_expect_rc 0 "$rc" "--wsl is a no-op off Windows"
   t_dr_has "$dr_log" '^  \[--\]   wsl +not a Windows host' "--wsl says why it checked nothing"
   t_dr_lacks "$dr_log" 'Alpha' "--wsl off Windows never calls wsl.exe"

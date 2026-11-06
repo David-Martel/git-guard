@@ -50,7 +50,7 @@ so CI can run `doctor` on an uninstalled checkout.
 | `repo-hooks` (`--repo`) | the repo's effective hooks dir is not git-guard's and its `pre-commit`/`pre-push` do not call git-guard |
 | `provider` (`--repo`) | the provider each hook would select is not runnable. Selection follows the hooks: `GIT_GUARD_DOWNSTREAM_HOOK` / `GIT_GUARD_DOWNSTREAM_PRE_PUSH`, then an executable `.git-guard/<hook>.local`, then a lefthook config, then `.pre-commit-config.yaml`. Providers later in that order never run and are not required |
 | `pyyaml` (`--repo`) | no `python`/`python3` imports `yaml` (warning; FAIL with `--strict`) |
-| `wsl` (`--wsl`) | a running distro has no global `core.hooksPath`, or it has no executable `pre-commit` |
+| `wsl` (`--wsl`) | a running distro has no global `core.hooksPath`, or its hooks dir fails the same check as `hooks-path` (executable `pre-commit` and `pre-push`); no `VERSION` beside it is a warning (FAIL with `--require-installed`) |
 
 `--strict` turns every coverage warning into a failure.
 
@@ -113,8 +113,10 @@ host, written by plumbing, made in a web editor, or rebased onto unscanned
 history reaches the remote through a covered host without that scan. So
 pre-push also scans every commit the push publishes: commits reachable from the
 pushed refs but not from what the destination is known to hold: the old values
-it reported for the pushed refs and, when the push names a configured remote,
-that remote's tracking refs (`--remotes=<name>`). Another remote's history is
+it reported for the pushed refs and, when the push names a configured remote
+whose push URL is its fetch URL, that remote's tracking refs
+(`--remotes=<name>`). With a separate `pushurl` or a `pushInsteadOf` rewrite
+the tracking refs describe another repository, so they are not used. Another remote's history is
 never excluded, so a commit fetched from one remote and pushed by URL to an
 empty destination is scanned. A new branch pushed by URL therefore scans its
 history; the scan covers at most the newest 500 commits and says so when there

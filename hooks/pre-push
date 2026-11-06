@@ -197,8 +197,15 @@ git_guard_scan_pushed() {
   done < "$git_guard_stdin"
   [ -n "$_gg_tips" ] || return 0
   # A push to a URL names no remote: only the reported old values count then.
+  # A named remote's tracking refs describe its FETCH repository, so they
+  # count only when every push URL (pushurl / pushInsteadOf applied, which
+  # `get-url --push` does) is that one fetch URL. Otherwise this is a URL push.
   _gg_remote_name=""
-  if [ -n "${1:-}" ] && git remote 2>/dev/null | grep -Fqx -- "$1"; then
+  if [ -n "${1:-}" ] && git remote 2>/dev/null | grep -Fqx -- "$1" &&
+     _gg_fetch_urls="$(git remote get-url --all -- "$1" 2>/dev/null)" &&
+     _gg_push_urls="$(git remote get-url --push --all -- "$1" 2>/dev/null)" &&
+     [ -n "$_gg_fetch_urls" ] && [ "$(printf '%s\n' "$_gg_fetch_urls" | wc -l)" -eq 1 ] &&
+     [ -z "$(printf '%s\n' "$_gg_push_urls" | grep -Fvx -- "$_gg_fetch_urls")" ]; then
     _gg_remote_name="$1"
   fi
   # shellcheck disable=SC2086  # word-split lists of full commit ids

@@ -101,6 +101,16 @@ t_case_prepush_content_and_bare() {
     git push elsewhere "$leak:refs/heads/leaky" >"$log" 2>&1 ); rc=$?
   t_pc_check "named push: another remote's tracking refs are not the destination's (rc=$rc)" [ "$rc" -ne 0 ]
 
+  # origin's tracking refs describe its FETCH repository. With a separate
+  # pushurl, `git push origin` publishes somewhere else, so they prove nothing.
+  git init -q --bare "$pc_dir/pushurl.git"
+  ( cd "$r" && git config remote.origin.pushurl "$pc_dir/pushurl.git" &&
+    git push origin "$leak:refs/heads/leaky" >"$log" 2>&1 ); rc=$?
+  git -C "$r" config --unset remote.origin.pushurl
+  t_pc_check "pushurl: origin's fetch-side history is not the push destination's (rc=$rc)" [ "$rc" -ne 0 ]
+  t_pc_check "pushurl: nothing reached the push destination" \
+    t_pc_not git -C "$pc_dir/pushurl.git" rev-parse -q --verify refs/heads/leaky
+
   # Deletions publish nothing and still get the receipt.
   ( cd "$r" && git push origin :refs/heads/buried >"$log" 2>&1 ); rc=$?
   t_expect_rc 0 "$rc" "a delete-only push passes"

@@ -262,15 +262,32 @@ dr_wsl_list() {
   rm -f "$_dr_tmp"
   return "$_dr_rc"
 }
-# Script run inside a distro; prints "<git version>|<hooksPath>|<ok|missing>",
-# or "nogit".
+# Required hooks of a git-guard hooks dir, as one sh script so the host check
+# and the per-distro --wsl probe cannot drift. $1 = hooks dir. Prints
+# "<physical dir>|<bad hooks>|<yes|no: VERSION beside it>", or "|unresolved|".
+# pre-commit and pre-push are required (pre-push carries the pushed-range
+# secret scan); a shipped commit-msg / prepare-commit-msg must be runnable.
+# shellcheck disable=SC2016  # expanded by the probing sh, not here
+DR_HOOKS_PROBE='p="$(cd "$1" 2>/dev/null && pwd -P)" || { echo "|unresolved|"; exit 0; }
+bad=""
+for h in pre-commit pre-push; do [ -x "$p/$h" ] || bad="$bad $h"; done
+for h in commit-msg prepare-commit-msg; do
+  if [ -e "$p/$h" ] && [ ! -x "$p/$h" ]; then bad="$bad $h"; fi
+done
+if [ -r "${p%/*}/VERSION" ]; then v=yes; else v=no; fi
+echo "$p|${bad# }|$v"
+'
+# Script run inside a distro: "nogit", "<git version>|" (no hooksPath), or
+# "<git version>|<hooksPath>|" followed by DR_HOOKS_PROBE's line.
 # shellcheck disable=SC2016  # expanded by the distro's sh, not here
 DR_WSL_PROBE='command -v git >/dev/null 2>&1 || { echo nogit; exit 0; }
 v="$(git --version 2>/dev/null | sed "s/^git version //")"
 hp="$(git config --global --get core.hooksPath 2>/dev/null)"
+[ -n "$hp" ] || { echo "$v|"; exit 0; }
 case "$hp" in "~/"*) d="$HOME/${hp#??}" ;; *) d="$hp" ;; esac
-if [ -n "$hp" ] && [ -x "$d/pre-commit" ]; then s=ok; else s=missing; fi
-echo "$v|$hp|$s"'
+printf "%s|%s|" "$v" "$hp"
+set -- "$d"
+'"$DR_HOOKS_PROBE"
 dr_check_wsl() {
   case "$(uname -s 2>/dev/null || echo)" in
     MINGW*|MSYS*|CYGWIN*) : ;;
@@ -290,18 +307,32 @@ dr_check_wsl() {
     dr_out="$(wsl.exe -d "$dr_d" -e sh -c "$DR_WSL_PROBE" </dev/null 2>/dev/null | tr -d '\000\r')" || dr_out=""
     case "$dr_out" in
       nogit) printf '  [--]   wsl            %s: git not installed; nothing to cover\n' "$dr_d"; continue ;;
-      *'|'*'|'*) : ;;
+      ?*'|') : ;;                    # git, no hooksPath
+      ?*'|'*'|'*'|'*'|'*) : ;;        # git, hooksPath, probe line
       *) dr_fail "wsl            $dr_d: could not query git in the distro"; continue ;;
     esac
-    dr_v="${dr_out%%|*}"; dr_rest="${dr_out#*|}"; dr_hp="${dr_rest%%|*}"; dr_s="${dr_rest#*|}"
+    dr_v="${dr_out%%|*}"; dr_rest="${dr_out#*|}"
     # includeIf "hasconfig:remote.*.url" needs git 2.36 or newer.
     case "$dr_v" in
       1.*|2.[0-9].*|2.[12][0-9].*|2.3[0-5].*) dr_v="$dr_v, older than 2.36: no hasconfig: includes" ;;
     esac
-    if [ -z "$dr_hp" ]; then
+    if [ -z "$dr_rest" ]; then
       dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath unset; pushes from this distro run no git-guard hooks"
-    elif [ "$dr_s" != ok ]; then
-      dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp has no executable pre-commit"
+      continue
+    fi
+    dr_hp="${dr_rest%%|*}"; dr_rest="${dr_rest#*|}"
+    dr_p="${dr_rest%%|*}"; dr_rest="${dr_rest#*|}"
+    dr_pbad="${dr_rest%%|*}"; dr_pver="${dr_rest#*|}"
+    if [ -z "$dr_p" ]; then
+      dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp does not resolve; no hooks run there"
+    elif [ -n "$dr_pbad" ]; then
+      dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp, but $dr_pbad MISSING or not executable"
+    elif [ "$dr_pver" != yes ]; then
+      if [ "$doctor_require" = 1 ]; then
+        dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp has no git-guard VERSION beside it (stale copy; install git-guard in the distro)"
+      else
+        dr_cov_warn "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp has no git-guard VERSION beside it (stale copy)"
+      fi
     else
       printf '  [ok]   wsl            %s (git %s): core.hooksPath=%s\n' "$dr_d" "$dr_v" "$dr_hp"
     fi
@@ -363,27 +394,23 @@ cmd_doctor() {
   else
     # shellcheck disable=SC2088  # intentional literal "~/" match, see bin/git-guard's other use.
     case "$ghp" in "~/"*) ghp="$HOME/${ghp#\~/}" ;; esac
-    if hooks_phys="$(cd "$ghp" 2>/dev/null && pwd -P)"; then
-      # pre-commit and pre-push are required (pre-push carries the pushed-range
-      # secret scan); a shipped commit-msg / prepare-commit-msg must be runnable.
-      dr_bad=""
-      for dr_hook in pre-commit pre-push; do
-        [ -x "$hooks_phys/$dr_hook" ] || dr_bad="$dr_bad $dr_hook"
-      done
-      for dr_hook in commit-msg prepare-commit-msg; do
-        if [ -e "$hooks_phys/$dr_hook" ] && [ ! -x "$hooks_phys/$dr_hook" ]; then dr_bad="$dr_bad $dr_hook"; fi
-      done
+    # The same probe runs inside each WSL distro (--wsl), so the host and the
+    # distros apply one rule set. Output: "<physical dir>|<bad hooks>|<yes|no>".
+    dr_probe="$(sh -c "$DR_HOOKS_PROBE" sh "$ghp")"
+    hooks_phys="${dr_probe%%|*}"; dr_rest="${dr_probe#*|}"
+    dr_bad="${dr_rest%%|*}"; dr_has_version="${dr_rest#*|}"
+    if [ -n "$hooks_phys" ]; then
       if [ -z "$dr_bad" ]; then
         printf '  [ok]   hooks-path     %s -> %s (pre-commit, pre-push present + executable)\n' "$ghp" "$hooks_phys"
         doctor_gg_phys="$hooks_phys"
       else
-        printf '  [FAIL] hooks-path     %s -> %s, but%s MISSING or not executable\n' "$ghp" "$hooks_phys" "$dr_bad"
+        printf '  [FAIL] hooks-path     %s -> %s, but %s MISSING or not executable\n' "$ghp" "$hooks_phys" "$dr_bad"
         doctor_rc=1
       fi
       # A release carries VERSION beside hooks/. A real directory without one
       # is a stale legacy copy that install.sh did not replace (Carbon,
       # 2026-11-05: a 959-byte pre-push from an old release kept running).
-      if [ ! -r "$(dirname "$hooks_phys")/VERSION" ]; then
+      if [ "$dr_has_version" != yes ]; then
         # Not a release, so a repo using this dir is not "on git-guard hooks".
         doctor_gg_phys=""
         if [ -L "$ghp" ]; then
