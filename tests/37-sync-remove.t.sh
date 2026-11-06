@@ -27,6 +27,11 @@
 #     reflog; a repo-local hygiene.syncRemove=false; a worktree whose HEAD
 #     moves between inspection and removal; drain --unattended with
 #     --allow-ignored (refused outright).
+#   * In use (codex review of #107 at 2252511, P1): a process with its cwd in
+#     a worktree keeps it, whether it was there at inspection or entered right
+#     before removal, while the same run removes the unused items. Off Linux
+#     there is no /proc to prove a tree unused, so unattended drain keeps
+#     every worktree (cwd-check-unavailable), as sync keeps every checkout.
 #   * hygiene.custodyBus=false grants without the claims check (the control
 #     for the missing-CLI refusal).
 # shellcheck shell=sh
@@ -114,6 +119,23 @@ t_sync_remove_body() {
   manifest="$XDG_STATE_HOME/git-guard/sync-removals.jsonl"
   RM_ARGS=""
 
+  # --- off Linux: no /proc to prove a tree unused, so no worktree is removed --
+  # (the removal controls below need /proc; CI runs them on Linux)
+  if ! t_sync_can_ff; then
+    t_rm_fixture nocwd || { t_fail "could not build the remove fixture"; return 0; }
+    t_sync_run "$sylog"
+    [ -d "$RM_DONE" ] && [ -d "$RM_SQ" ] && t_ok "off Linux: unattended drain keeps every worktree (cwd check unavailable)" \
+      || t_fail "off Linux: a worktree was removed without a cwd check"
+    grep -Fq "cwd-check-unavailable" "$report" && t_ok "off Linux: the report names cwd-check-unavailable" \
+      || { t_fail "off Linux: report lacks cwd-check-unavailable"; head -c 3000 "$report" >&2; }
+    t_skip "off Linux: removal positive control and in-use controls need /proc"
+  else
+    t_rm_positive_and_in_use
+  fi
+  t_rm_refusals
+}
+
+t_rm_positive_and_in_use() {
   # --- positive control ----------------------------------------------------
   t_rm_fixture ctl || { t_fail "could not build the remove fixture"; return 0; }
   t_sync_run "$sylog"; rc=$?
@@ -143,6 +165,38 @@ sys.exit(0 if ok else 1)' "$report" "$manifest" \
       || { t_fail "removal records incomplete"; cat "$manifest" >&2; }
   else t_skip "python absent: removal records not parsed"; fi
 
+  # --- in use: a process working in the tree keeps it (codex review of #107 at
+  # 2252511, P1: sync logged `skip: in-use` and drain then removed the tree).
+  # The same run removes the other items, so the veto is per item and the
+  # removal path is live.
+  t_rm_fixture inuse || t_fail "fixture inuse"
+  ( cd "$RM_DONE" && exec sleep 60 ) &
+  rm_pid=$!
+  t_sync_run "$sylog"
+  if [ -d "$RM_DONE" ] && kill -0 "$rm_pid" 2>/dev/null; then
+    t_ok "worktree with a live process in it kept"
+  else t_fail "worktree with a live process in it was removed"; head -c 3000 "$report" >&2; fi
+  grep -Fq "in-use (pid $rm_pid has its cwd in the tree)" "$report" && t_ok "report names the in-use pid" \
+    || t_fail "report lacks the in-use pid"
+  [ ! -e "$RM_SQ" ] && t_ok "in-use run still removes the unused squash-merged worktree" \
+    || t_fail "in-use run kept the unused worktree too"
+  kill "$rm_pid" 2>/dev/null; wait "$rm_pid" 2>/dev/null
+  # A process that enters the tree after inspection, right before removal.
+  t_rm_fixture inuse-late || t_fail "fixture inuse-late"
+  rm_pidf="$GG_T_TMPROOT/rm-late.pid"; rm -f "$rm_pidf"
+  ( GIT_GUARD_HYGIENE_TEST_PAUSE_AT=remove \
+      GIT_GUARD_HYGIENE_TEST_HOOK="[ -e '$rm_pidf' ] || { cd '$RM_DONE' && { sleep 60 </dev/null >/dev/null 2>&1 & echo \$! > '$rm_pidf'; }; }" \
+      t_sync_run "$sylog" )
+  rm_pid="$(cat "$rm_pidf" 2>/dev/null)"
+  [ -n "$rm_pid" ] && t_ok "late-entry fixture started its process" || t_fail "late-entry fixture started no process"
+  [ -d "$RM_DONE" ] && t_ok "worktree a process entered after inspection kept" \
+    || t_fail "worktree a process entered after inspection was removed"
+  grep -Fq "has its cwd in the tree) at removal" "$report" && t_ok "report names the in-use veto at removal" \
+    || { t_fail "report lacks the at-removal veto"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
+  [ -z "$rm_pid" ] || { kill "$rm_pid" 2>/dev/null; :; }
+}
+
+t_rm_refusals() {
   # --- off and dry ------------------------------------------------------------
   t_rm_fixture off || t_fail "fixture off"
   git config --file "$GIT_CONFIG_GLOBAL" --unset hygiene.syncRemove
@@ -195,8 +249,13 @@ sys.exit(0 if ok else 1)' "$report" "$manifest" \
   # Control for the line above: the operator may waive the claims check.
   git config --file "$GIT_CONFIG_GLOBAL" hygiene.custodyBus false
   t_sync_run "$sylog"
-  [ ! -e "$RM_DONE" ] && t_ok "hygiene.custodyBus=false removes without the claims check" \
-    || t_fail "custodyBus=false still kept the worktree"
+  if t_sync_can_ff; then
+    [ ! -e "$RM_DONE" ] && t_ok "hygiene.custodyBus=false removes without the claims check" \
+      || t_fail "custodyBus=false still kept the worktree"
+  else
+    grep -Fq "cwd-check-unavailable" "$report" && t_ok "off Linux: custodyBus=false passes custody, then the cwd check keeps the tree" \
+      || t_fail "off Linux: custodyBus=false did not reach the cwd check"
+  fi
   git config --file "$GIT_CONFIG_GLOBAL" --unset hygiene.custodyBus
   GIT_GUARD_AGENT_BUS="$rm_bus_keep"
 

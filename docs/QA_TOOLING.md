@@ -892,7 +892,14 @@ verdicts and removes nothing). `--unattended` is ordinary drain plus:
   escape (`\/`, `\u00e9`, `\"`) cannot hide a name. A missing CLI, a failed
   or timed-out read (20 s), output that is not an object with a `claims`
   list of objects, one that carries an `error`, or a host with no Python 3
-  keeps every item. The CLI is read once per repository per pass.
+  keeps every item. The CLI is read once per repository per pass;
+- a worktree is removed only when no process has its current directory in
+  the tree, the same check sync makes before a fast-forward. It runs after
+  custody and again right before `git worktree remove`; no process is exempt,
+  not even the shell that started the run. Off Linux there is no `/proc` to
+  ask, so every worktree is kept (`cwd-check-unavailable`), as sync keeps
+  every checkout there. Processes of other users whose cwd cannot be read are
+  not visible to the check.
 
 Every drain, attended or not, also keeps a worktree whose index has
 `skip-worktree` or `assume-unchanged` entries: they hide modified bytes from

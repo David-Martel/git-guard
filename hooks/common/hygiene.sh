@@ -695,6 +695,23 @@ hyg_no_hidden_entries() {
   ! printf '%s\n' "$_hv" | grep -q '^[a-zS] '
 }
 
+# hyg_drain_cwd_free WORKTREE — true only when no process has its cwd in
+# WORKTREE or below it (hyg_sync_cwd_user, the check sync makes before a
+# fast-forward). Otherwise prints why the tree is kept: a pid working in it,
+# no Linux /proc to ask, or a path that cannot be resolved. Unlike sync, no
+# ancestor is exempt: removal must not pull the tree out from under the shell
+# that started this run either.
+hyg_drain_cwd_free() {
+  _dcp="$(cd "$1" 2>/dev/null && pwd -P)" || { printf 'in-use check failed (cannot resolve the path)'; return 1; }
+  HYG_SYNC_ANC=""
+  _dcu="$(hyg_sync_cwd_user "$_dcp")"
+  case "$_dcu" in
+    '') return 0 ;;
+    unavailable) printf 'cwd-check-unavailable (no Linux /proc to prove no process works in the tree)'; return 1 ;;
+    *) printf 'in-use (pid %s has its cwd in the tree)' "$_dcu"; return 1 ;;
+  esac
+}
+
 # hyg_agent_of TIP — the tip commit's Agent: trailer(s), or "none" (human).
 hyg_agent_of() {
   _ag="$(git log -1 --format='%(trailers:key=Agent,valueonly,separator=%x2C)' "$1" 2>/dev/null | tr -d '\n')"
@@ -797,6 +814,12 @@ hyg_drain() {
         echo "  keep   $_path  (custody: $_cust; agent: $_agent)"; continue
       fi
       _who="; agent: $_agent; custody: $_cust"
+      # The same process-usage veto sync applies before a fast-forward: a
+      # process working inside the tree keeps it, and so does a host that
+      # cannot tell (fail closed).
+      if ! _inuse="$(hyg_drain_cwd_free "$_path")"; then
+        echo "  keep   $_path  ($_inuse; agent: $_agent)"; continue
+      fi
     fi
     if [ "$_apply" != "1" ]; then echo "  would remove $_path  (${_br:-detached}, $_how$_who)"; continue; fi
     # Not an ancestor of BASE: preserve BEFORE removing anything, and stop
@@ -821,6 +844,10 @@ hyg_drain() {
     if [ "$_now_head" != "$_head" ] || [ "$_now_br" != "$_br" ] ||
        [ -n "$_now_status" ] || hyg_op_in_progress "$_gd" || ! hyg_no_hidden_entries "$_path"; then
       echo "  keep   $_path  (changed since inspection; may be in use)"; continue
+    fi
+    # A process that entered the tree since inspection also keeps it.
+    if [ "$_unatt" = "1" ] && ! _inuse="$(hyg_drain_cwd_free "$_path")"; then
+      echo "  keep   $_path  ($_inuse at removal; nothing removed)"; continue
     fi
     if ! git worktree remove "$_path" >/dev/null 2>&1; then
       echo "  keep   $_path  (git worktree remove refused)"; continue
