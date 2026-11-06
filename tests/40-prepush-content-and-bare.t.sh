@@ -88,6 +88,19 @@ t_case_prepush_content_and_bare() {
   ( cd "$r" && git push origin buried >"$log" 2>&1 ); rc=$?
   t_expect_rc 0 "$rc" "commits already on the remote are not scanned again"
 
+  # ...but only on THAT remote. origin/leaky now tracks the secret commit; a
+  # push of it to another, empty destination must still be scanned, whether
+  # the destination is named by URL or by a remote of its own.
+  git init -q --bare "$pc_dir/elsewhere.git"
+  ( cd "$r" && git push "$pc_dir/elsewhere.git" "$leak:refs/heads/leaky" >"$log" 2>&1 ); rc=$?
+  t_pc_check "URL push: history tracked for ANOTHER remote is still scanned (rc=$rc)" [ "$rc" -ne 0 ]
+  t_pc_check "URL push: the block names the commit" grep -q "$leak" "$log"
+  t_pc_check "URL push: nothing reached the new destination" \
+    t_pc_not git -C "$pc_dir/elsewhere.git" rev-parse -q --verify refs/heads/leaky
+  ( cd "$r" && git remote add elsewhere "$pc_dir/elsewhere.git" &&
+    git push elsewhere "$leak:refs/heads/leaky" >"$log" 2>&1 ); rc=$?
+  t_pc_check "named push: another remote's tracking refs are not the destination's (rc=$rc)" [ "$rc" -ne 0 ]
+
   # Deletions publish nothing and still get the receipt.
   ( cd "$r" && git push origin :refs/heads/buried >"$log" 2>&1 ); rc=$?
   t_expect_rc 0 "$rc" "a delete-only push passes"

@@ -164,8 +164,21 @@ fi
 # commit made on a host without git-guard, written by plumbing, made in a web
 # editor or rebased onto unscanned history reaches the remote through this host
 # without ever meeting that scan. So scan every commit this push publishes: new
-# commits reachable from the pushed refs and not from the remote's tracking
-# refs or the refs' old values. Newest 500 at most, and the hook says so.
+# commits reachable from the pushed refs and not from what the DESTINATION is
+# known to hold: the old values it reported for the pushed refs and, for a
+# named remote, that remote's tracking refs. Another remote's history says
+# nothing about the destination, so it is never excluded (a commit fetched
+# from one remote and pushed by URL to an empty one is scanned). Newest 500 at
+# most, and the hook says so.
+
+# git rev-list ARGS, plus the named destination's tracking refs as exclusions.
+git_guard_new_commits() {
+  if [ -n "$_gg_remote_name" ]; then
+    git rev-list "$@" "--remotes=$_gg_remote_name"
+  else
+    git rev-list "$@"
+  fi
+}
 git_guard_scan_cap=500
 git_guard_scan_pushed() {
   _gg_tips=""; _gg_known=""
@@ -183,15 +196,14 @@ git_guard_scan_pushed() {
     esac
   done < "$git_guard_stdin"
   [ -n "$_gg_tips" ] || return 0
-  # A push to a URL names no remote; every remote-tracking ref is the floor then.
-  if git remote 2>/dev/null | grep -Fqx -- "${1:-}"; then
-    _gg_remotes="--remotes=$1"
-  else
-    _gg_remotes="--remotes"
+  # A push to a URL names no remote: only the reported old values count then.
+  _gg_remote_name=""
+  if [ -n "${1:-}" ] && git remote 2>/dev/null | grep -Fqx -- "$1"; then
+    _gg_remote_name="$1"
   fi
   # shellcheck disable=SC2086  # word-split lists of full commit ids
-  if ! _gg_total="$(git rev-list --count $_gg_tips --not $_gg_known "$_gg_remotes")" ||
-     ! _gg_commits="$(git rev-list --max-count="$git_guard_scan_cap" $_gg_tips --not $_gg_known "$_gg_remotes")"; then
+  if ! _gg_total="$(git_guard_new_commits --count $_gg_tips --not $_gg_known)" ||
+     ! _gg_commits="$(git_guard_new_commits --max-count="$git_guard_scan_cap" $_gg_tips --not $_gg_known)"; then
     printf '%s\n' "git-guard BLOCK: cannot list the commits this push publishes, so they cannot be scanned. Do NOT use --no-verify." >&2
     return 1
   fi

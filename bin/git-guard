@@ -195,14 +195,44 @@ dr_check_repo() {
     fi
   fi
 
-  # Declared providers must be runnable, or pre-push refuses every push.
-  if dr_lh="$(dr_lefthook_config "$dr_top")"; then
-    if have lefthook; then printf '  [ok]   provider       %s declared; lefthook %s\n' "$dr_lh" "$(command -v lefthook)"
-    else dr_fail "provider       $dr_lh declared but lefthook is not on PATH (pre-push will refuse)"; fi
-  fi
-  if [ -e "$dr_top/.pre-commit-config.yaml" ] || [ -e "$dr_top/.pre-commit-config.yml" ]; then
-    if have pre-commit; then printf '  [ok]   provider       .pre-commit-config declared; pre-commit %s\n' "$(command -v pre-commit)"
-    else dr_fail "provider       .pre-commit-config declared but pre-commit is not on PATH (pre-push will refuse)"; fi
+  # The provider each hook will select must be runnable, or that hook refuses.
+  dr_check_provider "$dr_top" pre-commit GIT_GUARD_DOWNSTREAM_HOOK
+  dr_check_provider "$dr_top" pre-push GIT_GUARD_DOWNSTREAM_PRE_PUSH
+}
+
+# dr_check_provider TOP HOOK ENVVAR — check the ONE provider HOOK selects, in
+# the hooks' own order (hooks/pre-commit, hooks/pre-push): the downstream hook
+# named by ENVVAR, then an executable .git-guard/HOOK.local, then a lefthook
+# config, then .pre-commit-config (only without a lefthook config). Providers
+# later in that order never run, so their absence is not a failure.
+dr_check_provider() {
+  dr_t="$1"; dr_h="$2"
+  eval "dr_env=\${$3:-}"
+  if [ -n "$dr_env" ]; then
+    if [ -f "$dr_env" ] && [ -x "$dr_env" ]; then
+      printf '  [ok]   provider       %s: %s=%s\n' "$dr_h" "$3" "$dr_env"
+    else
+      dr_fail "provider       $dr_h: $3=$dr_env is not a runnable file ($dr_h will refuse)"
+    fi
+  elif [ -x "$dr_t/.git-guard/$dr_h.local" ]; then
+    printf '  [ok]   provider       %s: .git-guard/%s.local\n' "$dr_h" "$dr_h"
+  elif dr_lh="$(dr_lefthook_config "$dr_t")"; then
+    if [ ! -f "$dr_t/$dr_lh" ]; then
+      dr_fail "provider       $dr_h: $dr_lh is not a regular file ($dr_h will refuse)"
+    elif have lefthook; then
+      printf '  [ok]   provider       %s: %s; lefthook %s\n' "$dr_h" "$dr_lh" "$(command -v lefthook)"
+    elif [ "${GIT_GUARD_ALLOW_MISSING_LEFTHOOK:-}" = 1 ]; then
+      dr_cov_warn "provider       $dr_h: $dr_lh declared, lefthook absent, and GIT_GUARD_ALLOW_MISSING_LEFTHOOK=1 skips its gates"
+    else
+      dr_fail "provider       $dr_h: $dr_lh declared but lefthook is not on PATH ($dr_h will refuse)"
+    fi
+  elif [ -e "$dr_t/.pre-commit-config.yaml" ] || [ -L "$dr_t/.pre-commit-config.yaml" ] ||
+       [ -e "$dr_t/.pre-commit-config.yml" ] || [ -L "$dr_t/.pre-commit-config.yml" ]; then
+    if have pre-commit; then
+      printf '  [ok]   provider       %s: .pre-commit-config; pre-commit %s\n' "$dr_h" "$(command -v pre-commit)"
+    else
+      dr_fail "provider       $dr_h: .pre-commit-config declared but pre-commit is not on PATH ($dr_h will refuse)"
+    fi
   fi
 }
 
@@ -334,17 +364,28 @@ cmd_doctor() {
     # shellcheck disable=SC2088  # intentional literal "~/" match, see bin/git-guard's other use.
     case "$ghp" in "~/"*) ghp="$HOME/${ghp#\~/}" ;; esac
     if hooks_phys="$(cd "$ghp" 2>/dev/null && pwd -P)"; then
-      if [ -x "$hooks_phys/pre-commit" ]; then
-        printf '  [ok]   hooks-path     %s -> %s (pre-commit present + executable)\n' "$ghp" "$hooks_phys"
+      # pre-commit and pre-push are required (pre-push carries the pushed-range
+      # secret scan); a shipped commit-msg / prepare-commit-msg must be runnable.
+      dr_bad=""
+      for dr_hook in pre-commit pre-push; do
+        [ -x "$hooks_phys/$dr_hook" ] || dr_bad="$dr_bad $dr_hook"
+      done
+      for dr_hook in commit-msg prepare-commit-msg; do
+        if [ -e "$hooks_phys/$dr_hook" ] && [ ! -x "$hooks_phys/$dr_hook" ]; then dr_bad="$dr_bad $dr_hook"; fi
+      done
+      if [ -z "$dr_bad" ]; then
+        printf '  [ok]   hooks-path     %s -> %s (pre-commit, pre-push present + executable)\n' "$ghp" "$hooks_phys"
         doctor_gg_phys="$hooks_phys"
       else
-        printf '  [FAIL] hooks-path     %s -> %s, but pre-commit is MISSING or not executable\n' "$ghp" "$hooks_phys"
+        printf '  [FAIL] hooks-path     %s -> %s, but%s MISSING or not executable\n' "$ghp" "$hooks_phys" "$dr_bad"
         doctor_rc=1
       fi
       # A release carries VERSION beside hooks/. A real directory without one
       # is a stale legacy copy that install.sh did not replace (Carbon,
       # 2026-11-05: a 959-byte pre-push from an old release kept running).
       if [ ! -r "$(dirname "$hooks_phys")/VERSION" ]; then
+        # Not a release, so a repo using this dir is not "on git-guard hooks".
+        doctor_gg_phys=""
         if [ -L "$ghp" ]; then
           dr_stale="$ghp ($ghp_scope) links to $hooks_phys, which has no git-guard VERSION beside it"
         else

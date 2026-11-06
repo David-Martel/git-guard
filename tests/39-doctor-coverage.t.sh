@@ -14,7 +14,10 @@
 # t_dr_run HOME LOG [ARGS...] — run doctor in the isolated HOME; returns its rc.
 t_dr_run() {
   _h="$1"; _l="$2"; shift 2
+  # The caller's downstream-hook settings never leak in; cases pass their own.
   ( HOME="$_h" GIT_CONFIG_GLOBAL="$_h/.gitconfig" GIT_CONFIG_NOSYSTEM=1 \
+      GIT_GUARD_DOWNSTREAM_HOOK="${GG_T_DR_HOOK:-}" GIT_GUARD_DOWNSTREAM_PRE_PUSH="${GG_T_DR_PRE_PUSH:-}" \
+      GIT_GUARD_ALLOW_MISSING_LEFTHOOK='' \
       sh "$GG_ROOT/bin/git-guard" doctor "$@" ) > "$_l" 2>&1
 }
 
@@ -46,8 +49,9 @@ t_case_doctor_coverage() {
 
   # --- B. stale legacy copy: a real hooks dir with no VERSION beside it --------
   dr_home="$dr_root/home-stale"; mkdir -p "$dr_home/.git-hooks"
-  printf '#!/bin/sh\nexit 0\n' > "$dr_home/.git-hooks/pre-commit"
-  chmod +x "$dr_home/.git-hooks/pre-commit"
+  for dr_h in pre-commit pre-push; do
+    printf '#!/bin/sh\nexit 0\n' > "$dr_home/.git-hooks/$dr_h"; chmod +x "$dr_home/.git-hooks/$dr_h"
+  done
   git config --file "$dr_home/.gitconfig" core.hooksPath "$dr_home/.git-hooks"
   t_dr_run "$dr_home" "$dr_log"; rc=$?
   t_expect_rc 0 "$rc" "stale copy without --require-installed stays a warning"
@@ -70,6 +74,22 @@ t_case_doctor_coverage() {
   t_dr_run "$dr_home" "$dr_log" --require-installed; rc=$?
   t_expect_rc 0 "$rc" "--require-installed passes an installed release"
   t_dr_has "$dr_log" '^git-guard doctor: COVERED$' "covered host prints the COVERED verdict"
+
+  # A release missing pre-push (which carries the pushed-range secret scan) is
+  # not covered, and a repo on that hooks dir is not certified either.
+  dr_home_np="$dr_root/home-no-pre-push"
+  dr_rel_np="$dr_home_np/.local/share/git-guard/v9.9.9"
+  mkdir -p "$dr_rel_np/hooks"
+  printf '9.9.9\n' > "$dr_rel_np/VERSION"
+  printf '#!/bin/sh\nexit 0\n' > "$dr_rel_np/hooks/pre-commit"; chmod +x "$dr_rel_np/hooks/pre-commit"
+  git config --file "$dr_home_np/.gitconfig" core.hooksPath "$dr_rel_np/hooks"
+  dr_np_repo="$(gg_mktemp_repo)"
+  t_dr_run "$dr_home_np" "$dr_log" --require-installed --repo "$dr_np_repo"; rc=$?
+  t_expect_rc 1 "$rc" "a release without pre-push is NOT COVERED"
+  t_dr_has "$dr_log" '^  \[FAIL\] hooks-path .*but pre-push MISSING or not executable' "the failure names the missing pre-push"
+  t_dr_lacks "$dr_log" '^  \[ok\]   repo-hooks' "a repo on that hooks dir is not certified [ok]"
+  t_dr_has "$dr_log" '^git-guard doctor: NOT COVERED' "the verdict is NOT COVERED"
+  gg_rmrepo "$dr_np_repo"
 
   # --- D. --repo --------------------------------------------------------------
   dr_inherit="$(gg_mktemp_repo)"
@@ -117,13 +137,45 @@ t_case_doctor_coverage() {
   else
     ( PATH="$dr_min"; export PATH; t_dr_run "$dr_home" "$dr_log" --repo "$dr_prov" ); rc=$?
     t_expect_rc 1 "$rc" "--repo: declared pre-commit config with no pre-commit on PATH fails"
-    t_dr_has "$dr_log" '^  \[FAIL\] provider +\.pre-commit-config declared but pre-commit is not on PATH' \
+    t_dr_has "$dr_log" '^  \[FAIL\] provider +pre-push: \.pre-commit-config declared but pre-commit is not on PATH' \
       "--repo names the missing declared provider"
   fi
   dr_stub="$dr_root/stub-bin"; mkdir -p "$dr_stub"
   printf '#!/bin/sh\nexit 0\n' > "$dr_stub/pre-commit"; chmod +x "$dr_stub/pre-commit"
   ( PATH="$dr_stub:$dr_min"; export PATH; t_dr_run "$dr_home" "$dr_log" --repo "$dr_prov" ); rc=$?
-  t_dr_has "$dr_log" '^  \[ok\]   provider +\.pre-commit-config declared; pre-commit ' "--repo reports a runnable declared provider"
+  t_dr_has "$dr_log" '^  \[ok\]   provider +pre-push: \.pre-commit-config; pre-commit ' "--repo reports a runnable declared provider"
+
+  # Only the provider the hooks would SELECT must be runnable. Order:
+  # downstream env hook, .git-guard/<hook>.local, lefthook, .pre-commit-config.
+  dr_both="$(gg_mktemp_repo)"
+  printf 'repos: []\n' > "$dr_both/.pre-commit-config.yaml"
+  printf 'pre-push: {}\n' > "$dr_both/lefthook.yml"
+  dr_lh_bin="$dr_root/lefthook-bin"; mkdir -p "$dr_lh_bin"
+  printf '#!/bin/sh\nexit 0\n' > "$dr_lh_bin/lefthook"; chmod +x "$dr_lh_bin/lefthook"
+  ( PATH="$dr_lh_bin:$dr_min"; export PATH; t_dr_run "$dr_home" "$dr_log" --require-installed --repo "$dr_both" ); rc=$?
+  t_expect_rc 0 "$rc" "lefthook + pre-commit configs, only lefthook installed: covered (lefthook is selected)"
+  t_dr_has "$dr_log" '^  \[ok\]   provider +pre-push: lefthook\.yml; lefthook ' "doctor reports lefthook as the pre-push provider"
+  t_dr_lacks "$dr_log" 'pre-commit is not on PATH' "doctor does not require the pre-commit provider lefthook overrides"
+  t_dr_has "$dr_log" '^git-guard doctor: COVERED$' "the verdict is COVERED"
+  ( PATH="$dr_min"; export PATH; t_dr_run "$dr_home" "$dr_log" --repo "$dr_both" ); rc=$?
+  t_expect_rc 1 "$rc" "lefthook selected but not installed fails"
+
+  dr_local_prov="$(gg_mktemp_repo)"
+  printf 'repos: []\n' > "$dr_local_prov/.pre-commit-config.yaml"
+  mkdir -p "$dr_local_prov/.git-guard"
+  for dr_h in pre-commit pre-push; do
+    printf '#!/bin/sh\nexit 0\n' > "$dr_local_prov/.git-guard/$dr_h.local"; chmod +x "$dr_local_prov/.git-guard/$dr_h.local"
+  done
+  ( PATH="$dr_min"; export PATH; t_dr_run "$dr_home" "$dr_log" --repo "$dr_local_prov" ); rc=$?
+  t_expect_rc 0 "$rc" "executable .git-guard/<hook>.local hooks take precedence over .pre-commit-config"
+  t_dr_has "$dr_log" '^  \[ok\]   provider +pre-push: \.git-guard/pre-push\.local' "doctor reports the .local hook as the provider"
+
+  ( PATH="$dr_min"; GG_T_DR_PRE_PUSH="$dr_root/no-such-hook"; export PATH GG_T_DR_PRE_PUSH
+    t_dr_run "$dr_home" "$dr_log" --repo "$dr_local_prov" ); rc=$?
+  t_expect_rc 1 "$rc" "GIT_GUARD_DOWNSTREAM_PRE_PUSH naming no runnable file fails (it is selected first)"
+  t_dr_has "$dr_log" '^  \[FAIL\] provider +pre-push: GIT_GUARD_DOWNSTREAM_PRE_PUSH=.*not a runnable file' \
+    "doctor names the unrunnable downstream hook"
+  gg_rmrepo "$dr_both"; gg_rmrepo "$dr_local_prov"
 
   # PyYAML probe: an interpreter that cannot import yaml is a coverage warning.
   printf '#!/bin/sh\nexit 1\n' > "$dr_stub/python"; chmod +x "$dr_stub/python"

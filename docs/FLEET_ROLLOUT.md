@@ -45,10 +45,10 @@ so CI can run `doctor` on an uninstalled checkout.
 
 | Check | Fails when |
 |---|---|
-| `hooks-path` | global/system `core.hooksPath` is unset (with `--require-installed`), dangling, or has no executable `pre-commit` |
+| `hooks-path` | global/system `core.hooksPath` is unset (with `--require-installed`), dangling, or lacks an executable `pre-commit` or `pre-push` (a shipped `commit-msg`/`prepare-commit-msg` must be executable too) |
 | `hooks-version` | the hooks dir has no git-guard `VERSION` beside it: a stale legacy copy (FAIL with `--require-installed`, warning otherwise) |
 | `repo-hooks` (`--repo`) | the repo's effective hooks dir is not git-guard's and its `pre-commit`/`pre-push` do not call git-guard |
-| `provider` (`--repo`) | the repo declares `.pre-commit-config.yaml` or a lefthook config and that tool is not on `PATH` (pre-push would refuse every push) |
+| `provider` (`--repo`) | the provider each hook would select is not runnable. Selection follows the hooks: `GIT_GUARD_DOWNSTREAM_HOOK` / `GIT_GUARD_DOWNSTREAM_PRE_PUSH`, then an executable `.git-guard/<hook>.local`, then a lefthook config, then `.pre-commit-config.yaml`. Providers later in that order never run and are not required |
 | `pyyaml` (`--repo`) | no `python`/`python3` imports `yaml` (warning; FAIL with `--strict`) |
 | `wsl` (`--wsl`) | a running distro has no global `core.hooksPath`, or it has no executable `pre-commit` |
 
@@ -112,9 +112,13 @@ pre-commit scans the lines each commit adds. A commit made on an uncovered
 host, written by plumbing, made in a web editor, or rebased onto unscanned
 history reaches the remote through a covered host without that scan. So
 pre-push also scans every commit the push publishes: commits reachable from the
-pushed refs but not from the refs' old values or from the remote's tracking
-refs (`--remotes=<name>`, or every tracking ref when the push names a URL). It
-scans at most the newest 500 and says so when there are more. A hit blocks the
+pushed refs but not from what the destination is known to hold: the old values
+it reported for the pushed refs and, when the push names a configured remote,
+that remote's tracking refs (`--remotes=<name>`). Another remote's history is
+never excluded, so a commit fetched from one remote and pushed by URL to an
+empty destination is scanned. A new branch pushed by URL therefore scans its
+history; the scan covers at most the newest 500 commits and says so when there
+are more. A hit blocks the
 push and names the commit, file and line. If the line is genuinely not a
 secret, tag it `# pragma: allowlist secret` in a new commit that rewrites it.
 
