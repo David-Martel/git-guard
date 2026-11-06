@@ -45,12 +45,13 @@ so CI can run `doctor` on an uninstalled checkout.
 
 | Check | Fails when |
 |---|---|
-| `hooks-path` | global/system `core.hooksPath` is unset (with `--require-installed`), dangling, or lacks an executable `pre-commit` or `pre-push` (a shipped `commit-msg`/`prepare-commit-msg` must be executable too) |
+| `hooks-path` | global/system `core.hooksPath` is unset (with `--require-installed`), dangling, or lacks an executable `pre-commit`, `pre-push`, `common/secret_scan.sh`, `common/nul-cleanup.sh` or `common/qa_gate.sh` (the hooks skip an engine that is not executable); a shipped `commit-msg`/`prepare-commit-msg` must be executable too |
+| `hooks-bypass` | `GIT_GUARD=0` or `LEFTHOOK=0` is set in the environment doctor runs in: every hook exits at once |
 | `hooks-version` | the hooks dir has no git-guard `VERSION` beside it: a stale legacy copy (FAIL with `--require-installed`, warning otherwise) |
-| `repo-hooks` (`--repo`) | the repo's effective hooks dir is not git-guard's and its `pre-commit`/`pre-push` do not call git-guard |
-| `provider` (`--repo`) | the provider each hook would select is not runnable. Selection follows the hooks: `GIT_GUARD_DOWNSTREAM_HOOK` / `GIT_GUARD_DOWNSTREAM_PRE_PUSH`, then an executable `.git-guard/<hook>.local`, then a lefthook config, then `.pre-commit-config.yaml`. Providers later in that order never run and are not required |
-| `pyyaml` (`--repo`) | no `python`/`python3` imports `yaml` (warning; FAIL with `--strict`) |
-| `wsl` (`--wsl`) | a running distro has no global `core.hooksPath`, or its hooks dir fails the same check as `hooks-path` (executable `pre-commit` and `pre-push`); no `VERSION` beside it is a warning (FAIL with `--require-installed`) |
+| `repo-hooks` (`--repo`) | the repo's effective hooks dir is not git-guard's and its `pre-commit`/`pre-push` are not executable hooks that call git-guard (git ignores a hook that is not executable) |
+| `provider` (`--repo`) | the provider each hook would select is not runnable. Selection follows the hooks: `GIT_GUARD_DOWNSTREAM_HOOK` / `GIT_GUARD_DOWNSTREAM_PRE_PUSH`, then an executable `.git-guard/<hook>.local`, then a lefthook config, then `.pre-commit-config.yaml` (a regular file; at pre-push not a symlink; `pre-commit` a runnable file). Providers later in that order never run and are not required |
+| `pyyaml` (`--repo`) | the interpreter the gate selects (`hooks/common/qa_python.sh`: `python`, else `python3`) cannot import `yaml` (warning; FAIL with `--strict`) |
+| `wsl` (`--wsl`) | a running distro has no global `core.hooksPath`, or its hooks dir fails the same check as `hooks-path` (one shared probe); no `VERSION` beside it is a warning (FAIL with `--require-installed`) |
 
 `--strict` turns every coverage warning into a failure.
 

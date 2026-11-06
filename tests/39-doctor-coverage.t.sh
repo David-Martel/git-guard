@@ -29,6 +29,17 @@ t_dr_lacks() {
   if grep -Eq -- "$2" "$1"; then t_fail "$3"; sed 's/^/      | /' "$1" >&2; else t_ok "$3"; fi
 }
 
+# t_dr_engines HOOKSDIR [SKIP] — stub the blocking engines a release ships
+# (hooks/common/*), except SKIP. Doctor requires them executable, as the
+# hooks run them only then.
+t_dr_engines() {
+  mkdir -p "$1/common"
+  for _de in secret_scan.sh nul-cleanup.sh qa_gate.sh; do
+    [ "$_de" = "${2:-}" ] && continue
+    printf '#!/bin/sh\nexit 0\n' > "$1/common/$_de"; chmod +x "$1/common/$_de"
+  done
+}
+
 t_case_doctor_coverage() {
   t_begin "39 doctor: host coverage is checkable (--require-installed/--repo/--strict/--wsl)"
   dr_root="$(mktemp -d "$GG_T_TMPROOT/doctor39.XXXXXX")" || { t_fail "mktemp"; return 1; }
@@ -52,6 +63,7 @@ t_case_doctor_coverage() {
   for dr_h in pre-commit pre-push; do
     printf '#!/bin/sh\nexit 0\n' > "$dr_home/.git-hooks/$dr_h"; chmod +x "$dr_home/.git-hooks/$dr_h"
   done
+  t_dr_engines "$dr_home/.git-hooks"
   git config --file "$dr_home/.gitconfig" core.hooksPath "$dr_home/.git-hooks"
   t_dr_run "$dr_home" "$dr_log"; rc=$?
   t_expect_rc 0 "$rc" "stale copy without --require-installed stays a warning"
@@ -70,10 +82,16 @@ t_case_doctor_coverage() {
   for dr_h in pre-commit pre-push; do
     printf '#!/bin/sh\nexit 0\n' > "$dr_rel/hooks/$dr_h"; chmod +x "$dr_rel/hooks/$dr_h"
   done
+  t_dr_engines "$dr_rel/hooks"
   git config --file "$dr_home/.gitconfig" core.hooksPath "$dr_rel/hooks"
   t_dr_run "$dr_home" "$dr_log" --require-installed; rc=$?
   t_expect_rc 0 "$rc" "--require-installed passes an installed release"
   t_dr_has "$dr_log" '^git-guard doctor: COVERED$' "covered host prints the COVERED verdict"
+  for dr_var in GIT_GUARD LEFTHOOK; do
+    ( eval "$dr_var=0; export $dr_var"; t_dr_run "$dr_home" "$dr_log" --require-installed ); rc=$?
+    t_expect_rc 1 "$rc" "$dr_var=0 in the environment (every hook exits at once) is NOT COVERED"
+    t_dr_has "$dr_log" "^  \\[FAIL\\] hooks-bypass +$dr_var=0 is set" "doctor names the $dr_var=0 bypass"
+  done
 
   # A release missing pre-push (which carries the pushed-range secret scan) is
   # not covered, and a repo on that hooks dir is not certified either.
@@ -82,6 +100,7 @@ t_case_doctor_coverage() {
   mkdir -p "$dr_rel_np/hooks"
   printf '9.9.9\n' > "$dr_rel_np/VERSION"
   printf '#!/bin/sh\nexit 0\n' > "$dr_rel_np/hooks/pre-commit"; chmod +x "$dr_rel_np/hooks/pre-commit"
+  t_dr_engines "$dr_rel_np/hooks"
   git config --file "$dr_home_np/.gitconfig" core.hooksPath "$dr_rel_np/hooks"
   dr_np_repo="$(gg_mktemp_repo)"
   t_dr_run "$dr_home_np" "$dr_log" --require-installed --repo "$dr_np_repo"; rc=$?
@@ -90,6 +109,22 @@ t_case_doctor_coverage() {
   t_dr_lacks "$dr_log" '^  \[ok\]   repo-hooks' "a repo on that hooks dir is not certified [ok]"
   t_dr_has "$dr_log" '^git-guard doctor: NOT COVERED' "the verdict is NOT COVERED"
   gg_rmrepo "$dr_np_repo"
+
+  # The hooks run common/secret_scan.sh only when it is executable, so a
+  # release without it scans nothing: not covered either.
+  dr_home_ns="$dr_root/home-no-scan"
+  dr_rel_ns="$dr_home_ns/.local/share/git-guard/v9.9.9"
+  mkdir -p "$dr_rel_ns/hooks"
+  printf '9.9.9\n' > "$dr_rel_ns/VERSION"
+  for dr_h in pre-commit pre-push; do
+    printf '#!/bin/sh\nexit 0\n' > "$dr_rel_ns/hooks/$dr_h"; chmod +x "$dr_rel_ns/hooks/$dr_h"
+  done
+  t_dr_engines "$dr_rel_ns/hooks" secret_scan.sh
+  git config --file "$dr_home_ns/.gitconfig" core.hooksPath "$dr_rel_ns/hooks"
+  t_dr_run "$dr_home_ns" "$dr_log" --require-installed; rc=$?
+  t_expect_rc 1 "$rc" "a release without common/secret_scan.sh is NOT COVERED"
+  t_dr_has "$dr_log" '^  \[FAIL\] hooks-path .*but common/secret_scan\.sh MISSING or not executable' \
+    "the failure names the missing engine"
 
   # --- D. --repo --------------------------------------------------------------
   dr_inherit="$(gg_mktemp_repo)"
@@ -116,6 +151,21 @@ t_case_doctor_coverage() {
   t_dr_has "$dr_log" '^  \[warn\] repo-hooks .*name git-guard' "--repo reports the delegating override"
   t_dr_run "$dr_home" "$dr_log" --repo "$dr_local" --strict; rc=$?
   t_expect_rc 1 "$rc" "--strict fails a delegating override (not verified by running it)"
+
+  # Git runs only executable hooks, so a delegating wrapper that is not
+  # executable delegates nothing. Git Bash reports -x from a #! line, not the
+  # mode bits, so there the wrapper loses its #! line instead of its mode.
+  for dr_h in pre-commit pre-push; do
+    if gg_is_windows; then
+      printf 'exec "$HOME/.git-hooks/%s" "$@"\n' "$dr_h" > "$dr_local/.githooks/$dr_h"
+    else
+      chmod 644 "$dr_local/.githooks/$dr_h"
+    fi
+  done
+  t_dr_run "$dr_home" "$dr_log" --require-installed --repo "$dr_local"; rc=$?
+  t_expect_rc 1 "$rc" "--repo: non-executable delegating wrappers are NOT COVERED"
+  t_dr_has "$dr_log" '^  \[FAIL\] repo-hooks .*not an executable hook that calls git-guard: pre-commit pre-push' \
+    "--repo says the wrappers are not executable"
 
   dr_bare="$dr_root/bare.git"; git init -q --bare "$dr_bare"
   t_dr_run "$dr_home" "$dr_log" --repo "$dr_bare"; rc=$?
@@ -175,14 +225,28 @@ t_case_doctor_coverage() {
   t_expect_rc 1 "$rc" "GIT_GUARD_DOWNSTREAM_PRE_PUSH naming no runnable file fails (it is selected first)"
   t_dr_has "$dr_log" '^  \[FAIL\] provider +pre-push: GIT_GUARD_DOWNSTREAM_PRE_PUSH=.*not a runnable file' \
     "doctor names the unrunnable downstream hook"
-  gg_rmrepo "$dr_both"; gg_rmrepo "$dr_local_prov"
+  # precommit-provider.sh refuses a symlinked config at pre-push, so a repo
+  # whose selected provider reads one is not covered for pushes.
+  dr_sym="$(gg_mktemp_repo)"
+  printf 'repos: []\n' > "$dr_sym/real-config.yaml"
+  if ln -s real-config.yaml "$dr_sym/.pre-commit-config.yaml" 2>/dev/null && [ -L "$dr_sym/.pre-commit-config.yaml" ]; then
+    ( PATH="$dr_stub:$dr_min"; export PATH; t_dr_run "$dr_home" "$dr_log" --repo "$dr_sym" ); rc=$?
+    t_expect_rc 1 "$rc" "a symlinked .pre-commit-config (refused at pre-push) is NOT COVERED"
+    t_dr_has "$dr_log" '^  \[FAIL\] provider +pre-push: \.pre-commit-config\.yaml is a symlink' \
+      "doctor names the symlinked config"
+  else
+    t_skip "symlinked .pre-commit-config NOT_TESTED: no native symlink here"
+  fi
+  gg_rmrepo "$dr_both"; gg_rmrepo "$dr_local_prov"; gg_rmrepo "$dr_sym"
 
-  # PyYAML probe: an interpreter that cannot import yaml is a coverage warning.
+  # PyYAML probe: only the interpreter the gate selects counts (qa_python.sh:
+  # `python` first). A python3 WITH yaml behind a python WITHOUT it does not help.
   printf '#!/bin/sh\nexit 1\n' > "$dr_stub/python"; chmod +x "$dr_stub/python"
-  cp "$dr_stub/python" "$dr_stub/python3"
+  printf '#!/bin/sh\nexit 0\n' > "$dr_stub/python3"; chmod +x "$dr_stub/python3"
   ( PATH="$dr_stub:$dr_min"; export PATH; t_dr_run "$dr_home" "$dr_log" --repo "$dr_inherit" ); rc=$?
   t_expect_rc 0 "$rc" "missing PyYAML is a warning by default"
-  t_dr_has "$dr_log" '^  \[warn\] pyyaml ' "--repo reports a Python without PyYAML"
+  t_dr_has "$dr_log" "^  \\[warn\\] pyyaml .*the gate's interpreter. cannot import yaml" \
+    "--repo reports the gate's Python without PyYAML, not a python3 behind it"
   ( PATH="$dr_stub:$dr_min"; export PATH; t_dr_run "$dr_home" "$dr_log" --repo "$dr_inherit" --strict ); rc=$?
   t_expect_rc 1 "$rc" "--strict fails on missing PyYAML"
 
@@ -225,6 +289,7 @@ STUB
     mkdir -p "$_drel/hooks"
     [ "$3" = yes ] && printf '1\n' > "$_drel/VERSION"
     for _dk in $2; do printf '#!/bin/sh\nexit 0\n' > "$_drel/hooks/$_dk"; chmod +x "$_drel/hooks/$_dk"; done
+    t_dr_engines "$_drel/hooks"
     # shellcheck disable=SC2088  # a literal ~/ value, expanded by the probe
     git config --file "$_dh/.gitconfig" core.hooksPath '~/.local/share/git-guard/v1/hooks'
   }

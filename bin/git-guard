@@ -144,8 +144,11 @@ dr_lefthook_config() {
 }
 
 # Does hook file $1 hand off to git-guard? A repo-local hooks dir only keeps
-# git-guard's checks if its own hooks call them.
-dr_hook_delegates() { [ -f "$1" ] && grep -Eq 'git-guard|\.git-hooks' "$1" 2>/dev/null; }
+# git-guard's checks if its own hooks call them, and git runs a hook only when
+# it is executable (the same `[ -x ]` test the hooks use for what they run).
+dr_hook_delegates() {
+  [ -f "$1" ] && [ -x "$1" ] && grep -Eq 'git-guard|\.git-hooks' "$1" 2>/dev/null
+}
 
 # --repo DIR: does git-guard actually run in this repository?
 dr_check_repo() {
@@ -191,7 +194,7 @@ dr_check_repo() {
     if [ -z "$dr_missing" ]; then
       dr_cov_warn "repo-hooks     $dr_where; its pre-commit and pre-push name git-guard (delegation not verified by running them)"
     else
-      dr_fail "repo-hooks     $dr_where; git-guard hooks never run here (no delegation in:$dr_missing)"
+      dr_fail "repo-hooks     $dr_where; git-guard hooks never run here (not an executable hook that calls git-guard:$dr_missing)"
     fi
   fi
 
@@ -228,23 +231,38 @@ dr_check_provider() {
     fi
   elif [ -e "$dr_t/.pre-commit-config.yaml" ] || [ -L "$dr_t/.pre-commit-config.yaml" ] ||
        [ -e "$dr_t/.pre-commit-config.yml" ] || [ -L "$dr_t/.pre-commit-config.yml" ]; then
-    if have pre-commit; then
-      printf '  [ok]   provider       %s: .pre-commit-config; pre-commit %s\n' "$dr_h" "$(command -v pre-commit)"
-    else
+    # Same selection and admission as precommit-provider.sh: .yaml first, a
+    # regular file, not a symlink at pre-push, and a runnable pre-commit file.
+    dr_pc=".pre-commit-config.yaml"
+    if [ ! -e "$dr_t/$dr_pc" ] && [ ! -L "$dr_t/$dr_pc" ]; then dr_pc=".pre-commit-config.yml"; fi
+    dr_pcbin="$(command -v pre-commit 2>/dev/null)" || dr_pcbin=""
+    if [ ! -f "$dr_t/$dr_pc" ]; then
+      dr_fail "provider       $dr_h: $dr_pc is not a regular file ($dr_h will refuse)"
+    elif [ "$dr_h" = pre-push ] && [ -L "$dr_t/$dr_pc" ]; then
+      dr_fail "provider       $dr_h: $dr_pc is a symlink; pre-push needs a regular file bound to the pushed HEAD (it will refuse)"
+    elif [ -z "$dr_pcbin" ] || [ ! -f "$dr_pcbin" ] || [ ! -x "$dr_pcbin" ]; then
       dr_fail "provider       $dr_h: .pre-commit-config declared but pre-commit is not on PATH ($dr_h will refuse)"
+    else
+      printf '  [ok]   provider       %s: .pre-commit-config; pre-commit %s\n' "$dr_h" "$dr_pcbin"
     fi
   fi
 }
 
 # The YAML checks need a Python that imports yaml (python first, as the gate).
+# Probe exactly the interpreter the gate selects (qa_python.sh): the installed
+# release's rule when one is active, else this checkout's.
 dr_check_pyyaml() {
-  for dr_py in python python3; do
-    if have "$dr_py" && "$dr_py" -c 'import yaml' >/dev/null 2>&1; then
-      printf '  [ok]   pyyaml         %s imports yaml\n' "$(command -v "$dr_py")"
-      return 0
-    fi
-  done
-  dr_cov_warn "pyyaml         no python/python3 on PATH imports yaml (YAML checks degrade; install PyYAML for that interpreter)"
+  dr_qp="${doctor_gg_phys:+$doctor_gg_phys/common/qa_python.sh}"
+  [ -n "$dr_qp" ] && [ -f "$dr_qp" ] || dr_qp="$GG_ENGINE/qa_python.sh"
+  # shellcheck source=hooks/common/qa_python.sh disable=SC1090,SC1091
+  dr_py="$( . "$dr_qp" && qa_python_select )" || dr_py=""
+  if [ -z "$dr_py" ]; then
+    dr_cov_warn "pyyaml         no python or python3 on PATH (the gate's JSON/YAML checks are skipped)"
+  elif "$dr_py" -c 'import yaml' >/dev/null 2>&1; then
+    printf '  [ok]   pyyaml         %s (the gate'"'"'s interpreter) imports yaml\n' "$(command -v "$dr_py")"
+  else
+    dr_cov_warn "pyyaml         $(command -v "$dr_py") (the gate's interpreter) cannot import yaml (YAML checks are skipped; install PyYAML for it)"
+  fi
 }
 
 # --wsl: global core.hooksPath in each WSL distro (Git Bash on Windows only).
@@ -266,11 +284,16 @@ dr_wsl_list() {
 # and the per-distro --wsl probe cannot drift. $1 = hooks dir. Prints
 # "<physical dir>|<bad hooks>|<yes|no: VERSION beside it>", or "|unresolved|".
 # pre-commit and pre-push are required (pre-push carries the pushed-range
-# secret scan); a shipped commit-msg / prepare-commit-msg must be runnable.
+# secret scan), and so are the blocking engines the hooks run only when they
+# are executable (`[ -x ]` in hooks/pre-commit): without them a hook passes
+# having checked nothing. A shipped commit-msg / prepare-commit-msg must be
+# runnable.
 # shellcheck disable=SC2016  # expanded by the probing sh, not here
 DR_HOOKS_PROBE='p="$(cd "$1" 2>/dev/null && pwd -P)" || { echo "|unresolved|"; exit 0; }
 bad=""
-for h in pre-commit pre-push; do [ -x "$p/$h" ] || bad="$bad $h"; done
+for h in pre-commit pre-push common/secret_scan.sh common/nul-cleanup.sh common/qa_gate.sh; do
+  [ -x "$p/$h" ] || bad="$bad $h"
+done
 for h in commit-msg prepare-commit-msg; do
   if [ -e "$p/$h" ] && [ ! -x "$p/$h" ]; then bad="$bad $h"; fi
 done
@@ -430,6 +453,14 @@ cmd_doctor() {
     fi
   fi
   [ "$doctor_rc" = 0 ] || doctor_fails=$((doctor_fails + 1))
+  # Every hook exits 0 at once under these, so an installed host that exports
+  # one runs no checks at all.
+  if [ "${GIT_GUARD:-}" = 0 ]; then
+    dr_fail "hooks-bypass   GIT_GUARD=0 is set in this environment: every git-guard hook exits without checking anything"
+  fi
+  if [ "${LEFTHOOK:-}" = 0 ]; then
+    dr_fail "hooks-bypass   LEFTHOOK=0 is set in this environment: every git-guard hook exits without checking anything"
+  fi
 
   for t in git sg ast-grep shellcheck ruff python pwsh cygpath dotnet cargo; do
     if [ "$t" = sg ]; then

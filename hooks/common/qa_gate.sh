@@ -465,14 +465,12 @@ if [ -n "$_qa_ft" ]; then
   rm -rf "$_qa_ft"
 fi
 
-# Resolve a Python interpreter ONCE: prefer `python`, fall back to `python3`.
-# Debian/Ubuntu (and the slim Docker base) ship only `python3`, so hardcoding
-# `python` would silently no-op the JSON/YAML validation (a default BLOCK check)
-# on most Linux clones — a severability gap. Empty when neither is present.
-QA_PY=""
-if have python; then QA_PY=python
-elif have python3; then QA_PY=python3
-fi
+# Resolve a Python interpreter ONCE, by the rule in qa_python.sh (prefer
+# `python`, fall back to `python3`; empty when neither is present). The rule
+# lives there so `git-guard doctor` probes the same interpreter.
+# shellcheck source=hooks/common/qa_python.sh disable=SC1091
+. "$QA_SELF_DIR/qa_python.sh"
+QA_PY="$(qa_python_select)"
 
 # ----------------------------------------------------------------------------
 # Language detection (reuses the quality-pipeline.sh:detect_project_type logic).

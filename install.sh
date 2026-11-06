@@ -364,6 +364,13 @@ qa_verify_materialized_tree() {
     return 2
   fi
   rm -f /tmp/gg-verify-err.$$
+  # qa_gate.sh sources its interpreter rule; a release that does must carry it.
+  if grep -q 'qa_python.sh' "$t/hooks/common/qa_gate.sh" 2>/dev/null; then
+    if [ ! -f "$t/hooks/common/qa_python.sh" ] || ! sh -n "$t/hooks/common/qa_python.sh"; then
+      echo 'git-guard install: VERIFY FAILED — qa_gate.sh needs hooks/common/qa_python.sh, which is missing or malformed.' >&2
+      return 2
+    fi
+  fi
   # Old releases have no framework dispatcher. A release that references it
   # must carry the helper before current can be changed, including re-use of
   # an existing materialized version directory.
