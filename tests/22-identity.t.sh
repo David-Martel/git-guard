@@ -136,6 +136,29 @@ t_case_identity_cli() {
   t_expect_rc 1 "$?" "env refuses an identity whose key does not exist"
   GIT_GUARD_IDENTITY_KEYDIR="$lab/keys" sh "$GG_ID_SH" env codex --host testhost --allow-missing >/dev/null 2>&1
   t_expect_rc 0 "$?" "env --allow-missing prints a snippet before keygen"
+  # gemini and copilot are stamped by prepare-commit-msg, so their identity
+  # block must select them and must not warn that the hook cannot attribute
+  # them. Without the selector a copilot-signed commit carries no trailer, and
+  # without the principal a matching copilot trailer reads as human.
+  for stamped in gemini copilot; do
+    GIT_GUARD_IDENTITY_KEYDIR="$lab/keys" sh "$GG_ID_SH" env "$stamped" --host testhost --allow-missing \
+      >"$lab/env-$stamped.sh" 2>"$lab/env-$stamped.err"
+    t_expect_rc 0 "$?" "env $stamped --allow-missing succeeds"
+    grep -qx "export GIT_GUARD_AGENT='$stamped'" "$lab/env-$stamped.sh"
+    t_assert "$?" "env $stamped exports GIT_GUARD_AGENT=$stamped"
+    if grep -q 'cannot write' "$lab/env-$stamped.err"; then
+      t_fail "env $stamped does not claim the hook cannot write its trailer"
+    else
+      t_ok "env $stamped does not claim the hook cannot write its trailer"
+    fi
+    status_line="$(cd "$r" && GIT_GUARD_AGENT="$stamped" sh "$GG_ID_SH" status 2>/dev/null | sed -n 's/^Agent trailer: *//p')"
+    gg_id_eq "$stamped" "$status_line" "status reports the $stamped trailer the hook will stamp"
+  done
+  # Control: jules is a principal the hook does not stamp, so it still warns.
+  GIT_GUARD_IDENTITY_KEYDIR="$lab/keys" sh "$GG_ID_SH" env jules --host testhost --allow-missing \
+    >/dev/null 2>"$lab/env-jules.err"
+  grep -q "cannot write 'Agent: jules'" "$lab/env-jules.err"
+  t_assert "$?" "env jules still warns that the hook cannot stamp it"
   if gg_has_python; then
     GIT_GUARD_IDENTITY_KEYDIR="$lab/keys" sh "$GG_ID_SH" env claude --host testhost --format json 2>/dev/null |
       "$(gg_python)" -c 'import json,sys; d=json.load(sys.stdin); assert d["GIT_CONFIG_COUNT"]=="4" and d["GIT_GUARD_AGENT"]=="claude"'
@@ -259,6 +282,18 @@ t_case_identity_verify() {
   (cd "$r" && git config log.showSignature true &&
     sh "$GG_ROOT/bin/git-guard" identity verify --allowed-signers "$as" "$clean" >/dev/null 2>&1)
   t_expect_rc 0 "$?" "git-guard identity verify works with log.showSignature=true"
+
+  # Copilot is an agent prepare-commit-msg stamps, so its key + `Agent: copilot`
+  # is a clean agent commit, not a human key carrying an agent trailer.
+  GIT_GUARD_IDENTITY_KEYDIR="$K" sh "$GG_ID_SH" keygen copilot --host testhost >/dev/null 2>&1 &&
+    sh "$GG_ID_SH" allowed-signers add copilot "$K/copilot@testhost.pub" --file "$as" 2>/dev/null
+  t_assert "$?" "copilot key generated and listed"
+  gg_id_commit "$r" "$K/copilot@testhost" copilot "feat: copilot"
+  v HEAD~1..HEAD
+  t_expect_rc 0 "$?" "copilot key + Agent: copilot -> exit 0"
+  gg_id_commit "$r" "$K/copilot@testhost" - "feat: copilot without trailer"
+  v HEAD~1..HEAD
+  t_expect_rc 1 "$?" "POSITIVE: copilot key with no Agent trailer -> exit 1"
 
   gg_rmrepo "$r"; rm -rf "$lab"
 }
@@ -416,6 +451,17 @@ t_case_identity_hooks() {
   else
     t_ok "pre-push ENFORCE: unwritable-TMPDIR push did not land"
   fi
+
+  # Copilot end to end under ENFORCE: its own identity block (key + selector),
+  # prepare-commit-msg stamps `Agent: copilot`, commit-msg must accept it.
+  GIT_GUARD_IDENTITY_KEYDIR="$K" sh "$GG_ROOT/hooks/common/identity.sh" keygen copilot --host testhost >/dev/null 2>&1 &&
+    sh "$GG_ID_SH" allowed-signers add copilot "$K/copilot@testhost.pub" --file "$as" 2>/dev/null &&
+    GIT_GUARD_IDENTITY_KEYDIR="$K" sh "$GG_ROOT/hooks/common/identity.sh" env copilot --host testhost --allowed-signers "$as" >"$lab/copilot.env" 2>/dev/null
+  t_assert "$?" "copilot identity block generated"
+  c "$lab/copilot.env" GIT_GUARD_IDENTITY=enforce
+  t_expect_rc 0 "$?" "ENFORCE mode: copilot key + stamped Agent: copilot lands"
+  gg_id_eq "G copilot copilot" "$(git -C "$r" log -1 --format='%G? %GS %(trailers:key=Agent,valueonly)' | tr -d '\n')" "landed copilot commit: %G?=G, %GS=copilot, Agent=copilot"
+  git -C "$r" reset -q
 
   gg_rmrepo "$r"; rm -rf "$lab"
 }

@@ -4,7 +4,9 @@
 #   Codex       -> `Agent: codex` + `Co-authored-by: Codex <noreply@openai.com>`
 #   Claude Code -> `Agent: claude` (Claude writes its own Co-authored-by, which
 #                  names the model, so the hook never adds or duplicates one)
-#   human       -> no trailer
+#   Gemini      -> `Agent: gemini` (selected with GIT_GUARD_AGENT=gemini)
+#   Copilot     -> `Agent: copilot` (selected with GIT_GUARD_AGENT=copilot)
+#   human       -> no trailer; an Agent trailer must name a known agent
 #
 # Git always runs prepare-commit-msg, even with --no-verify. A human who must
 # make an emergency commit can bypass this hook explicitly with GIT_GUARD=0.
@@ -32,9 +34,18 @@ fi
 # Codex outranks Claude: a Codex process launched from inside Claude Code
 # inherits CLAUDECODE=1 but carries its own CODEX_THREAD_ID, and the
 # per-process marker beats the inherited ancestor marker.
+#
+# Known agents are the fleet's stable agent ids (agent-bus presence and
+# docs/IDENTITY.md): claude, codex, gemini, copilot and jules. A trailer may add
+# a lane suffix to one of them (`gemini-dtm-oto-mesh`, `codex-asus`), as fleet
+# history does. Only claude and codex are detected from the environment
+# (Antigravity and Copilot export no marker of their own), so gemini and copilot
+# are selected explicitly with GIT_GUARD_AGENT. An unknown selector is refused
+# rather than read as "human": treating it as human used to skip every check
+# below, so any made-up selector, or a typo, passed silently.
+git_guard_known_agents='claude codex gemini copilot jules'
 case "${GIT_GUARD_AGENT:-}" in
-  codex) agent=codex ;;
-  claude) agent=claude ;;
+  codex|claude|gemini|copilot) agent="$GIT_GUARD_AGENT" ;;
   "")
     if [ -n "${CODEX_THREAD_ID:-}" ]; then
       agent=codex
@@ -44,10 +55,54 @@ case "${GIT_GUARD_AGENT:-}" in
       agent=""
     fi
     ;;
-  *) agent="" ;;
+  *)
+    printf "git-guard prepare-commit-msg: unknown GIT_GUARD_AGENT '%s' (known: claude codex gemini copilot)\n" \
+      "$GIT_GUARD_AGENT" >&2
+    printf 'Set GIT_GUARD=0 only for an intentional human emergency commit.\n' >&2
+    exit 1
+    ;;
 esac
 
 if [ -z "$agent" ]; then
+  # Human shell. A commit with no Agent trailer is the owner's own and passes
+  # untouched; a trailer that records an agent's work must name a known agent,
+  # so a typo cannot create an attribution no tooling recognises.
+  # The value is ONE id, compared whole against each known id: `claude codex`
+  # names no single agent even though it is a substring of the list. An
+  # indented continuation line is part of the value, as Git folds it
+  # (`Agent: codex` + `  other` is `codex other`), so it is validated too.
+  git_guard_unknown_agent="$(awk -v known="$git_guard_known_agents" '
+    BEGIN { nk = split(known, k, " "); for (i = 1; i <= nk; i++) ok[k[i]] = 1; pending = 0; bad = "" }
+    function check(v,   id, base) {
+      sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v)
+      id = tolower(v)
+      base = ""
+      # A lane suffix keeps the base id: gemini-dtm-oto-mesh -> gemini.
+      if (id ~ /^[a-z]+(-[a-z0-9][a-z0-9-]*)?$/) { base = id; sub(/-.*/, "", base) }
+      if (base == "" || !(base in ok)) bad = (v == "" ? "<empty>" : v)
+    }
+    bad != "" { next }
+    pending && /^[ \t]+[^ \t]/ {
+      cont = $0
+      sub(/^[ \t]+/, "", cont); sub(/[[:space:]]+$/, "", cont)
+      value = value " " cont
+      next
+    }
+    pending { check(value); pending = 0; if (bad != "") next }
+    tolower($0) ~ /^agent[[:space:]]*:/ {
+      value = $0
+      sub(/^[^:]*:[[:space:]]*/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      pending = 1
+    }
+    END { if (bad == "" && pending) check(value); if (bad != "") print bad }
+  ' "$message_file")"
+  if [ -n "$git_guard_unknown_agent" ]; then
+    printf "git-guard prepare-commit-msg: unknown Agent trailer '%s' (known: %s)\n" \
+      "$git_guard_unknown_agent" "$git_guard_known_agents" >&2
+    printf 'Set GIT_GUARD=0 only for an intentional human emergency commit.\n' >&2
+    exit 1
+  fi
   exit 0
 fi
 
@@ -182,11 +237,14 @@ case "$agent" in
       --trailer 'Agent: codex' \
       "$message_file"
     ;;
-  claude)
+  claude|gemini|copilot)
+    # None gets a hook-written co-author: Claude writes its own (it names the
+    # model); Gemini's and Copilot's attribution is their signing key plus this
+    # trailer.
     git_guard_trailers --in-place \
       --if-exists replace \
       --if-missing add \
-      --trailer 'Agent: claude' \
+      --trailer "Agent: $agent" \
       "$message_file"
     ;;
 esac
