@@ -18,9 +18,12 @@
 #   - a guard moved from the job to a step, where it no longer stops the job from being
 #     scheduled;
 #   - any of the forbidden triggers above.
-#   Self-hosted means a `runs-on` that names `self-hosted` in any form GitHub accepts: a
-#   string, a list, or a mapping's `labels`. A mapping `group:` and an expression also count,
-#   because both can resolve to a self-hosted runner. Reading a secret means any `secrets`
+#   Self-hosted means a `runs-on` that names any label other than a GitHub-hosted image label
+#   (ubuntu-*, windows-*, macos-*), compared case-insensitively, in any form GitHub accepts: a
+#   string, a list, or a mapping's `labels`. A custom label alone (`runs-on: git-guard-docker`)
+#   selects a self-hosted runner, so it counts without `self-hosted` beside it (codex review of
+#   #105 at eb48e68). A mapping `group:` and an expression also count, because both can
+#   resolve to a self-hosted runner. Reading a secret means any `secrets`
 #   inside `${{ }}` (`secrets.X`, `secrets['X']`, `toJSON(secrets)`), or a job-level `secrets:`
 #   passed to a reusable workflow. Both forms were found to evade the first version (codex
 #   review of git-guard #105).
@@ -54,14 +57,30 @@ if not files:
     sys.exit(2)
 
 
+# GitHub-hosted image labels (standard and larger runners). Anything else in
+# runs-on can only be satisfied by a self-hosted runner: GitHub-hosted runners
+# carry no custom labels, and git-guard's own runners answer to custom labels
+# such as git-guard-docker and git-guard-local with or without `self-hosted`.
+HOSTED = re.compile(
+    r"(ubuntu|windows|macos)-(latest|slim|\d+(\.\d+)?)"
+    r"(-(arm|arm64|intel|large|xlarge|\d+-cores?|\d+core))*")
+
+
 def self_hosted(job):
-    runs_on = job.get("runs-on", [])
+    if "runs-on" not in job:
+        return False  # a reusable-workflow call; its own jobs are checked where they live
+    runs_on = job["runs-on"]
     if isinstance(runs_on, dict):
         if "group" in runs_on:
             return True  # a runner group can hold self-hosted runners
         runs_on = runs_on.get("labels", [])
     labels = runs_on if isinstance(runs_on, list) else [runs_on]
-    return any(str(lab) == "self-hosted" or "${{" in str(lab) for lab in labels)
+    if not labels:
+        return True  # nothing GitHub-hosted was named; fail closed
+    # GitHub matches labels case-insensitively. An expression can resolve to
+    # any label, and any non-hosted label selects a self-hosted runner.
+    return any("${{" in str(lab) or not HOSTED.fullmatch(str(lab).strip().lower())
+               for lab in labels)
 
 
 def reads_secrets(job):
@@ -187,6 +206,56 @@ jobs:
       - run: true'
   wfg_check "$_wfg_tmp/labels" >/dev/null 2>&1
   t_expect_rc 1 "$?" "control: an unguarded job on a mapping-form self-hosted runs-on is refused"
+
+  # A custom label alone selects a self-hosted runner: GitHub-hosted runners
+  # carry only GitHub's own image labels. git-guard's runners answer to
+  # git-guard-docker and git-guard-local, so each must count without
+  # `self-hosted` beside it, in string, list and mapping form, and labels match
+  # case-insensitively (`Self-Hosted`).
+  for _wfg_sel in 'git-guard-docker' 'git-guard-local' '[git-guard-docker]' '[Linux, X64, git-guard-local]' \
+    '[Self-Hosted, Linux]' '{labels: git-guard-docker}' '{labels: [ubuntu-latest, git-guard-local]}'; do
+    rm -rf "$_wfg_tmp/custom"
+    wfg_fixture "$_wfg_tmp/custom" "on:
+  pull_request:
+jobs:
+  docker:
+    runs-on: $_wfg_sel
+    steps:
+      - run: true"
+    wfg_check "$_wfg_tmp/custom" >/dev/null 2>&1
+    t_expect_rc 1 "$?" "control: an unguarded job on runs-on: $_wfg_sel is refused"
+  done
+
+  # The real workflow with BOTH persistent runners selected by their custom
+  # label only and both job guards removed must be refused (codex's probe on
+  # #105). Both are rewritten so neither job still names self-hosted.
+  mkdir -p "$_wfg_tmp/real"
+  sed -e 's/runs-on: \[self-hosted, Linux, X64, \(git-guard-[a-z]*\)\]/runs-on: \1/' \
+    -e "/^    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository\$/d" \
+    "$GG_ROOT/.github/workflows/qa.yml" > "$_wfg_tmp/real/qa.yml"
+  if grep -q 'runs-on: git-guard-docker$' "$_wfg_tmp/real/qa.yml" &&
+     grep -q 'runs-on: git-guard-local$' "$_wfg_tmp/real/qa.yml" &&
+     ! grep -q 'runs-on:.*self-hosted\|^ *if: .*head.repo.full_name == github.repository$' "$_wfg_tmp/real/qa.yml"; then
+    wfg_check "$_wfg_tmp/real" >/dev/null 2>&1
+    t_expect_rc 1 "$?" "control: qa.yml on custom labels only, with no guards, is refused"
+  else
+    t_fail "control fixture: qa.yml no longer has the expected runs-on/guard lines; update this test"
+  fi
+
+  # GitHub-hosted image labels stay hosted, in any case, so an unprivileged
+  # hosted job needs no guard.
+  for _wfg_sel in ubuntu-latest Ubuntu-24.04 '[windows-2022]' 'macos-15-xlarge' '{labels: [ubuntu-24.04-arm]}'; do
+    rm -rf "$_wfg_tmp/hosted"
+    wfg_fixture "$_wfg_tmp/hosted" "on:
+  pull_request:
+jobs:
+  hosted:
+    runs-on: $_wfg_sel
+    steps:
+      - run: true"
+    wfg_check "$_wfg_tmp/hosted" >/dev/null 2>&1
+    t_expect_rc 0 "$?" "control: an unprivileged job on GitHub-hosted runs-on: $_wfg_sel passes"
+  done
 
   wfg_fixture "$_wfg_tmp/group" 'on:
   pull_request:
