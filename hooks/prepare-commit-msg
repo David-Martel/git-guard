@@ -67,19 +67,35 @@ if [ -z "$agent" ]; then
   # Human shell. A commit with no Agent trailer is the owner's own and passes
   # untouched; a trailer that records an agent's work must name a known agent,
   # so a typo cannot create an attribution no tooling recognises.
-  git_guard_unknown_agent="$(awk -v known=" $git_guard_known_agents " '
-    {
-      line = $0
-      if (tolower(line) ~ /^agent[[:space:]]*:/) {
-        sub(/^[^:]*:[[:space:]]*/, "", line)
-        sub(/[[:space:]]+$/, "", line)
-        id = tolower(line)
-        base = id
-        # A lane suffix keeps the base id: gemini-dtm-oto-mesh -> gemini.
-        if (id ~ /^[a-z]+-[a-z0-9][a-z0-9-]*$/) sub(/-.*/, "", base)
-        if (index(known, " " base " ") == 0) { print (line == "" ? "<empty>" : line); exit }
-      }
+  # The value is ONE id, compared whole against each known id: `claude codex`
+  # names no single agent even though it is a substring of the list. An
+  # indented continuation line is part of the value, as Git folds it
+  # (`Agent: codex` + `  other` is `codex other`), so it is validated too.
+  git_guard_unknown_agent="$(awk -v known="$git_guard_known_agents" '
+    BEGIN { nk = split(known, k, " "); for (i = 1; i <= nk; i++) ok[k[i]] = 1; pending = 0; bad = "" }
+    function check(v,   id, base) {
+      sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v)
+      id = tolower(v)
+      base = ""
+      # A lane suffix keeps the base id: gemini-dtm-oto-mesh -> gemini.
+      if (id ~ /^[a-z]+(-[a-z0-9][a-z0-9-]*)?$/) { base = id; sub(/-.*/, "", base) }
+      if (base == "" || !(base in ok)) bad = (v == "" ? "<empty>" : v)
     }
+    bad != "" { next }
+    pending && /^[ \t]+[^ \t]/ {
+      cont = $0
+      sub(/^[ \t]+/, "", cont); sub(/[[:space:]]+$/, "", cont)
+      value = value " " cont
+      next
+    }
+    pending { check(value); pending = 0; if (bad != "") next }
+    tolower($0) ~ /^agent[[:space:]]*:/ {
+      value = $0
+      sub(/^[^:]*:[[:space:]]*/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      pending = 1
+    }
+    END { if (bad == "" && pending) check(value); if (bad != "") print bad }
   ' "$message_file")"
   if [ -n "$git_guard_unknown_agent" ]; then
     printf "git-guard prepare-commit-msg: unknown Agent trailer '%s' (known: %s)\n" \

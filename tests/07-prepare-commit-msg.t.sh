@@ -563,6 +563,44 @@ Agent: gemnii-dtm-oto
   (cd "$r" && "$hook" "$r/lanetypo-message") >/dev/null 2>&1
   t_expect_rc 1 "$?" "a lane suffix on an unknown base id is refused"
 
+  # The value must be ONE known id, not a run of them. Adjacent names used to
+  # pass because ` claude codex ` is a substring of the space-delimited set.
+  for combined in 'claude codex' 'codex gemini' 'claude codex gemini copilot jules' 'codex-asus gemini'; do
+    printf 'combined\n\nAgent: %s\n' "$combined" > "$r/combined-message"
+    (cd "$r" && "$hook" "$r/combined-message") > "$r/combined.log" 2>&1
+    t_expect_rc 1 "$?" "human shell refuses combined Agent: $combined"
+  done
+  grep -q "unknown Agent trailer 'codex-asus gemini'" "$r/combined.log"
+  t_assert "$?" "the combined-name refusal names the whole value"
+
+  # Git folds an indented continuation into the trailer value, so
+  # `Agent: codex` + `  unrecognized-principal` is the value
+  # `codex unrecognized-principal`. Validate the logical value, not each line.
+  printf 'folded\n\nAgent: codex\n  unrecognized-principal\n' > "$r/folded-message"
+  (cd "$r" && "$hook" "$r/folded-message") > "$r/folded.log" 2>&1
+  t_expect_rc 1 "$?" "human shell refuses a folded Agent value"
+  grep -q "unknown Agent trailer 'codex unrecognized-principal'" "$r/folded.log"
+  t_assert "$?" "the folded refusal names the logical value"
+  # Real commit, so Git's own parse is what is guarded.
+  printf 'folded\n' > "$r/folded.txt"
+  git -C "$r" add folded.txt
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && git commit -q -F "$r/folded-message") >/dev/null 2>&1
+  t_expect_rc 1 "$?" "a folded unknown Agent value refuses a real commit"
+  if [ "$(git -C "$r" rev-parse HEAD)" = "$before" ]; then
+    t_ok "the refused folded commit does not land"
+  else
+    t_fail "the refused folded commit does not land"
+  fi
+  git -C "$r" reset -q
+  # Control: a known value followed by an unindented body line is unchanged.
+  printf 'unfolded\n\nAgent: codex\nSigned-off-by: A <a@example.invalid>\n' > "$r/unfolded-message"
+  cp "$r/unfolded-message" "$r/unfolded-before"
+  (cd "$r" && "$hook" "$r/unfolded-message") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "a known Agent value followed by another trailer passes"
+  cmp -s "$r/unfolded-before" "$r/unfolded-message"
+  t_assert "$?" "the unfolded message is byte-identical"
+
   # copilot selector: stamped like gemini.
   printf 'copilot
 ' > "$r/copilot-message"
