@@ -55,7 +55,7 @@
 #   GIT_GUARD_ALLOWED_SIGNERS     allowed_signers file (beats git config)
 #   GIT_GUARD_IDENTITY_KEYDIR     key directory (default ~/.ssh/agent-signing)
 #   GIT_GUARD_HOST                host name used in key names (default: hostname)
-#   GIT_GUARD_AGENT_PRINCIPALS    agent principals (default "claude codex jules gemini")
+#   GIT_GUARD_AGENT_PRINCIPALS    agent principals (default "claude codex jules gemini copilot")
 #   GIT_GUARD_IDENTITY_MAX_COMMITS  pre-push range cap (default 500)
 #
 # POSIX sh + git + ssh-keygen; verification also needs uv and existing Python.
@@ -65,9 +65,9 @@ set -u
 GG_ID_SELF="$0"
 GG_ID_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 GG_ID_ROOT="$(cd "$GG_ID_DIR/../.." && pwd -P)"
-GG_AGENT_PRINCIPALS="${GIT_GUARD_AGENT_PRINCIPALS:-claude codex jules gemini}"
+GG_AGENT_PRINCIPALS="${GIT_GUARD_AGENT_PRINCIPALS:-claude codex jules gemini copilot}"
 # The agents prepare-commit-msg can actually attribute today.
-GG_TRAILER_AGENTS="claude codex"
+GG_TRAILER_AGENTS="claude codex gemini copilot"
 
 gg_die() { printf 'git-guard identity: %s\n' "$*" >&2; exit 3; }
 gg_warn() { printf 'git-guard identity: %s\n' "$*" >&2; }
@@ -282,7 +282,7 @@ cmd_status() {
   sign="$(git config --bool --get commit.gpgsign 2>/dev/null || echo false)"
   agent=""
   case "${GIT_GUARD_AGENT:-}" in
-    codex|claude) agent="$GIT_GUARD_AGENT" ;;
+    codex|claude|gemini|copilot) agent="$GIT_GUARD_AGENT" ;;
     "") if [ -n "${CODEX_THREAD_ID:-}" ]; then agent=codex
         elif [ "${CLAUDECODE:-}" = "1" ] || [ -n "${CLAUDE_CODE_ENTRYPOINT:-}" ]; then agent=claude; fi ;;
   esac
