@@ -1,7 +1,51 @@
 const { spawn, spawnSync } = require('node:child_process');
+const { existsSync } = require('node:fs');
 
-const sshExe = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe';
+const windowsSsh = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe';
 const args = process.argv.slice(2);
+
+// ssh(1) options that take a value; the first other argument is the destination.
+const valueOptions = new Set('BbcDEeFIiJLlmOoPpQRSWw');
+function destinationHost(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--') return (argv[i + 1] ?? '').replace(/^.*@/, '').toLowerCase();
+    if (arg.length > 1 && arg.startsWith('-')) {
+      for (let j = 1; j < arg.length; j++) {
+        if (valueOptions.has(arg[j])) {
+          if (j === arg.length - 1) i++;
+          break;
+        }
+      }
+      continue;
+    }
+    return arg.replace(/^.*@/, '').toLowerCase();
+  }
+  return '';
+}
+
+// Windows OpenSSH (9.5p2 and 10.4.0.0p1) hung after git-upload-pack when no console was
+// attached (sshd sessions), while Git for Windows' bundled OpenSSH finished in about 1s
+// (dtm-p1gen7, dtm-super-nuc, 2026-11-11). Prefer the bundled client and fall back to
+// Windows OpenSSH. The bundled client cannot reach the Windows ssh-agent pipe, so remote
+// hosts named in GIT_GUARD_WINDOWS_SSH_HOSTS (separated by commas, semicolons or spaces;
+// '*' for every host) keep Windows OpenSSH.
+function selectSsh(env, host) {
+  const windowsHosts = String(env.GIT_GUARD_WINDOWS_SSH_HOSTS ?? '')
+    .split(/[\s,;]+/).map(name => name.toLowerCase()).filter(Boolean);
+  if (windowsHosts.includes('*') || (host && windowsHosts.includes(host))) return windowsSsh;
+  const roots = [];
+  // Git sets GIT_EXEC_PATH to <git-root>/<mingw64|ucrt64|clangarm64>/libexec/git-core.
+  const match = /^(.+)[\\/][^\\/]+[\\/]libexec[\\/]git-core[\\/]?$/i.exec(env.GIT_EXEC_PATH ?? '');
+  if (match) roots.push(match[1].replace(/\//g, '\\'));
+  roots.push('C:\\Program Files\\Git');
+  for (const root of roots) {
+    const candidate = `${root}\\usr\\bin\\ssh.exe`;
+    if (existsSync(candidate)) return candidate;
+  }
+  return windowsSsh;
+}
+const sshExe = selectSsh(process.env, destinationHost(args));
 const packCommands = new Set(['git-upload-pack', 'git-upload-archive', 'git-receive-pack']);
 
 if (args.length > 1) {

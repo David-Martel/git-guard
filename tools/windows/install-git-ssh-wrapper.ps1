@@ -83,6 +83,8 @@ $pushBaselineJsHash = '27758C691F894F76EEFCFC59ED2939E90D15993682C872F1F464B0195
 $batchBaselineJsHash = '0B718434D540C476C5581BD8354E4D5A6D1A67EB2E8AD06FC5541F2238FBFA82'
 # Reviewed predecessor that bounded only headless calls (#91); interactive calls had no keepalive.
 $headlessBaselineJsHash = '9BE9F01293F3C52A0313770C29DB59FA0ECB37302F2B3341A72B5392C449977A'
+# Reviewed predecessor that bounded every call (#112) but always ran Windows OpenSSH.
+$keepaliveBaselineJsHash = '86C729FBEE1CA7F8D2A6A394FF95D086EB9931E8426F7C1E9FC3781162781E5C'
 $launcherHash = 'A7C81A417092D46D2F4F56F57E36B679B15A451F6C0A44F973A66DAA96ED542B'
 $marker = Join-Path $SourceRoot '.git-guard-commit'
 if (-not [IO.File]::Exists($marker) -or -not [IO.File]::Exists((Join-Path $SourceRoot 'VERSION'))) {
@@ -132,7 +134,7 @@ try {
     if ($targetHash -eq $sourceHash) {
         return [pscustomobject]@{ Status = 'Current'; Commit = $commit; SHA256 = $sourceHash }
     }
-    if ($targetHash -notin @($legacyJsHash, $pushBaselineJsHash, $batchBaselineJsHash, $headlessBaselineJsHash)) {
+    if ($targetHash -notin @($legacyJsHash, $pushBaselineJsHash, $batchBaselineJsHash, $headlessBaselineJsHash, $keepaliveBaselineJsHash)) {
         throw 'Existing JavaScript has unknown bytes; only exact known wrapper predecessors are accepted.'
     }
     if (-not $Apply) {
