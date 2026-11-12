@@ -60,19 +60,26 @@ function invoke(env, args, execute = () => ({ status: 0 }), { terminal = true } 
   // Cross-context arrays/objects have distinct prototypes; compare plain data.
   return { actual: JSON.parse(JSON.stringify(actual)), messages, exit };
 }
-check('interactive_hides_without_restricting_prompt_or_lifetime', () => {
+// Connect and keepalive bounds only end a dead connect or a dead link; they never cut a live
+// transfer or a prompt, so every invocation gets them. A stalled link otherwise hung an
+// interactive fetch forever (dtm-p1gen7, 2026-11-11).
+const boundOptions = [
+  '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
+];
+check('interactive_keeps_prompt_and_lifetime_but_bounds_dead_links', () => {
   const result = invoke({}, ['git@host', "git-upload-pack 'repo name.git'"]);
   assert.equal(result.actual.options.windowsHide, true);
   assert.equal(result.actual.options.stdio, 'inherit');
   assert.equal(result.actual.options.timeout, undefined);
-  assert.deepEqual(result.actual.argv, ['git@host', "git-upload-pack 'repo name.git'"]);
+  assert.deepEqual(result.actual.argv, [...boundOptions, 'git@host', "git-upload-pack 'repo name.git'"]);
+  assert.ok(!result.actual.argv.includes('BatchMode=yes'));
   assert.equal(result.exit, 0);
 });
 check('ci_alone_retains_interactive_options', () => {
   const result = invoke({ CI: 'true', GIT_TERMINAL_PROMPT: '1' }, ['host']);
   assert.equal(result.actual.options.windowsHide, true);
   assert.equal(result.actual.options.timeout, undefined);
-  assert.deepEqual(result.actual.argv, ['host']);
+  assert.deepEqual(result.actual.argv, [...boundOptions, 'host']);
 });
 check('explicit_noninteractive_has_existing_fleet_bounds', () => {
   const result = invoke({ GIT_TERMINAL_PROMPT: '0' }, ['host', 'command']);
@@ -83,9 +90,6 @@ check('explicit_noninteractive_has_existing_fleet_bounds', () => {
     '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3', 'host', 'command',
   ]);
 });
-const boundOptions = [
-  '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
-];
 check('missing_terminal_non_pack_command_gets_ssh_bounds_only', () => {
   const result = invoke({ CI: 'true', GIT_TERMINAL_PROMPT: '1' }, ['host'], undefined, { terminal: false });
   assert.equal(result.actual.options.timeout, undefined);
@@ -139,12 +143,12 @@ check('real_child_roundtrips_arguments_and_exit_status', () => {
     '-e', 'require("node:fs").writeFileSync(process.argv[1],JSON.stringify(process.argv.slice(2)));process.exit(23)',
     '--', output, ...argv,
   ], options));
-  assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), args);
+  assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), [...boundOptions, ...args]);
   assert.equal(result.exit, 23);
 });
 check('split_pack_command_preserves_git_encoded_fragment', () => {
   const result = invoke({}, ['-p', '443', 'host', 'git-upload-pack', "'owner/repo.git'"]);
-  assert.deepEqual(result.actual.argv, ['-p', '443', 'host', "git-upload-pack 'owner/repo.git'"]);
+  assert.deepEqual(result.actual.argv, [...boundOptions, '-p', '443', 'host', "git-upload-pack 'owner/repo.git'"]);
   assert.equal(result.actual.file, 'C:\\Windows\\System32\\OpenSSH\\ssh.exe');
 });
 // Hand-encoded Git remote-shell fragments. Stripping quotes must fail both

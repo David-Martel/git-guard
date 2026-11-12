@@ -22,15 +22,16 @@ const isPack = args.length > 1
   && /^(git-upload-pack|git-upload-archive|git-receive-pack)[ \t]/.test(args[args.length - 1]);
 
 // Optional Windows adapter contract/tests: docs/QA_TOOLING.md, tests/33-windows-ssh-adapter.t.sh.
-// Keep interactive prompts/arguments unchanged. CI alone does not opt into BatchMode.
+// Keep interactive prompts and lifetime unchanged. CI alone does not opt into BatchMode.
 const options = { stdio: 'inherit', windowsHide: true };
 // Git pipes ssh stdin/stdout, so stderr is the only stream that can be a terminal.
 // Without one, nothing can answer or interrupt a stalled child (git-guard #90).
 const promptDisabled = process.env.GIT_TERMINAL_PROMPT === '0';
 const terminal = process.stderr.isTTY === true;
-if (promptDisabled || !terminal) {
-  args.unshift('-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3');
-}
+// Connect and keepalive bounds end only a dead connect or a dead link; they never cut a
+// live transfer or a prompt, so every invocation gets them. Without them a stalled link
+// hung an interactive-terminal fetch forever (dtm-p1gen7, 2026-11-11).
+args.unshift('-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3');
 if (promptDisabled) {
   args.unshift('-o', 'BatchMode=yes');
   // Push SSH stays open during local pre-push QA. Allow a finite, provisional

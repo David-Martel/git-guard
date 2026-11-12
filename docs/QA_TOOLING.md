@@ -1246,15 +1246,17 @@ a missing child-launch option; it does not establish that this wrapper caused
 the fleet's reported Git Bash popups or hide a console created by its caller.
 The option follows Node's
 [child-process contract](https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options).
-Interactive calls, meaning stderr is a terminal and `GIT_TERMINAL_PROMPT` is not
-`0`, retain prompts and have no added timeout or SSH options. `CI` alone does not
-change this behavior.
+Every call gets `ConnectTimeout=15`, `ServerAliveInterval=30` and
+`ServerAliveCountMax=3`. They end only a dead connect or a peer that stops answering,
+never a live transfer or a prompt; without them a stalled link hung an interactive
+fetch forever (dtm-p1gen7, 2026-11-11). Interactive calls, meaning stderr is a terminal
+and `GIT_TERMINAL_PROMPT` is not `0`, otherwise retain prompts and have no added
+timeout. `CI` alone does not change this behavior.
 
 Git always pipes the SSH child's stdin and stdout, so stderr is the only stream
 that can be a terminal. When stderr is not a terminal (a scheduler, an agent's
 sshd session, a GUI client, Git Bash's mintty) and `GIT_TERMINAL_PROMPT` is not
-`0`, the wrapper adds `ConnectTimeout=15`, `ServerAliveInterval=30` and
-`ServerAliveCountMax=3`, never `BatchMode`, so askpass and passphrase prompts
+`0`, the wrapper still never adds `BatchMode`, so askpass and passphrase prompts
 keep working. For a pack command (`git-upload-pack`, `git-upload-archive`,
 `git-receive-pack`) it also bounds the wait for the server's first byte at
 300000ms (5min). A Git server always speaks first: upload-pack and
