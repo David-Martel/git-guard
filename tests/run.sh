@@ -145,6 +145,7 @@ t_case_vendor_glob_gate
 t_case_panic_set
 t_case_silent_failures
 t_case_quality_mandate
+t_case_quality_mandate_utf8
 t_case_attribution
 t_case_attribution_claude
 t_case_identity_cli
