@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "source_commit": "8f775144b98f414a8c9361cfc85059ff9ce9aba2 + proposed review-event source diff",
+  "source_commit": "d0afe08daa3f38be61f59cf8ecdf377536d34dc7",
   "hash_normalization": "Raw full-file SHA256; shell selector/helper UTF-8 with CRLF normalized to LF, no trailing newline",
   "source_hashes": {
     "tests/37-workflow-fork-guard.t.sh": "27ad8b82d807ac1298e39c811e4432b193f5060897a9abda4e59caf2aa7cdfac",
-    "tests/run.sh": "8b8c9a4b611027fc7ac80400b4759ba8a5416691af46700afb50d808dd7c4f1b"
+    "tests/run.sh": "5d196ea7159c9af4b9a5d07a25f3c3be7fc5e4f1859fca46bb0a02e73fdc77b7"
   },
   "target": {
     "name": "wfg_check",
@@ -356,5 +356,27 @@
       "reason": "The receipt builder shallow-copied initial row objects and then updated current dispositions, causing the embedded history rows to inherit KEEP. Restore original unreviewed rows from the immutable preimage. Current independent KEEP rows, source hashes, reviews and execution evidence are unchanged.",
       "corrected_utc": "2026-11-14T07:43:48.8775137Z"
     }
-  ]
+  ],
+  "main_integration": {
+    "source_commit": "30af75695ec3dfdc62381508dd07d3b548268227",
+    "owned_main": "ac8039499d69b256214f78b345b5bf26e15fd953",
+    "merge_commit": "d0afe08daa3f38be61f59cf8ecdf377536d34dc7",
+    "method": "Normal signed merge of explicitly fetched canonical owned main; no rebase, force or conflicts",
+    "source_file_sha256": "27ad8b82d807ac1298e39c811e4432b193f5060897a9abda4e59caf2aa7cdfac",
+    "unchanged_policy_inputs": [
+      ".github/workflows/qa.yml",
+      "tests/lib.sh",
+      "tools/posix-tool-path.sh"
+    ],
+    "harness_delta": "Main contributes four category registrations39-42; existing category37 selection preserved",
+    "bounded_blobs": [
+      "72799f0e399645a7e5dccfdff4459988590b20df",
+      "f3b250359055ecc03fd93baa60082c8b0132b2b6"
+    ],
+    "blob_receipt": "worktrees/fork-guard-evidence/main-integration-blobs/receipt.json",
+    "integrated_green": "57 passed, 0 failed, 0 skipped",
+    "log": "worktrees/fork-guard-evidence/integrated-green.log",
+    "log_sha256": "8947aa62589a22fcaf024363083a1c78bddc67add36db461de3a55bfc32763e2",
+    "scope": "Actual integrated checker/harness targeted execution only. Inherited main runtime changes not requalified; no Docker/Rust/full-suite execution."
+  }
 }
