@@ -41,8 +41,30 @@ nm_config_error() {
   exit 2
 }
 
+# Deadline: every git, qa_gate.sh and ast-grep run is bounded by GIT_GUARD_MANDATE_TIMEOUT
+# (default 300 s, a positive number of seconds), as mandate_scan.py bounds every tool it
+# runs. A hung tool stops there as a TOOL ERROR; no usable timeout(1) is a TOOL ERROR too,
+# so nothing runs unbounded and nothing passes for want of a bound.
+nm_limit="${GIT_GUARD_MANDATE_TIMEOUT:-300}"
+case "$nm_limit" in
+  ''|.|*[!0-9.]*|*.*.*) nm_config_error "GIT_GUARD_MANDATE_TIMEOUT='$nm_limit' must be a positive number of seconds" ;;
+  *[1-9]*) : ;;
+  *) nm_config_error "GIT_GUARD_MANDATE_TIMEOUT='$nm_limit' must be a positive number of seconds" ;;
+esac
+timeout -k 1 5 sh -c : >/dev/null 2>&1 ||
+  nm_tool_error timeout "timeout(1) with -k is required to bound the scan by GIT_GUARD_MANDATE_TIMEOUT"
+# nm_b TOOL ARGS...: run TOOL under the deadline; 124/137 is a TOOL ERROR naming it.
+nm_b() {
+  timeout -k 2 "$nm_limit" "$@"
+  nm_b_rc=$?
+  case "$nm_b_rc" in
+    124|137) nm_tool_error "${1##*/}" "did not finish within ${nm_limit}s (GIT_GUARD_MANDATE_TIMEOUT)" "$@" ;;
+  esac
+  return "$nm_b_rc"
+}
+
 [ "${1:-}" = "--staged" ] || nm_tool_error usage "mandate_native.sh supports --staged only (got '${1:-}')"
-nm_root="$(git rev-parse --show-toplevel 2>/dev/null)" || nm_tool_error git "not inside a git work tree" git rev-parse --show-toplevel
+nm_root="$(nm_b git rev-parse --show-toplevel 2>/dev/null)" || nm_tool_error git "not inside a git work tree" git rev-parse --show-toplevel
 cd "$nm_root" || nm_tool_error git "cannot enter $nm_root"
 nm_tmp="$(mktemp -d "${TMPDIR:-/tmp}/git-guard-mandate.XXXXXX")" || nm_tool_error tmp "cannot create a scratch directory"
 nm_start="$(date +%s 2>/dev/null || echo 0)"
@@ -77,7 +99,7 @@ nm_label=index
 nm_repo_conf=""
 nm_source="index, no repo conf"
 for nm_cand in .qa-gate.conf .git-guard/qa-gate.conf; do
-  if git cat-file blob ":$nm_cand" > "$nm_tmp/repo-conf" 2>/dev/null; then
+  if nm_b git cat-file blob ":$nm_cand" > "$nm_tmp/repo-conf" 2>/dev/null; then
     nm_repo_conf="$nm_tmp/repo-conf"
     nm_source="$nm_label $nm_cand"
     break
@@ -85,7 +107,7 @@ for nm_cand in .qa-gate.conf .git-guard/qa-gate.conf; do
 done
 nm_conf_arg="$nm_repo_conf"
 if [ -n "$nm_conf_arg" ] && command -v cygpath >/dev/null 2>&1; then nm_conf_arg="$(cygpath -m "$nm_conf_arg")"; fi
-if ! sh "$nm_dir/qa_gate.sh" --get-prefix mandate. --repo-conf "$nm_conf_arg" > "$nm_tmp/policy" 2> "$nm_tmp/policy.err"; then
+if ! nm_b sh "$nm_dir/qa_gate.sh" --get-prefix mandate. --repo-conf "$nm_conf_arg" > "$nm_tmp/policy" 2> "$nm_tmp/policy.err"; then
   [ -f "$nm_dir/qa-gate.conf.local" ] && nm_source="$nm_source + machine overlay $nm_dir/qa-gate.conf.local"
   cat "$nm_tmp/policy.err" >&2
   nm_config_error "qa_gate.sh could not read the mandate.* configuration of $nm_source (malformed conf; its own message is above)."
@@ -144,7 +166,7 @@ nm_codes="$(awk '$1 == "sev" && $3 != "off" && $4 != "" { print $4 }' "$nm_tmp/r
 
 # --- changed lines of the staged content -----------------------------------------------
 nm_diff() {
-  git -c core.quotePath=false -c diff.interHunkContext=0 diff -U0 --no-color --no-ext-diff \
+  nm_b git -c core.quotePath=false -c diff.interHunkContext=0 diff -U0 --no-color --no-ext-diff \
     --no-textconv --text --src-prefix=a/ --dst-prefix=b/ -M --diff-filter=d "$@"
 }
 # nm_changes OUT DIFF-ARGS... : "path<TAB>line" records, plus "path<TAB>0" for every
@@ -196,14 +218,14 @@ nm_changes() {
   tr '\000' '\n' < "$nm_tmp/names" | awk 'NF { print $0 "\t0" }' >> "$nm_out"
 }
 
-nm_merge_head="$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)" || nm_tool_error git "cannot locate MERGE_HEAD" git rev-parse --git-path MERGE_HEAD
+nm_merge_head="$(nm_b git rev-parse --git-path MERGE_HEAD 2>/dev/null)" || nm_tool_error git "cannot locate MERGE_HEAD" git rev-parse --git-path MERGE_HEAD
 if [ -f "$nm_merge_head" ]; then
   nm_parents="$(tr -s ' \t\r' '\n\n\n' < "$nm_merge_head" | awk 'NF')" || nm_config_error "cannot read merge parent metadata"
   [ -n "$nm_parents" ] || nm_config_error "merge parent metadata contains no commits"
-  nm_head="$(git rev-parse --verify -q 'HEAD^{commit}')" || nm_tool_error git "cannot resolve HEAD" git rev-parse HEAD
+  nm_head="$(nm_b git rev-parse --verify -q 'HEAD^{commit}')" || nm_tool_error git "cannot resolve HEAD" git rev-parse HEAD
   nm_changes "$nm_tmp/changes" --cached "$nm_head"
   for nm_p in $nm_parents; do
-    nm_pc="$(git rev-parse --verify -q "$nm_p^{commit}")" || nm_tool_error git "cannot resolve merge parent $nm_p" git rev-parse "$nm_p"
+    nm_pc="$(nm_b git rev-parse --verify -q "$nm_p^{commit}")" || nm_tool_error git "cannot resolve merge parent $nm_p" git rev-parse "$nm_p"
     nm_changes "$nm_tmp/changes-other" --cached "$nm_pc"
     # Keep a line only when it is new against this parent too; keep every path.
     awk -F'\t' 'FNR == NR { other[$0] = 1; if ($2 == 0) paths[$1] = 1; next }
@@ -217,7 +239,7 @@ else
 fi
 
 # --- scannable regular Rust files in the index -------------------------------------------
-git ls-files -s -z > "$nm_tmp/ls" || nm_tool_error git "git ls-files failed" git ls-files -s -z
+nm_b git ls-files -s -z > "$nm_tmp/ls" || nm_tool_error git "git ls-files failed" git ls-files -s -z
 tr '\000' '\n' < "$nm_tmp/ls" | awk '
   { tab = index($0, "\t"); if (!tab) next
     split(substr($0, 1, tab - 1), m, " ")
@@ -236,7 +258,7 @@ awk -F'\t' '
 mkdir -p "$nm_tmp/tree"
 while IFS="$(printf '\t')" read -r nm_oid nm_path; do
   mkdir -p "$nm_tmp/tree/$(dirname "$nm_path")"
-  git cat-file blob "$nm_oid" > "$nm_tmp/tree/$nm_path" || nm_tool_error git "index file unavailable: '$nm_path'" git cat-file blob "$nm_oid"
+  nm_b git cat-file blob "$nm_oid" > "$nm_tmp/tree/$nm_path" || nm_tool_error git "index file unavailable: '$nm_path'" git cat-file blob "$nm_oid"
   # A lone CR makes changed-line coordinates ambiguous (git and ast-grep count lines differently).
   if awk '{ sub(/\r$/, "") } index($0, "\r") { bad = 1; exit } END { exit !bad }' "$nm_tmp/tree/$nm_path"; then
     nm_tool_error git "lone CR line endings make changed-line coordinates ambiguous; convert to LF or CRLF before scanning" "$nm_path"
@@ -252,7 +274,7 @@ if [ "$nm_panic_sev" != "off" ]; then
   nm_sg=""
   if command -v ast-grep >/dev/null 2>&1; then
     nm_sg="$(command -v ast-grep)"
-    nm_ver="$("$nm_sg" --version 2>"$nm_tmp/sg.err")"; nm_rc=$?
+    nm_ver="$(nm_b "$nm_sg" --version 2>"$nm_tmp/sg.err")"; nm_rc=$?
     case "$(printf '%s' "$nm_ver" | tr 'A-Z' 'a-z')" in
       *ast-grep*) [ "$nm_rc" -eq 0 ] || nm_tool_error ast-grep "version probe failed (exit $nm_rc, stdout '$nm_ver'). An installed ast-grep that cannot report its version cannot be trusted to scan." "$nm_sg" --version ;;
       *) nm_tool_error ast-grep "version probe failed (exit $nm_rc, stdout '$nm_ver'). An installed ast-grep that cannot report its version cannot be trusted to scan." "$nm_sg" --version ;;
@@ -275,7 +297,7 @@ if [ "$nm_panic_sev" != "off" ]; then
     # One argv per file list; xargs would split on whitespace, so pass the list directly.
     set --
     while IFS= read -r nm_path; do set -- "$@" "$nm_path"; done < "$nm_tmp/paths"
-    ( cd "$nm_tmp/tree" && "$nm_sg" scan -c "$nm_cfg" --filter '^(mandate-rust-panic)$' --format github -- "$@" ) \
+    ( cd "$nm_tmp/tree" && nm_b "$nm_sg" scan -c "$nm_cfg" --filter '^(mandate-rust-panic)$' --format github -- "$@" ) \
       > "$nm_tmp/sg.out" 2> "$nm_tmp/sg.err"
     nm_rc=$?
     [ "$nm_rc" -eq 0 ] || nm_tool_error ast-grep "exited $nm_rc; stderr: $(tail -n 12 "$nm_tmp/sg.err" | tr '\n' ' ')" "$nm_sg" scan --format github

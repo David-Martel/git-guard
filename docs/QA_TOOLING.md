@@ -906,7 +906,10 @@ does not read, so nothing is reported twice.
   suppressions, merge-parent intersection, output and exit codes. Staged Python
   keeps the Python scanner. Test 42 (`native_staged_mandate`) runs that route
   with interpreter tripwires on PATH and checks its rule table against
-  `mandate_scan.py`.
+  `mandate_scan.py`. Every git, `qa_gate.sh` and ast-grep run on that route is bounded
+  by `GIT_GUARD_MANDATE_TIMEOUT` (default 300 s) through `timeout -k`, as the Python
+  scanner bounds its tools; a timeout, an invalid value or a host without a usable
+  `timeout` is a TOOL ERROR (2).
 - **pre-push**, through `hooks/pre-push`, only for a pushed commit that carries
   `.git-guard/mandate-baseline.json` (the debt register below). A repo without
   one pushes exactly as before and the scanner prints nothing. `mandate_scan.sh`

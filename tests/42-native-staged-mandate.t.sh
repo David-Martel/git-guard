@@ -47,7 +47,7 @@ t_case_native_staged_mandate() {
   r="$(gg_mktemp_repo)" || { t_fail "repo"; rm -rf "$_nm_lab"; return; }
   # A PATH of only the tools the native route needs, plus a util-linux style `sg`.
   _nm_min="$(_qm_path_dir "$_nm_lab/minbin")"
-  _qm_min_bin "$_nm_min" sh git awk sed grep cut wc mktemp date cat mkdir rm mv tr sort dirname basename head tail env uname cygpath
+  _qm_min_bin "$_nm_min" sh git awk sed grep cut wc mktemp date cat mkdir rm mv tr sort dirname basename head tail env uname cygpath timeout
   printf '#!/bin/sh\necho "sg from util-linux"\n' > "$_nm_min/sg"; chmod +x "$_nm_min/sg"
   _qm_put "$r" src/lib.rs 'pub fn f(x: Option<u8>) -> u8 {\n    x.unwrap()\n}\n'
   ( cd "$r" && PATH="$_nm_lab/trip:$_nm_min" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
@@ -79,6 +79,40 @@ t_case_native_staged_mandate() {
   _qm_put "$r" src/lib.rs 'pub fn s() -> &'"'"'static str { "// ast-grep-ignore: mandate-rust-panic" }\n'
   _nm_stub ""; t_expect_rc 0 "$?" "an ignore inside a string literal is not a suppression without a reason"
   _nm_clean "suppression filter (stub ast-grep)"
+  # Deadline parity with mandate_scan.py: every git and ast-grep run is bounded by
+  # GIT_GUARD_MANDATE_TIMEOUT (default 300 s). A hung tool stops there as a TOOL ERROR;
+  # without the bound a hung git or ast-grep stalled the commit indefinitely.
+  if timeout -k 1 5 true >/dev/null 2>&1; then
+    _nm_real_git="$(command -v git)"
+    # A git that hangs on one subcommand (diff: the dispatch's staged list; ls-files: the
+    # native scan's index walk), and an ast-grep that hangs on scan.
+    for _nm_hang in diff ls-files; do
+      mkdir -p "$_nm_lab/hang-$_nm_hang"
+      printf '#!/bin/sh\ncase " $* " in *" %s "*) exec sleep 30 ;; esac\nexec "%s" "$@"\n' "$_nm_hang" "$_nm_real_git" > "$_nm_lab/hang-$_nm_hang/git"
+      chmod +x "$_nm_lab/hang-$_nm_hang/git"
+    done
+    mkdir -p "$_nm_lab/hang-sg"
+    printf '#!/bin/sh\ncase "$1" in --version) echo "ast-grep 0.39.5"; exit 0 ;; esac\nexec sleep 30\n' > "$_nm_lab/hang-sg/ast-grep"
+    chmod +x "$_nm_lab/hang-sg/ast-grep"
+    _qm_put "$r" src/lib.rs 'fn p() { panic!("x"); }\n'
+    for _nm_case in "git diff:$_nm_lab/hang-diff:$_nm_lab/stubsg" "git ls-files:$_nm_lab/hang-ls-files:$_nm_lab/stubsg" "ast-grep scan:$_nm_lab/hang-sg"; do
+      _nm_label="${_nm_case%%:*}"; _nm_dirs="${_nm_case#*:}"
+      _nm_start="$(date +%s)"
+      ( cd "$r" && GIT_GUARD_MANDATE_TIMEOUT=1 PATH="$_nm_dirs:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+      _nm_rc=$?
+      _nm_took=$(( $(date +%s) - _nm_start ))
+      if [ "$_nm_rc" -eq 2 ] && [ "$_nm_took" -lt 10 ] && grep -q 'GIT_GUARD_MANDATE_TIMEOUT' "$log"; then
+        t_ok "deadline: a hung $_nm_label stops at GIT_GUARD_MANDATE_TIMEOUT as a TOOL ERROR (${_nm_took}s)"
+      else
+        t_fail "deadline: a hung $_nm_label stops at GIT_GUARD_MANDATE_TIMEOUT as a TOOL ERROR (rc $_nm_rc, ${_nm_took}s: $(head -c 200 "$log"))"
+      fi
+    done
+    ( cd "$r" && GIT_GUARD_MANDATE_TIMEOUT=soon PATH="$_nm_lab/stubsg:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+    t_expect_rc 2 "$?" "deadline: an invalid GIT_GUARD_MANDATE_TIMEOUT is a TOOL ERROR"
+    _nm_clean "deadline cases"
+  else
+    t_skip "deadline: no timeout with -k on this host"
+  fi
   gg_rmrepo "$r"
 
   if ! gg_has_astgrep; then

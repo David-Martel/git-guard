@@ -741,7 +741,7 @@ t_case_quality_mandate() {
   _qm_has "$GG_QM_MARKER" "ruff-timeout" "the hanging payload started before the timeout"
   rm -rf "$r/.venv"
   _qm_bin="$(_qm_path_dir "$GG_T_TMPROOT/qm-noruff-bin")"
-  _qm_min_bin "$_qm_bin" sh git dirname env ast-grep sort tr
+  _qm_min_bin "$_qm_bin" sh git dirname env ast-grep sort tr timeout
   # The base installation's interpreter, not a shim or relocated copy that needs PATH
   # to start (gg_python_exe).
   _qm_p="$(gg_python_exe 2>/dev/null)" &&
@@ -755,7 +755,7 @@ t_case_quality_mandate() {
   # A python3 that is on PATH but cannot start (an unconfigured version-manager
   # shim) must read as "no interpreter", not as BLOCKED or TOOL ERROR.
   _qm_shim="$(_qm_path_dir "$GG_T_TMPROOT/qm-shim-bin")"
-  _qm_min_bin "$_qm_shim" sh git dirname
+  _qm_min_bin "$_qm_shim" sh git dirname timeout
   # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation
   _qm_payload "$_qm_shim/python3" '#!/bin/sh\nprintf "python-shim\\n" >> "$GG_QM_MARKER"\necho "shim ERROR No version is set" >&2\nexit 1\n'
   ( cd "$r" && PATH="$_qm_shim" sh "$_QM_SCAN" --staged ) >/dev/null 2>"$log"; rc=$?
@@ -1021,7 +1021,7 @@ t_case_quality_mandate() {
   t_expect_rc 2 "$rc" "an ast-grep that prints no version is a TOOL ERROR too"
   _qm_has "$GG_QM_MARKER" "astgrep-empty" "the empty-version ast-grep payload actually ran"
   _qm_sgbin="$(_qm_path_dir "$GG_T_TMPROOT/qm-sg-bin")"
-  _qm_min_bin "$_qm_sgbin" sh git dirname env sort tr ruff
+  _qm_min_bin "$_qm_sgbin" sh git dirname env sort tr ruff timeout
   _qm_p="$(gg_python_exe 2>/dev/null)" &&
     _qm_forward "$_qm_sgbin/python3" "$_qm_p"
   # shellcheck disable=SC2016  # marker expands in the invoked child, not fixture creation

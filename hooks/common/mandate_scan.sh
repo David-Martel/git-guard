@@ -50,16 +50,19 @@ mandate_git() {
 # -k to enforce it. Either missing is a TOOL ERROR: git never runs unbounded.
 mandate_limit_init() {
   mandate_limit="${GIT_GUARD_MANDATE_TIMEOUT:-300}"
+  # Shell builtins only (pre-commit can run under a minimal PATH): digits with at most
+  # one dot, and at least one non-zero digit, so 0, 0.0 and 00 are refused.
   case "$mandate_limit" in
     ''|.|*[!0-9.]*|*.*.*) mandate_limit_bad=1 ;;
-    *) mandate_limit_bad=0
-       awk -v t="$mandate_limit" 'BEGIN { exit !(t + 0 > 0) }' || mandate_limit_bad=1 ;;
+    *[1-9]*) mandate_limit_bad=0 ;;
+    *) mandate_limit_bad=1 ;;
   esac
   if [ "$mandate_limit_bad" = 1 ]; then
     printf '%s\n' "git-guard mandate TOOL ERROR [config]: GIT_GUARD_MANDATE_TIMEOUT='$mandate_limit' must be a positive number of seconds" >&2
     exit 2
   fi
-  if ! timeout -k 1 5 true >/dev/null 2>&1; then
+  # sh -c :, not true: timeout execs an external program, and sh is always on PATH.
+  if ! timeout -k 1 5 sh -c : >/dev/null 2>&1; then
     printf '%s\n' "git-guard mandate TOOL ERROR [timeout]: timeout(1) with -k is required to bound git by GIT_GUARD_MANDATE_TIMEOUT" >&2
     exit 2
   fi
@@ -122,7 +125,10 @@ fi
 if [ "$#" -eq 1 ] && [ "${1:-}" = "--staged" ]; then
   # Shell builtins and git only: this runs before either route, including under the
   # minimal PATH a host may give the Python scanner.
-  if ! mandate_names="$(git -c core.quotePath=true diff --cached --name-only -M --diff-filter=d 2>/dev/null)"; then
+  # Bounded like every mandate git (mandate_git, GIT_GUARD_MANDATE_TIMEOUT); a timeout or
+  # an invalid override exits 2 from mandate_limit_init or mandate_git.
+  mandate_limit_init
+  if ! mandate_names="$(mandate_git -c core.quotePath=true diff --cached --name-only -M --diff-filter=d)"; then
     printf '%s\n' "git-guard mandate TOOL ERROR [git]: cannot list the staged files" \
       "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
     exit 2
