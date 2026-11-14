@@ -76,9 +76,13 @@ class WorkerTests(unittest.TestCase):
 
     def test_install_runtime_failure_prevents_promotion_gate(self):
         """Protects: offline readiness before promotion and caller isolation.
-        Detects: failed readiness admitted or compatible runtime rejected by pins.
+        Detects: failed readiness admitted or compatible runtime rejected by pins. On
+        POSIX the gate proves timeout(1) process-tree containment instead (git-guard
+        #118): a timeout that cannot stop a tree is refused, and a host without uv or
+        identity_worker.py is admitted, from a directory with hostile caller pins.
         Needs: Python and POSIX sh; extracted real gate avoids global config.
-        Breadcrumb: install.sh
+        Breadcrumb: install.sh (qa_verify_materialized_tree, verify_native_containment,
+        vnc_alive, vnc_dead_state)
         """
         with tempfile.TemporaryDirectory(prefix="gg-install-runtime-") as directory:
             root = Path(directory)
@@ -94,9 +98,20 @@ class WorkerTests(unittest.TestCase):
             gate = installer.split("qa_verify_materialized_tree() {", 1)[1].split(
                 "\n}\n\nmaterialize_version", 1
             )[0]
+            # Every helper the gate reaches. A missing one is "not found" (127),
+            # which an elif silently reads as false, so each must be present and
+            # the harness refuses to run otherwise.
+            helpers = ""
+            for name in ("vnc_dead_state", "vnc_alive", "verify_native_containment"):
+                head = f"\n{name}() {{\n"
+                self.assertIn(head, installer, f"install.sh lost {name}")
+                body = installer.split(head, 1)[1].split("\n}\n", 1)[0]
+                helpers += f"{name}() {{\n{body}\n}}\n"
             harness = root / "gate.sh"
             harness.write_text(
-                "#!/bin/sh\nqa_verify_materialized_tree() {"
+                "#!/bin/sh\n"
+                + helpers
+                + "qa_verify_materialized_tree() {"
                 + gate
                 + '\n}\nqa_verify_materialized_tree "$1"\n',
                 encoding="utf-8",
@@ -108,6 +123,35 @@ class WorkerTests(unittest.TestCase):
             unavailable.chmod(0o700)
             environment = os.environ.copy()
             environment.update(PATH=str(tools) + os.pathsep + environment["PATH"])
+
+            def gate_rc(cwd: Path | None = None) -> subprocess.CompletedProcess[bytes]:
+                return subprocess.run(
+                    [require_tool("sh"), str(harness), str(source)],
+                    cwd=cwd,
+                    env=environment,
+                    capture_output=True,
+                    timeout=20,
+                    check=False,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+
+            if os.name != "nt":
+                # No Python on this route: uv fails and the worker is gone, yet the
+                # gate admits, from a directory whose pins would break uv.
+                (root / ".python-version").write_text("99.99.99\n", encoding="utf-8")
+                (root / "uv.toml").write_text("not valid TOML = [\n", encoding="utf-8")
+                (common / WORKER.name).unlink()
+                result = gate_rc(cwd=root)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                # A timeout(1) that cannot bound a process tree is refused.
+                broken = tools / "timeout"
+                broken.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+                broken.chmod(0o700)
+                result = gate_rc()
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertIn(b"VERIFY FAILED", result.stderr)
+                self.assertIn(b"timeout(1) with -k", result.stderr)
+                return
             result = subprocess.run(
                 [require_tool("sh"), str(harness), str(source)],
                 env=environment,

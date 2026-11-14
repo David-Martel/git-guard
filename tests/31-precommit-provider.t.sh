@@ -105,7 +105,7 @@ EOF
 
   missing="$GG_T_TMPROOT/framework-missing-bin"
   mkdir -p "$missing"
-  for tool in git sh dirname cat grep sed awk sort uniq tr cut head tail wc find xargs mkdir rm mv cp chmod mktemp date uname sleep touch stat id; do
+  for tool in git sh dirname cat grep sed awk sort uniq tr cut head tail wc find xargs mkdir rm mv cp chmod mktemp date uname sleep touch stat id timeout; do
     actual="$(command -v "$tool")" || return 1
     # POSIX-safe wrappers keep only declared fixture tools on PATH.
     actual="$(printf '%s' "$actual" | sed "s/'/'\\\\''/g")"

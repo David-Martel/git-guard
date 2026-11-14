@@ -125,6 +125,49 @@ ln_symlink() {  # $1 target, $2 linkname — portable, idempotent
   echo "  linked: $lnk -> $tgt"
 }
 
+# vnc_dead_state STATE: 0 when a process state letter means terminated. Z is a zombie
+# (exited, not yet reaped: under a container PID 1 that does not reap orphans, a
+# grandchild timeout killed stays Z); X is EXIT_DEAD, the instant while its parent reaps
+# it (x on older kernels). R, S, D and the rest are alive, and so is an empty state that
+# could not be read (fail closed). Counting Z, and then X, as a survivor refused a
+# working timeout (autopilot review of #119; vigil-utils #1503/#1505 found X).
+vnc_dead_state() {
+  case "$1" in Z|X|x) return 0 ;; *) return 1 ;; esac
+}
+
+# vnc_alive PID: 0 when PID is a process that is still running. kill -0 also succeeds for
+# a zombie, so the state from /proc/PID/stat (else ps) decides.
+vnc_alive() {
+  kill -0 "$1" 2>/dev/null || return 1
+  if [ -r "/proc/$1/stat" ]; then
+    vnc_state="$(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -c1)"
+  else
+    vnc_state="$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ' | cut -c1)"
+  fi
+  ! vnc_dead_state "$vnc_state"
+}
+
+# verify_native_containment: timeout(1) accepts -k and, at the deadline, stops a child
+# AND its descendant (the process group), as identity.sh gg_verify_native relies on.
+verify_native_containment() {
+  timeout -k 1 5 true >/dev/null 2>&1 || return 1
+  vnc_dir="$(mktemp -d "${TMPDIR:-/tmp}/gg-vnc.XXXXXX")" || return 1
+  # shellcheck disable=SC2016  # the $! and $1 belong to the generated script
+  printf '#!/bin/sh\nsleep 60 &\necho $! > "$1/gc"\nsleep 60\n' > "$vnc_dir/tree"
+  chmod +x "$vnc_dir/tree"
+  timeout -k 1 1 "$vnc_dir/tree" "$vnc_dir" </dev/null >/dev/null 2>&1
+  vnc_rc=$?
+  sleep 1
+  vnc_gc="$(cat "$vnc_dir/gc" 2>/dev/null || :)"
+  vnc_ok=1
+  [ "$vnc_rc" -eq 124 ] || [ "$vnc_rc" -eq 137 ] || vnc_ok=0
+  if [ -z "$vnc_gc" ]; then vnc_ok=0
+  elif vnc_alive "$vnc_gc"; then kill "$vnc_gc" 2>/dev/null; vnc_ok=0
+  fi
+  rm -rf "$vnc_dir"
+  [ "$vnc_ok" = 1 ]
+}
+
 native_link_error() {
   echo "git-guard install: native Windows symlink required at '$1'; refusing a copied file/directory." >&2
   echo "  Enable Windows Developer Mode or grant native symlink privileges, then retry." >&2
@@ -336,9 +379,24 @@ qa_verify_materialized_tree() {
     return 2
   fi
   rm -f /tmp/gg-verify-err.$$
-  # A candidate using bounded attestation must prove offline runtime and actual
-  # OS containment before promotion. Old releases have no such prerequisite.
+  # A candidate using bounded attestation must prove its runtime and actual OS
+  # containment before promotion. Old releases have no such prerequisite. A release
+  # with the native runner proves it on POSIX hosts (timeout stops a whole process
+  # tree, git-guard #118) and needs no Python there; Windows still proves the worker.
+  identity_native=0
   if [ -f "$t/hooks/common/identity.sh" ] &&
+     grep -q 'gg_native_runner()' "$t/hooks/common/identity.sh"; then
+    case "$(uname -s 2>/dev/null || :)" in
+      MINGW*|MSYS*|CYGWIN*|Windows_NT) ;;
+      *) identity_native=1 ;;
+    esac
+  fi
+  if [ "$identity_native" = 1 ]; then
+    if ! verify_native_containment; then
+      echo 'git-guard install: VERIFY FAILED — timeout(1) with -k that stops a whole process tree is required for signature verification; current is untouched.' >&2
+      return 2
+    fi
+  elif [ -f "$t/hooks/common/identity.sh" ] &&
      grep -q 'identity_worker.py' "$t/hooks/common/identity.sh"; then
     identity_worker="$t/hooks/common/identity_worker.py"
     if [ ! -f "$identity_worker" ] || ! command -v uv >/dev/null 2>&1; then

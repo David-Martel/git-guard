@@ -15,11 +15,12 @@ It works on Git-Bash (Windows), WSL, Linux, and macOS, and is **severable**: it
 ships standalone with a bundled example rule set, and optionally overlays a
 larger private rule corpus on machines that have one.
 
-Signature attestation additionally needs uv and existing Python 3.10+ on
-Windows/Linux, or Python 3.13+ on macOS (native macOS execution unqualified).
-Its [finite verifier and platform containment contract](docs/IDENTITY.md#verify-ci-and-manual)
+Signature attestation on Linux and other POSIX hosts needs only `timeout(1)` with `-k`
+(GNU or uutils coreutils), and runs no interpreter. Windows additionally needs uv and an
+existing Python 3.10+ for its contained worker. Its
+[finite verifier and platform containment contract](docs/IDENTITY.md#verify-ci-and-manual)
 fails closed without downloading software. Test it with
-`sh tests/run.sh identity_verify identity_hooks identity_worker`.
+`sh tests/run.sh identity_verify identity_hooks identity_worker native_no_interpreter`.
 
 ---
 

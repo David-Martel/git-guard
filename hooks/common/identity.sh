@@ -58,7 +58,8 @@
 #   GIT_GUARD_AGENT_PRINCIPALS    agent principals (default "claude codex jules gemini")
 #   GIT_GUARD_IDENTITY_MAX_COMMITS  pre-push range cap (default 500)
 #
-# POSIX sh + git + ssh-keygen; verification also needs uv and existing Python.
+# POSIX sh + git + ssh-keygen. verify bounds its signature query natively on Linux and
+# other POSIX hosts (GNU or uutils timeout); Windows still uses uv and existing Python.
 
 set -u
 
@@ -409,11 +410,104 @@ gg_verify_rows() {
     [1-9]|[1-9][0-9]|[12][0-9][0-9]|300) ;;
     *) gg_die "verify: gitGuard.identityTimeoutSeconds must be an integer from 1 to 300" ;;
   esac
-  command -v uv >/dev/null 2>&1 || gg_die "verify: install uv and an existing Python runtime for bounded signature verification"
+  out="$(mktemp "${TMPDIR:-/tmp}/gg-id.XXXXXX")" || gg_die "mktemp failed"
+  if gg_native_runner; then
+    # Interpreter-free (git-guard #118): no Python, uv or probe on this route.
+    gg_verify_native "$out" "$deadline" "$signers" "$@"
+  else
+    gg_verify_worker "$out" "$deadline" "$signers" "$@"
+  fi
+  gg_verify_parse "$out" "$quiet"
+}
+
+# gg_native_runner: 0 on every POSIX host, which bounds the query without Python. GNU
+# and uutils timeout run the command in its own process group and signal the whole
+# group at the deadline (-k escalates to KILL), which covers git and the ssh-keygen it
+# starts, as the worker's POSIX session kill does. Windows keeps the worker: an MSYS
+# signal does not reach native descendants, and a Job object needs its Win32 calls.
+# The choice is by platform only: a POSIX host without a usable timeout fails closed in
+# gg_verify_native and never falls back to the Python worker.
+gg_native_runner() {
+  case "$(uname -s 2>/dev/null || :)" in MINGW*|MSYS*|CYGWIN*|Windows_NT) return 1 ;; esac
+  return 0
+}
+
+# gg_verify_native OUT DEADLINE SIGNERS REV-ARGS... ; writes the records to OUT or dies.
+# The worker's contract on POSIX without Python (parity table: docs/IDENTITY.md):
+# - deadline: timeout -k signals the query's process group, exit 124/137 = deadline;
+# - output: each stream is capped at 1 MiB while it runs (ulimit -f stops a writer near
+#   the cap, so temporary storage stays bounded) and both are checked afterwards;
+# - cleanup: the process group is killed when the query returns, fails or is cancelled
+#   (HUP/INT/TERM), and git's own temp files live in a private directory removed on
+#   every path; descendants that leave the group are outside this boundary, as they are
+#   outside the worker's ("ordinary descendants, not escaped sessions");
+# - any nonzero exit, overflow or cancellation dies with exit 3 (fail closed).
+# stdin is /dev/null: pre-push is reading the ref list.
+gg_verify_native() {
+  # sh has no local variables. cmd_pre_push keeps its running status in rc across refs,
+  # and an rc set here let a clean ref erase an earlier mismatch (review of #119).
+  # Everything of this runner's own is gvn_-prefixed; out and err keep their names for
+  # the caller's cleanup.
+  out="$1" gvn_deadline="$2" gvn_signers="$3"; shift 3
+  gvn_limit=1048576
+  gvn_pid="" gvn_tmp=""
+  err="$(mktemp "${TMPDIR:-/tmp}/gg-id-err.XXXXXX")" || { rm -f "$out"; gg_die "mktemp failed"; }
+  gvn_git="$(command -v git)" || { rm -f "$out" "$err"; gg_die "verify: git unavailable"; }
+  if ! timeout -k 1 5 true >/dev/null 2>&1; then
+    rm -f "$out" "$err"
+    gg_die "verify: timeout(1) with -k (GNU or uutils coreutils) is required to bound the signature query; not checked"
+  fi
+  gvn_tmp="$(mktemp -d "${TMPDIR:-/tmp}/gg-id-q.XXXXXX")" || { rm -f "$out" "$err"; gg_die "mktemp failed"; }
+  # Armed before the launch, so a cancellation at any point stops the group it started.
+  trap 'gvn_stop; rm -f "$out" "$err"; gg_die "verify: interrupted; the signature query was stopped and nothing was verified"' HUP INT TERM
+  gvn_rc=0
+  # In the background so its pid is known: timeout leads its own process group (pgid =
+  # its pid) but signals that group only at the deadline. ulimit -f (512-byte blocks in
+  # sh) caps every file the query writes just above 1 MiB; a writer past it gets SIGXFSZ.
+  (
+    ulimit -f 2049 || exit 125
+    TMPDIR="$gvn_tmp" exec timeout -k 2 "$gvn_deadline" "$gvn_git" -c "gpg.ssh.allowedSignersFile=$gvn_signers" \
+      -c log.showSignature=false log --no-show-signature "--format=$GG_VERIFY_FMT" "$@"
+  ) </dev/null >"$out" 2>"$err" &
+  gvn_pid=$!
+  wait "$gvn_pid" || gvn_rc=$?
+  gvn_stop
+  trap 'exit 3' HUP INT TERM
+  gvn_out_size="$(wc -c < "$out" | tr -d ' ')"
+  gvn_err_size="$(wc -c < "$err" | tr -d ' ')"
+  if [ "${gvn_out_size:-0}" -gt "$gvn_limit" ] || [ "${gvn_err_size:-0}" -gt "$gvn_limit" ]; then
+    printf 'git-guard identity: signature query output exceeds 1 MiB (stdout %s, stderr %s bytes)\n' \
+      "${gvn_out_size:-0}" "${gvn_err_size:-0}" >&2
+    rm -f "$out" "$err"
+    gg_die "verify: bounded signature query failed (output limit); check git and verifier configuration"
+  fi
+  if [ "$gvn_rc" -ne 0 ]; then
+    case "$gvn_rc" in
+      124|137) printf 'git-guard identity: signature query exceeded its %ss deadline\n' "$gvn_deadline" >&2 ;;
+    esac
+    head -c 4096 "$err" >&2
+    rm -f "$out" "$err"
+    gg_die "verify: bounded signature query failed (exit $gvn_rc); check git and verifier configuration"
+  fi
+  rm -f "$err"
+}
+
+# gvn_stop: kill the query's process group (empty is fine) and remove its private temp
+# directory. dash takes a negative pid only after "--" (kill -s KILL -PG and
+# kill -9 -- -PG are usage errors there); this spelling works in dash and bash.
+gvn_stop() {
+  if [ -n "${gvn_pid:-}" ]; then kill -s KILL -- "-$gvn_pid" 2>/dev/null || :; fi
+  if [ -n "${gvn_tmp:-}" ]; then rm -rf "$gvn_tmp"; fi
+  gvn_pid="" gvn_tmp=""
+}
+
+# gg_verify_worker OUT DEADLINE SIGNERS REV-ARGS... ; the contained Python worker (Windows).
+gg_verify_worker() {
+  out="$1" deadline="$2" signers="$3"; shift 3
+  command -v uv >/dev/null 2>&1 || { rm -f "$out"; gg_die "verify: install uv and an existing Python runtime for bounded signature verification"; }
   worker="$GG_ID_DIR/identity_worker.py"
   [ -f "$worker" ] || gg_die "verify: missing identity_worker.py; reinstall this git-guard release"
-  git_exe="$(command -v git)" || gg_die "verify: git unavailable"
-  out="$(mktemp "${TMPDIR:-/tmp}/gg-id.XXXXXX")" || gg_die "mktemp failed"
+  git_exe="$(command -v git)" || { rm -f "$out"; gg_die "verify: git unavailable"; }
   err="$(mktemp "${TMPDIR:-/tmp}/gg-id-err.XXXXXX")" || { rm -f "$out"; gg_die "mktemp failed"; }
   supervisor="$(mktemp "${TMPDIR:-/tmp}/gg-id-worker.XXXXXX")" || { rm -f "$out" "$err"; gg_die "mktemp failed"; }
   worker_out="$out" worker_err="$err"
@@ -439,6 +533,11 @@ gg_verify_rows() {
     gg_die "verify: bounded signature query failed; check uv/Python availability and verifier configuration"
   fi
   rm -f "$err" "$supervisor"
+}
+
+# gg_verify_parse OUT QUIET ; the policy: signer, principal and Agent trailer per record.
+gg_verify_parse() {
+  out="$1" quiet="$2"
   res="$(tr -d '\n' < "$out" | tr '\036' '\n' | awk -F '\037' -v agents=" $GG_AGENT_PRINCIPALS " -v quiet="$quiet" '
     NF < 5 { next }
     {

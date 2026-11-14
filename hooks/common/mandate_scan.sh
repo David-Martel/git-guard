@@ -17,6 +17,8 @@
 # Exit: 0 PASSED, 1 BLOCKED, 2 TOOL ERROR (fail closed; never a clean scan).
 # The rules, severities and baseline schema: docs/QA_TOOLING.md "Quality mandate".
 #
+# --pre-push first selects, in sh and git alone, the pushed commits that carry a debt
+# register; with none it exits 0 before any interpreter is looked up or probed.
 # The logic lives in mandate_scan.py beside this file (standard library only),
 # run with `-I` so neither the repo being scanned nor PYTHONPATH can shadow a
 # stdlib module. No Python interpreter at all is the one case reported as a
@@ -26,6 +28,96 @@
 set -u
 
 mandate_dir="$(cd "$(dirname "$0")" && pwd -P)"
+
+# mandate_git ARGS...: git under the scanner's deadline. mandate_scan.py bounds every git
+# it runs by GIT_GUARD_MANDATE_TIMEOUT (default 300 s), and so does this prefilter: a
+# hung git used to stall pre-push indefinitely here (autopilot review of #119). A
+# timeout is a TOOL ERROR (exit 2, never a pass); any other status is git's own.
+mandate_git() {
+  # git's stderr is dropped here, not at the call site, so the TOOL ERROR below still shows.
+  timeout -k 2 "$mandate_limit" git "$@" 2>/dev/null
+  mandate_git_rc=$?
+  case "$mandate_git_rc" in
+    124|137)
+      printf '%s\n' "git-guard mandate TOOL ERROR [git]: git $1 did not finish within ${mandate_limit}s (GIT_GUARD_MANDATE_TIMEOUT)" >&2
+      exit 2 ;;
+  esac
+  return "$mandate_git_rc"
+}
+
+# mandate_limit_init: the deadline from GIT_GUARD_MANDATE_TIMEOUT (default 300), a
+# positive number of seconds as mandate_scan.py requires, and a timeout(1) that accepts
+# -k to enforce it. Either missing is a TOOL ERROR: git never runs unbounded.
+mandate_limit_init() {
+  mandate_limit="${GIT_GUARD_MANDATE_TIMEOUT:-300}"
+  # Shell builtins only (pre-commit can run under a minimal PATH): digits with at most
+  # one dot, and at least one non-zero digit, so 0, 0.0 and 00 are refused.
+  case "$mandate_limit" in
+    ''|.|*[!0-9.]*|*.*.*) mandate_limit_bad=1 ;;
+    *[1-9]*) mandate_limit_bad=0 ;;
+    *) mandate_limit_bad=1 ;;
+  esac
+  if [ "$mandate_limit_bad" = 1 ]; then
+    printf '%s\n' "git-guard mandate TOOL ERROR [config]: GIT_GUARD_MANDATE_TIMEOUT='$mandate_limit' must be a positive number of seconds" >&2
+    exit 2
+  fi
+  # sh -c :, not true: timeout execs an external program, and sh is always on PATH.
+  if ! timeout -k 1 5 sh -c : >/dev/null 2>&1; then
+    printf '%s\n' "git-guard mandate TOOL ERROR [timeout]: timeout(1) with -k is required to bound git by GIT_GUARD_MANDATE_TIMEOUT" >&2
+    exit 2
+  fi
+}
+
+# mandate_pushed_baselines: read a pre-push ref list on stdin and print every pushed
+# commit that carries the debt register; exit 2 when git cannot list them. The same
+# selection as mandate_scan.py pushed_baseline_shas / new_register_commits: tags and
+# deletions are skipped; a known remote tip bounds the walk, otherwise everything no
+# remote has; the pushed tip itself is always checked.
+mandate_pushed_baselines() {
+  mandate_limit_init
+  mandate_zero=0000000000000000000000000000000000000000
+  while read -r mandate_lref mandate_lsha _mandate_rref mandate_rsha mandate_extra; do
+    [ -n "${mandate_rsha:-}" ] && [ -z "${mandate_extra:-}" ] || continue
+    [ "$mandate_lsha" = "$mandate_zero" ] && continue
+    case "$mandate_lref" in refs/tags/*) continue ;; esac
+    if [ "$mandate_rsha" != "$mandate_zero" ] &&
+       mandate_git cat-file -e "$mandate_rsha^{commit}"; then
+      set -- --not "$mandate_rsha"
+    else
+      set -- --not --remotes
+    fi
+    if ! mandate_list="$(mandate_git rev-list --full-history "$mandate_lsha" "$@")"; then
+      printf '%s\n' "git-guard mandate TOOL ERROR [git]: cannot enumerate introduced commits" \
+        "    command: git rev-list --full-history $mandate_lsha $*" >&2
+      return 2
+    fi
+    for mandate_sha in $mandate_lsha $mandate_list; do
+      if mandate_git cat-file -e "$mandate_sha:.git-guard/mandate-baseline.json"; then
+        printf '%s\n' "$mandate_sha"
+      fi
+    done
+  done
+  return 0
+}
+
+# Pre-push: decide natively whether any pushed commit carries a debt register. A repo
+# without one must push without the scanner, and without probing for an interpreter
+# (git-guard #118: clarius forbids executing Python, hooks included).
+mandate_refs=""
+if [ "${1:-}" = "--pre-push" ]; then
+  # A ref list that cannot be read is a TOOL ERROR. A failed capture used to become an
+  # empty list, so a push carrying a debt register passed unscanned (review of #119).
+  if ! mandate_refs="$(cat)"; then
+    printf '%s\n' "git-guard mandate TOOL ERROR [stdin]: cannot read the pushed ref list" \
+      "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
+    exit 2
+  fi
+  if ! mandate_found="$(printf '%s\n' "$mandate_refs" | mandate_pushed_baselines)"; then
+    printf '%s\n' "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
+    exit 2
+  fi
+  [ -n "$mandate_found" ] || exit 0
+fi
 
 # Probe, do not just look up: a version-manager shim (mise, pyenv) can be on
 # PATH as `python3` and still fail to start ("No version is set"). Exec-ing it
@@ -42,16 +134,18 @@ for mandate_cand in python3 python; do
 done
 
 if [ -z "$mandate_py" ]; then
-  # At pre-push the scanner only matters for a repo with a debt register; do
-  # not print a warning on every push of every other repo.
-  if [ "${1:-}" = "--pre-push" ]; then
-    mandate_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
-    [ -n "$mandate_root" ] && [ -f "$mandate_root/.git-guard/mandate-baseline.json" ] || exit 0
-  fi
+  # At pre-push this point is reached only when a pushed commit carries a debt
+  # register (selected above), so the warning is never printed for other repos.
   printf '%s\n' \
     "git-guard mandate WARN: no Python 3.8+ interpreter (python3/python) on PATH, so the" \
     "quality mandate was NOT evaluated for this run. Install python3 to enforce it." >&2
   exit 0
 fi
 
+if [ "${1:-}" = "--pre-push" ]; then
+  # The ref list was read above; hand the scanner the same lines.
+  exec "$mandate_py" -I "$mandate_dir/mandate_scan.py" "$@" <<MANDATE_REFS
+$mandate_refs
+MANDATE_REFS
+fi
 exec "$mandate_py" -I "$mandate_dir/mandate_scan.py" "$@"
