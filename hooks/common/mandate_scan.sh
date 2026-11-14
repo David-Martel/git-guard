@@ -73,6 +73,28 @@ if [ "${1:-}" = "--pre-push" ]; then
   [ -n "$mandate_found" ] || exit 0
 fi
 
+# Staged scan with no staged Python: every rule that can fire is a Rust rule or the
+# comment check, which mandate_native.sh evaluates with sh, git, awk and ast-grep, so no
+# interpreter is looked up or probed (git-guard #118). Staged Python keeps the scanner.
+if [ "$#" -eq 1 ] && [ "${1:-}" = "--staged" ]; then
+  # Shell builtins and git only: this runs before either route, including under the
+  # minimal PATH a host may give the Python scanner.
+  if ! mandate_names="$(git -c core.quotePath=true diff --cached --name-only -M --diff-filter=d 2>/dev/null)"; then
+    printf '%s\n' "git-guard mandate TOOL ERROR [git]: cannot list the staged files" \
+      "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
+    exit 2
+  fi
+  # A name git had to C-quote ends in .py" rather than .py; both route to the scanner.
+  case "
+$mandate_names
+" in
+    *.py"
+"*|*.py\""
+"*) : ;;
+    *) exec sh "$mandate_dir/mandate_native.sh" --staged ;;
+  esac
+fi
+
 # Probe, do not just look up: a version-manager shim (mise, pyenv) can be on
 # PATH as `python3` and still fail to start ("No version is set"). Exec-ing it
 # would turn that failure into this script's exit status, which callers read

@@ -152,6 +152,7 @@ t_case_identity_verify
 t_case_identity_hooks
 t_case_identity_worker
 t_case_native_no_interpreter
+t_case_native_staged_mandate
 t_case_secret_scan
 t_case_cache_staleness
 t_case_powershell

@@ -899,7 +899,14 @@ does not read, so nothing is reported twice.
 **Where it runs.**
 - **pre-commit**, through `qa_gate.sh` (`qa_check_mandate`), on staged `*.py` and
   `*.rs`. The staged content is exported with `git checkout-index` into a
-  temporary tree; the working tree is never read.
+  temporary tree; the working tree is never read. A commit with no staged `*.py`
+  is scanned by `mandate_native.sh`, in sh, git, awk and ast-grep, with no
+  interpreter run or probed (git-guard #118): the same index policy, rules
+  (rust_panic, suppression_reason), test-path and vendored exemptions,
+  suppressions, merge-parent intersection, output and exit codes. Staged Python
+  keeps the Python scanner. Test 42 (`native_staged_mandate`) runs that route
+  with interpreter tripwires on PATH and checks its rule table against
+  `mandate_scan.py`.
 - **pre-push**, through `hooks/pre-push`, only for a pushed commit that carries
   `.git-guard/mandate-baseline.json` (the debt register below). A repo without
   one pushes exactly as before and the scanner prints nothing. `mandate_scan.sh`
