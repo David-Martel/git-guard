@@ -922,6 +922,17 @@ does not read, so nothing is reported twice.
   `mandate.enabled=off` does. A direct caller owns the preserve/* decision:
   the exemption in §11 covers only the hook path.
 
+**POSIX prerequisite: `timeout(1)` with `-k`.** On Linux, WSL, macOS and other POSIX
+hosts, pre-push identity attestation, the pre-push mandate selection and the native
+pre-commit mandate route all run their tools under `timeout -k`, from GNU coreutils
+or uutils coreutils. Without a usable `timeout` (for example on stock macOS, which
+ships none), the mandate prints `git-guard mandate TOOL ERROR` and exits 2, which
+makes pre-push refuse every push unless `mandate.enabled=off`. Identity attestation
+fails closed with exit 3. Neither falls back to running
+unbounded, and neither passes. Install coreutils first (on macOS, `brew install
+coreutils` provides `gtimeout`; put a `timeout` from it on PATH). Before you roll out a
+git-guard release, check it on each host with `timeout -k 1 5 sh -c :`.
+
 **Policy comes from the snapshot being checked.** The repo layer of the
 config (`.qa-gate.conf`, else `.git-guard/qa-gate.conf`) is read from the same
 snapshot as the code: from the **index** at pre-commit (`git cat-file blob
