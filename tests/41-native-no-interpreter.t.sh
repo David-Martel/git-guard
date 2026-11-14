@@ -150,6 +150,53 @@ t_case_native_no_interpreter() {
   else
     t_ok "identity pre-push runs no interpreter"
   fi
+  # Multi-ref push: the result over all refs is the worst one, in either order. The native
+  # runner once reset the caller's running status (a shared global rc), so a mismatched ref
+  # followed by a clean one returned 0 and enforce accepted it (autopilot review of #119).
+  mr() {  # mr LABEL WANT REF-LINE... : feed the ref lines to the real pre-push route
+    mr_label="$1" mr_want="$2"; shift 2
+    (cd "$r" && printf '%s\n' "$@" |
+      PATH="$lab/trip:$PATH" sh "$GG_ROOT/hooks/common/identity.sh" pre-push origin >"$lab/mr.out" 2>&1)
+    t_expect_rc "$mr_want" "$?" "identity pre-push (native): $mr_label"
+  }
+  bad_ref="refs/heads/bad $(git -C "$r" rev-parse HEAD) refs/heads/bad $zero"
+  good_ref="refs/heads/good $clean refs/heads/good $zero"
+  gone_ref="refs/heads/gone 1111111111111111111111111111111111111111 refs/heads/gone $zero"
+  mr "[mismatched, clean] still fails (1)" 1 "$bad_ref" "$good_ref"
+  mr "[clean, mismatched] still fails (1)" 1 "$good_ref" "$bad_ref"
+  mr "[unlistable, clean] keeps the not-checked status (2)" 2 "$gone_ref" "$good_ref"
+  mr "[clean, clean] passes (positive control)" 0 "$good_ref" "$good_ref"
+  : > "$marker"
+  # A successful query leaves no verifier descendant behind: timeout only signals its group
+  # at the deadline, so a background child of ssh-keygen outlived a query that returned 0.
+  real_sshkeygen="$(command -v ssh-keygen)"
+  mkdir -p "$lab/bg"
+  printf '#!/bin/sh\n( sleep 2; : > "%s/survivor" ) </dev/null >/dev/null 2>&1 &\nexec "%s" "$@"\n' "$lab" "$real_sshkeygen" > "$lab/bg/ssh-keygen"
+  chmod +x "$lab/bg/ssh-keygen"
+  (cd "$r" && git config gitGuard.identityTimeoutSeconds 20 &&
+    PATH="$lab/trip:$lab/bg:$PATH" sh "$GG_ROOT/hooks/common/identity.sh" verify --allowed-signers "$as" "$clean" >"$lab/bg.out" 2>&1)
+  t_expect_rc 0 "$?" "identity verify (native): the clean commit passes through the background-spawning verifier"
+  sleep 3
+  if [ -e "$lab/survivor" ]; then t_fail "identity verify (native): no verifier descendant survives a successful query"
+  else t_ok "identity verify (native): no verifier descendant survives a successful query"; fi
+  git -C "$r" config --unset gitGuard.identityTimeoutSeconds
+  # install.sh's containment probe: a zombie (terminated, not yet reaped by a non-reaping
+  # PID 1) is not a survivor; kill -0 alone said it was and refused a working timeout.
+  vnc_src="$(sed -n '/^vnc_alive() {$/,/^}$/p' "$GG_ROOT/install.sh")"
+  if [ -z "$vnc_src" ]; then
+    t_fail "install.sh defines vnc_alive"
+  else
+    eval "$vnc_src"
+    sleep 30 & live=$!
+    sleep 0 & dead=$!; wait "$dead" 2>/dev/null
+    sh -c 'sleep 0 & echo $! > "$1"; exec sleep 5' sh "$lab/zpid" & zparent=$!
+    sleep 1
+    zpid="$(cat "$lab/zpid")"
+    if vnc_alive "$live"; then t_ok "vnc_alive: a running process is alive"; else t_fail "vnc_alive: a running process is alive"; fi
+    if vnc_alive "$dead"; then t_fail "vnc_alive: a reaped process is gone"; else t_ok "vnc_alive: a reaped process is gone"; fi
+    if vnc_alive "$zpid"; then t_fail "vnc_alive: a zombie is not a survivor"; else t_ok "vnc_alive: a zombie is not a survivor"; fi
+    kill "$live" "$zparent" 2>/dev/null; wait "$live" "$zparent" 2>/dev/null
+  fi
   # Bounded: a verifier that hangs is stopped at the deadline and fails closed.
   printf '#!/bin/sh\nsleep 30\n' > "$lab/trip/ssh-keygen"; chmod +x "$lab/trip/ssh-keygen"
   start="$(date +%s)"

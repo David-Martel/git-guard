@@ -436,25 +436,38 @@ gg_native_runner() {
 # Same contract as the worker: the deadline, a 1 MiB output cap, any nonzero exit or
 # oversized output fails closed. stdin is /dev/null: pre-push is reading the ref list.
 gg_verify_native() {
-  out="$1" deadline="$2" signers="$3"; shift 3
+  # sh has no local variables. cmd_pre_push keeps its running status in rc across refs,
+  # and an rc set here let a clean ref erase an earlier mismatch, so enforce accepted
+  # [mismatched, clean] (autopilot review of #119). Everything of this runner's own is
+  # gvn_-prefixed; out and err keep their names for the caller's cleanup.
+  out="$1" gvn_deadline="$2" gvn_signers="$3"; shift 3
   err="$(mktemp "${TMPDIR:-/tmp}/gg-id-err.XXXXXX")" || { rm -f "$out"; gg_die "mktemp failed"; }
-  git_exe="$(command -v git)" || { rm -f "$out" "$err"; gg_die "verify: git unavailable"; }
+  gvn_git="$(command -v git)" || { rm -f "$out" "$err"; gg_die "verify: git unavailable"; }
   if ! timeout -k 1 5 true >/dev/null 2>&1; then
     rm -f "$out" "$err"
     gg_die "verify: timeout(1) with -k (GNU or uutils coreutils) is required to bound the signature query; not checked"
   fi
-  rc=0
-  timeout -k 2 "$deadline" "$git_exe" -c "gpg.ssh.allowedSignersFile=$signers" -c log.showSignature=false \
-    log --no-show-signature "--format=$GG_VERIFY_FMT" "$@" </dev/null >"$out" 2>"$err" || rc=$?
-  size="$(wc -c < "$out" | tr -d ' ')"
-  if [ "$rc" -ne 0 ] || [ "${size:-0}" -gt 1048576 ]; then
-    case "$rc" in
-      124|137) printf 'git-guard identity: signature query exceeded its %ss deadline\n' "$deadline" >&2 ;;
+  gvn_rc=0
+  # In the background so its pid is known: timeout leads its own process group (pgid =
+  # its pid) but signals that group only at the deadline. A verifier descendant still in
+  # the group when the query returns is killed below, as the worker kills its remaining
+  # descendants; otherwise it outlived a query that returned 0.
+  timeout -k 2 "$gvn_deadline" "$gvn_git" -c "gpg.ssh.allowedSignersFile=$gvn_signers" -c log.showSignature=false \
+    log --no-show-signature "--format=$GG_VERIFY_FMT" "$@" </dev/null >"$out" 2>"$err" &
+  gvn_pid=$!
+  wait "$gvn_pid" || gvn_rc=$?
+  # dash takes a negative pid only after "--" (kill -s KILL -PG and kill -9 -- -PG are
+  # usage errors there); this spelling works in dash and bash. An empty group is fine.
+  kill -s KILL -- "-$gvn_pid" 2>/dev/null || :
+  gvn_size="$(wc -c < "$out" | tr -d ' ')"
+  if [ "$gvn_rc" -ne 0 ] || [ "${gvn_size:-0}" -gt 1048576 ]; then
+    case "$gvn_rc" in
+      124|137) printf 'git-guard identity: signature query exceeded its %ss deadline\n' "$gvn_deadline" >&2 ;;
       0) printf 'git-guard identity: signature query output exceeds 1 MiB\n' >&2 ;;
     esac
     head -c 4096 "$err" >&2
     rm -f "$out" "$err"
-    gg_die "verify: bounded signature query failed (exit $rc); check git and verifier configuration"
+    gg_die "verify: bounded signature query failed (exit $gvn_rc); check git and verifier configuration"
   fi
   rm -f "$err"
 }
