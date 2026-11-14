@@ -1947,7 +1947,7 @@ push-only workflows retain their existing behavior. See GitHub's
 Secret detection scans actual scalar strings recursively, preserving their
 boundaries rather than joining serialized YAML fields. A `secrets` token outside
 expression literals is matched case-insensitively, following the official
-[context-name parser](https://github.com/actions/languageservices/blob/4043eda158e16579cc5fb1b0b07a4bce2a76f0b5/expressions/src/parser.ts#L239).
+[context-name parser](https://github.com/actions/languageservices/blob/4043eda158e16579cc5fb1b0b07a4bce2a76f0b5/expressions/src/parser.ts#L242).
 Single-quoted literals and doubled apostrophe escapes follow GitHub's
 [expression literal syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#literals);
 `}}` inside a literal does not end the expression. Quoted words such as
@@ -1960,6 +1960,15 @@ read. All scalar strings and expressions are consumed before deciding guards.
 This bounded lexical check does not evaluate expressions or validate their full
 grammar. Other bare-token false positives, such as `${{ inputs.secrets }}`, remain
 conservative; structural YAML keys retain their existing case-sensitive handling.
+
+Tuple members produced by PyYAML's `!!pairs`/`!!omap` constructors are inspected
+like lists. Uninspectable non-JSON values, including sets that have discarded
+mapping values, bytes and date objects, are refused; `None`, booleans, integers
+and floats contain no expression text. Whether GitHub accepts these tagged
+workflow forms is unverified. The fixtures protect this checker's inspection and
+fail-closed contract, not GitHub schema acceptance. A job-level `secrets:` key
+cannot bypass scanning of malformed inputs, and workflow-call environment
+templates receive the same validation before job guards.
 
 The [hash-bound review register](WORKFLOW_FORK_GUARD_REVIEW.json) records the new
 selector groups, failing-first evidence and mutation results. This static test

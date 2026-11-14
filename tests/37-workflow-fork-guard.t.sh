@@ -37,6 +37,8 @@
 #   Incomplete/lexically invalid templates fail closed before applying the job guard.
 #   This is not a full grammar or semantic context resolver: e.g. inputs.secrets still
 #   counts conservatively. Quoted literal words are deliberately no longer false positives.
+#   Tuple members are inspected; other non-JSON YAML values are refused, never skipped.
+#   Whether GitHub accepts the tagged YAML fixtures is unverified; these protect inspection.
 #   Both findings and the review bindings are recorded in
 #   ../docs/WORKFLOW_FORK_GUARD_REVIEW.json. GitHub's contract:
 #   https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations
@@ -45,7 +47,7 @@
 #   https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review
 #   https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review_comment
 #   https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#literals
-#   https://github.com/actions/languageservices/blob/4043eda158e16579cc5fb1b0b07a4bce2a76f0b5/expressions/src/parser.ts#L239
+#   https://github.com/actions/languageservices/blob/4043eda158e16579cc5fb1b0b07a4bce2a76f0b5/expressions/src/parser.ts#L242
 # Needs: python with PyYAML (skips without it); no network or runner.
 # Breadcrumb: .github/workflows/qa.yml (self-test-docker, self-test-native);
 #   vigil-utils PR #1352 review, finding 2.
@@ -108,9 +110,11 @@ def scalar_strings(value):
         for key, item in value.items():
             yield from scalar_strings(key)
             yield from scalar_strings(item)
-    elif isinstance(value, list):
+    elif isinstance(value, (list, tuple)):
         for item in value:
             yield from scalar_strings(item)
+    elif value is not None and not isinstance(value, (bool, int, float)):
+        raise ValueError(f"unsupported YAML value type: {type(value).__name__}")
 
 
 def expression_code(text):
@@ -194,7 +198,7 @@ for path in files:
         workflow_secrets = secret_expressions(doc.get("env") or {})
         job_secrets = {name: reads_secrets(job) for name, job in jobs.items()}
     except ValueError as exc:
-        bad.append(f"{path.name}: invalid or incomplete expression: {exc}")
+        bad.append(f"{path.name}: invalid or incomplete expression data: {exc}")
         continue
     for name, job in jobs.items():
         if "uses" in job and not guarded(job):
@@ -647,6 +651,91 @@ cross-scalar-close|${{ 'plain'
 nested-opener|${{ ${{ 'plain' }} }}
 empty-expression|${{ }}
 WFG_INVALID_EXPRESSIONS
+
+  # Protects: the scalar walk never drops tuple members or uninspectable YAML
+  # data. Detects: !!pairs/!!omap tuple bypasses and silently skipped set/bytes/
+  # date objects. Needs: local PyYAML only. Breadcrumb: scalar_strings.
+  # GitHub acceptance of these tagged workflow forms is not established here;
+  # these controls preserve the checker's own inspection/fail-closed contract.
+  # shellcheck disable=SC2016  # literal expression data for the tagged fixtures
+  _wfg_type_expr='${{ secrets.SOME_TOKEN }}'
+  for _wfg_tag in pairs omap; do
+    wfg_fixture "$_wfg_tmp/taggedsequence" "on: pull_request
+jobs:
+  hosted:
+    runs-on: ubuntu-latest
+    steps: !!$_wfg_tag
+      - run: echo $_wfg_type_expr"
+    wfg_refused "$_wfg_tmp/taggedsequence" 'reads a secret without the fork guard' \
+      "a secret in a YAML $_wfg_tag tuple is inspected"
+  done
+
+  # shellcheck disable=SC2016  # expression data; PyYAML's set constructor drops its value
+  wfg_fixture "$_wfg_tmp/taggedset" 'on: pull_request
+env: !!set
+  LOST: ${{ secrets.SOME_TOKEN }}
+jobs:
+  hosted:
+    if: github.event_name != '"'"'pull_request'"'"' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - run: true'
+  wfg_refused "$_wfg_tmp/taggedset" 'invalid or incomplete expression' \
+    'a YAML set with discarded values fails closed even with the job guard'
+
+  for _wfg_scalar in '!!binary aGVsbG8=' '2026-11-14'; do
+    wfg_fixture "$_wfg_tmp/typedscalar" "on: pull_request
+jobs:
+  hosted:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+        env:
+          VALUE: $_wfg_scalar"
+    wfg_refused "$_wfg_tmp/typedscalar" 'invalid or incomplete expression' \
+      "an unsupported YAML scalar $_wfg_scalar fails closed"
+  done
+
+  wfg_fixture "$_wfg_tmp/jsonprimitives" 'on: pull_request
+jobs:
+  hosted:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        value: [null, true, 1, 1.5]
+    steps:
+      - run: true'
+  wfg_check "$_wfg_tmp/jsonprimitives" >/dev/null 2>&1
+  t_expect_rc 0 "$?" "control: JSON primitive values contain no expression data"
+
+  # Protects: malformed data is inspected before job-level secrets shortcuts
+  # and in workflow_call's workflow env. Detects: restoring either early exit.
+  # Needs: local checker/PyYAML. Breadcrumb: reads_secrets / workflow_secrets.
+  # shellcheck disable=SC2016  # intentionally incomplete literal expression data
+  wfg_fixture "$_wfg_tmp/inheritmalformed" 'on: workflow_call
+jobs:
+  call:
+    if: github.event_name != '"'"'pull_request'"'"' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: David-Martel/git-guard/.github/workflows/reusable.yml@main
+    secrets: inherit
+    with:
+      VALUE: ${{ '"'"'unfinished'
+  wfg_refused "$_wfg_tmp/inheritmalformed" 'invalid or incomplete expression' \
+    'job-level secrets cannot hide a malformed reusable-call input'
+
+  # shellcheck disable=SC2016  # intentionally incomplete literal expression data
+  wfg_fixture "$_wfg_tmp/calleeworkflowenv" 'on: workflow_call
+env:
+  VALUE: ${{ '"'"'unfinished
+jobs:
+  hosted:
+    if: github.event_name != '"'"'pull_request'"'"' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - run: true'
+  wfg_refused "$_wfg_tmp/calleeworkflowenv" 'invalid or incomplete expression' \
+    'workflow_call workflow env cannot hide a malformed expression'
 
   rm -rf "$_wfg_tmp"
 }
