@@ -1225,6 +1225,11 @@ also accepted, pinned at SHA256
 `0B718434D540C476C5581BD8354E4D5A6D1A67EB2E8AD06FC5541F2238FBFA82`. Its
 byte-authentic [fixture](../tests/fixtures/windows-ssh-wrapper-batch-baseline.js)
 comes from commit `70946f0` (#84).
+The predecessor that bounded every call but always ran Windows OpenSSH (#112) is
+also accepted, pinned at SHA256
+`86C729FBEE1CA7F8D2A6A394FF95D086EB9931E8426F7C1E9FC3781162781E5C`. Its
+byte-authentic [fixture](../tests/fixtures/windows-ssh-wrapper-keepalive-baseline.js)
+comes from commit `72afac0`.
 The script checks source syntax in a hidden, shell-free Node child with a 10s
 execution limit, at most 1s for post-kill reaping and at most 1s for output drain,
 before opening targets. Cleanup and pipe reads never use an unbounded wait.
@@ -1246,15 +1251,32 @@ a missing child-launch option; it does not establish that this wrapper caused
 the fleet's reported Git Bash popups or hide a console created by its caller.
 The option follows Node's
 [child-process contract](https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options).
-Interactive calls, meaning stderr is a terminal and `GIT_TERMINAL_PROMPT` is not
-`0`, retain prompts and have no added timeout or SSH options. `CI` alone does not
-change this behavior.
+Every call gets `ConnectTimeout=15`, `ServerAliveInterval=30` and
+`ServerAliveCountMax=3`. They end only a dead connect or a peer that stops answering,
+never a live transfer or a prompt; without them a stalled link hung an interactive
+fetch forever (dtm-p1gen7, 2026-11-11). Interactive calls, meaning stderr is a terminal
+and `GIT_TERMINAL_PROMPT` is not `0`, otherwise retain prompts and have no added
+timeout. `CI` alone does not change this behavior.
+
+The wrapper runs Git for Windows' bundled OpenSSH (`<git-root>\usr\bin\ssh.exe`) when
+it exists. It finds `<git-root>` from the `GIT_EXEC_PATH` that Git sets for the
+child (`<git-root>/<mingw64|ucrt64|clangarm64>/libexec/git-core`), then tries
+`C:\Program Files\Git`, and falls back to Windows OpenSSH
+(`C:\Windows\System32\OpenSSH\ssh.exe`). From an sshd session, Windows OpenSSH
+9.5p2 and 10.4.0.0p1 both left `git ls-remote` hanging after upload-pack until it
+was killed at 45s, while the bundled OpenSSH 10.6p1 returned in about 1s
+(dtm-p1gen7 and dtm-super-nuc, 2026-11-11). The bundled client cannot use the
+Windows `ssh-agent` named pipe. For a remote that needs that agent, list its host
+in `GIT_GUARD_WINDOWS_SSH_HOSTS` (separated by commas, semicolons or spaces,
+case-insensitive; `*` selects every host) to keep Windows OpenSSH for it. The
+host is the first argument that is neither an option nor an option's value,
+without any `user@` prefix. A Git for Windows install that chose the external
+OpenSSH option has no bundled client, so it keeps using Windows OpenSSH.
 
 Git always pipes the SSH child's stdin and stdout, so stderr is the only stream
 that can be a terminal. When stderr is not a terminal (a scheduler, an agent's
 sshd session, a GUI client, Git Bash's mintty) and `GIT_TERMINAL_PROMPT` is not
-`0`, the wrapper adds `ConnectTimeout=15`, `ServerAliveInterval=30` and
-`ServerAliveCountMax=3`, never `BatchMode`, so askpass and passphrase prompts
+`0`, the wrapper still never adds `BatchMode`, so askpass and passphrase prompts
 keep working. For a pack command (`git-upload-pack`, `git-upload-archive`,
 `git-receive-pack`) it also bounds the wait for the server's first byte at
 300000ms (5min). A Git server always speaks first: upload-pack and

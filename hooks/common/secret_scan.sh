@@ -71,14 +71,22 @@ if [ "$#" -gt 0 ]; then
   shift
   gg_object_format="$(git rev-parse --show-object-format 2>/dev/null)" || exit 1
   case "$gg_object_format" in sha1) gg_oid_length=40 ;; sha256) gg_oid_length=64 ;; *) exit 1 ;; esac
+  gg_target_bad=0
   for gg_target in "$@"; do
-    case "$gg_target" in ''|*[!0-9a-f]*) gg_target_valid=0 ;; *) gg_target_valid=1 ;; esac
-    if [ "$gg_target_valid" != 1 ] || [ "${#gg_target}" -ne "$gg_oid_length" ] ||
-       [ "$(git cat-file -t "$gg_target" 2>/dev/null)" != commit ]; then
-      printf 'git-guard BLOCKED: historical secret scan requires existing full commit SHAs.\n' >&2
-      exit 1
-    fi
+    case "$gg_target" in ''|*[!0-9a-f]*) gg_target_bad=1 ;; esac
+    [ "${#gg_target}" -eq "$gg_oid_length" ] || gg_target_bad=1
   done
+  # One cat-file for every target: pre-push can pass 500, and a process per
+  # target cost minutes on Git Bash. Every line must be "commit"; a missing
+  # object prints "<sha> missing".
+  if [ "$gg_target_bad" = 0 ]; then
+    gg_target_types="$(printf '%s\n' "$@" | git cat-file --batch-check='%(objecttype)' 2>/dev/null)" || gg_target_bad=1
+    [ "$(printf '%s\n' "$gg_target_types" | grep -cx commit)" -eq "$#" ] || gg_target_bad=1
+  fi
+  if [ "$gg_target_bad" != 0 ]; then
+    printf 'git-guard BLOCKED: historical secret scan requires existing full commit SHAs.\n' >&2
+    exit 1
+  fi
   gg_scan_history=1
   gg_scan_targets="$*"
 fi
@@ -380,12 +388,20 @@ scan_match() {
 # against its first parent, a root commit against the empty tree). pre-push
 # passes it for preserve/* pushes (hooks/common/preserve.sh): refs/preserve/*
 # commits are written by update-ref, so no pre-commit scan ever saw them.
+# hooks/pre-push passes every commit a push publishes (up to 500).
+#
+# One `git log` produces every diff: a `git diff` per commit took 145 s for 500
+# commits on Git Bash, against 1 s for this, with byte-identical diff lines.
+# `-m --first-parent` diffs a merge against its first parent and `--root` a
+# root commit against the empty tree, as the per-commit form did. Each diff is
+# preceded by a `git-guard-commit <sha>` line naming the commit, so a hit can
+# say which commit to rewrite; diff content lines always start with '+', '-',
+# ' ' or '\', so no file content can forge it.
 gg_scan_commits() {
-  gg_empty_tree="$(git hash-object -t tree /dev/null)" || return 1
-  for c in $gg_scan_targets; do
-    if p="$(git rev-parse --verify --quiet "${c}^1")"; then :; else p="$gg_empty_tree"; fi
-    git diff -U0 --diff-filter=ACMR --no-color "$p" "$c" -- || return 1
-  done
+  # shellcheck disable=SC2086  # validated full commit SHAs, one per word
+  git log --no-walk=unsorted --root -m --first-parent -p -U0 --diff-filter=ACMR \
+    --no-color --no-ext-diff --no-show-signature --format='git-guard-commit %H' \
+    $gg_scan_targets --
 }
 if [ "$gg_scan_history" = 1 ]; then
   added="$(gg_scan_commits)" || {
@@ -406,11 +422,14 @@ in_hunk=0
 hit_file=""
 hit_line=""
 hit_label=""
+cur_commit=""
+hit_commit=""
 
 # Read the unified diff line by line. We need POSIX-safe iteration that
 # preserves leading spaces, so use read -r with IFS unset.
 while IFS= read -r diffline; do
   case "$in_hunk:$diffline" in
+    ?:"git-guard-commit "*) cur_commit="${diffline#git-guard-commit }"; cur_file=""; in_hunk=0 ;;
     ?:"diff --git "*) in_hunk=0 ;;
     0:"+++ "*)
       # New-file path: "+++ b/path/to/file" or "+++ /dev/null".
@@ -454,6 +473,7 @@ while IFS= read -r diffline; do
                 hit_file="$cur_file"
                 hit_line="$new_lineno"
                 hit_label="$label"
+                hit_commit="$cur_commit"
                 break
                 ;;
               1) : ;;
@@ -484,7 +504,7 @@ $added
 EOF
 
 if [ -n "$hit_label" ] && [ "$gg_scan_history" = 1 ]; then
-  printf '%s\n' "git-guard BLOCKED: possible secret in ${hit_file}:${hit_line} (${hit_label}) in a commit being pushed. Nothing was pushed. Rewrite the commit to remove the secret (and rotate it if it is real); if it is genuinely not a secret, tag the line '# pragma: allowlist secret'." >&2
+  printf '%s\n' "git-guard BLOCKED: possible secret in ${hit_file}:${hit_line} (${hit_label}) in commit ${hit_commit:-<unknown>}, which is being pushed. Nothing was pushed. Rewrite the commit to remove the secret (and rotate it if it is real); if it is genuinely not a secret, tag the line '# pragma: allowlist secret'." >&2
   exit 1
 fi
 if [ -n "$hit_label" ]; then
