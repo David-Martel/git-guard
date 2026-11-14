@@ -1919,3 +1919,22 @@ and `7A1D59EF7BDC1ABE8DC9F65488FCAAFBB994E1B1854BD01062A2786B910E0157`;
 the installer raw file pin is
 `9E430B7B3F19E150614BD36F1E7AA057D8060D7D27D95CA403E26A9BB78BB442`.
 The unchanged worker-only selector/target bindings above remain applicable.
+
+### Native POSIX route (git-guard #118)
+
+With the native runner, POSIX hosts no longer use the worker or uv for signature
+verification, so two bindings above changed and await an independent review:
+
+- `WorkerTests::test_install_runtime_failure_prevents_promotion_gate` now extracts
+  `verify_native_containment` with the gate. On POSIX it asserts the gate admits a
+  candidate with no uv and no `identity_worker.py`, run from a directory with hostile
+  `.python-version` and `uv.toml`, and refuses (`VERIFY FAILED`, `timeout(1) with -k`)
+  when `timeout` cannot bound a process tree. The Windows assertions are unchanged.
+- `test_identity_deadline_discards_partial_attestation` is unchanged. The native
+  route's timeout message now reads "signature query exceeded its Ns deadline", so the
+  test's `deadline` assertion holds on both routes.
+
+Author execution, not an independent review: on Linux (GNU timeout 9.1, uv container)
+the unfixed head failed both tests exactly as CI did (`deadline` missing;
+`verify_native_containment: not found`), and the fixed head passed all 10 worker
+tests. On Windows the worker suite passed with its one POSIX-only skip.
