@@ -125,6 +125,21 @@ ln_symlink() {  # $1 target, $2 linkname — portable, idempotent
   echo "  linked: $lnk -> $tgt"
 }
 
+# vnc_alive PID: 0 when PID is a process that is still running. kill -0 also succeeds for
+# a zombie, which has terminated but waits for its parent to reap it; under a container
+# whose PID 1 does not reap orphans, a grandchild timeout killed stays Z, and counting it
+# as a survivor refused a working timeout (autopilot review of #119). State Z is
+# terminated; an unreadable state counts as running (fail closed).
+vnc_alive() {
+  kill -0 "$1" 2>/dev/null || return 1
+  if [ -r "/proc/$1/stat" ]; then
+    vnc_state="$(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -c1)"
+  else
+    vnc_state="$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ' | cut -c1)"
+  fi
+  [ "$vnc_state" != Z ]
+}
+
 # verify_native_containment: timeout(1) accepts -k and, at the deadline, stops a child
 # AND its descendant (the process group), as identity.sh gg_verify_native relies on.
 verify_native_containment() {
@@ -140,7 +155,7 @@ verify_native_containment() {
   vnc_ok=1
   [ "$vnc_rc" -eq 124 ] || [ "$vnc_rc" -eq 137 ] || vnc_ok=0
   if [ -z "$vnc_gc" ]; then vnc_ok=0
-  elif kill -0 "$vnc_gc" 2>/dev/null; then kill "$vnc_gc" 2>/dev/null; vnc_ok=0
+  elif vnc_alive "$vnc_gc"; then kill "$vnc_gc" 2>/dev/null; vnc_ok=0
   fi
   rm -rf "$vnc_dir"
   [ "$vnc_ok" = 1 ]
