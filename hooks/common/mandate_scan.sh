@@ -17,6 +17,8 @@
 # Exit: 0 PASSED, 1 BLOCKED, 2 TOOL ERROR (fail closed; never a clean scan).
 # The rules, severities and baseline schema: docs/QA_TOOLING.md "Quality mandate".
 #
+# --pre-push first selects, in sh and git alone, the pushed commits that carry a debt
+# register; with none it exits 0 before any interpreter is looked up or probed.
 # The logic lives in mandate_scan.py beside this file (standard library only),
 # run with `-I` so neither the repo being scanned nor PYTHONPATH can shadow a
 # stdlib module. No Python interpreter at all is the one case reported as a
@@ -26,6 +28,50 @@
 set -u
 
 mandate_dir="$(cd "$(dirname "$0")" && pwd -P)"
+
+# mandate_pushed_baselines: read a pre-push ref list on stdin and print every pushed
+# commit that carries the debt register; exit 2 when git cannot list them. The same
+# selection as mandate_scan.py pushed_baseline_shas / new_register_commits: tags and
+# deletions are skipped; a known remote tip bounds the walk, otherwise everything no
+# remote has; the pushed tip itself is always checked.
+mandate_pushed_baselines() {
+  mandate_zero=0000000000000000000000000000000000000000
+  while read -r mandate_lref mandate_lsha _mandate_rref mandate_rsha mandate_extra; do
+    [ -n "${mandate_rsha:-}" ] && [ -z "${mandate_extra:-}" ] || continue
+    [ "$mandate_lsha" = "$mandate_zero" ] && continue
+    case "$mandate_lref" in refs/tags/*) continue ;; esac
+    if [ "$mandate_rsha" != "$mandate_zero" ] &&
+       git cat-file -e "$mandate_rsha^{commit}" 2>/dev/null; then
+      set -- --not "$mandate_rsha"
+    else
+      set -- --not --remotes
+    fi
+    if ! mandate_list="$(git rev-list --full-history "$mandate_lsha" "$@" 2>/dev/null)"; then
+      printf '%s\n' "git-guard mandate TOOL ERROR [git]: cannot enumerate introduced commits" \
+        "    command: git rev-list --full-history $mandate_lsha $*" >&2
+      return 2
+    fi
+    for mandate_sha in $mandate_lsha $mandate_list; do
+      if git cat-file -e "$mandate_sha:.git-guard/mandate-baseline.json" 2>/dev/null; then
+        printf '%s\n' "$mandate_sha"
+      fi
+    done
+  done
+  return 0
+}
+
+# Pre-push: decide natively whether any pushed commit carries a debt register. A repo
+# without one must push without the scanner, and without probing for an interpreter
+# (git-guard #118: clarius forbids executing Python, hooks included).
+mandate_refs=""
+if [ "${1:-}" = "--pre-push" ]; then
+  mandate_refs="$(cat)"
+  if ! mandate_found="$(printf '%s\n' "$mandate_refs" | mandate_pushed_baselines)"; then
+    printf '%s\n' "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
+    exit 2
+  fi
+  [ -n "$mandate_found" ] || exit 0
+fi
 
 # Probe, do not just look up: a version-manager shim (mise, pyenv) can be on
 # PATH as `python3` and still fail to start ("No version is set"). Exec-ing it
@@ -42,16 +88,18 @@ for mandate_cand in python3 python; do
 done
 
 if [ -z "$mandate_py" ]; then
-  # At pre-push the scanner only matters for a repo with a debt register; do
-  # not print a warning on every push of every other repo.
-  if [ "${1:-}" = "--pre-push" ]; then
-    mandate_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
-    [ -n "$mandate_root" ] && [ -f "$mandate_root/.git-guard/mandate-baseline.json" ] || exit 0
-  fi
+  # At pre-push this point is reached only when a pushed commit carries a debt
+  # register (selected above), so the warning is never printed for other repos.
   printf '%s\n' \
     "git-guard mandate WARN: no Python 3.8+ interpreter (python3/python) on PATH, so the" \
     "quality mandate was NOT evaluated for this run. Install python3 to enforce it." >&2
   exit 0
 fi
 
+if [ "${1:-}" = "--pre-push" ]; then
+  # The ref list was read above; hand the scanner the same lines.
+  exec "$mandate_py" -I "$mandate_dir/mandate_scan.py" "$@" <<MANDATE_REFS
+$mandate_refs
+MANDATE_REFS
+fi
 exec "$mandate_py" -I "$mandate_dir/mandate_scan.py" "$@"

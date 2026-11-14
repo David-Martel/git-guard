@@ -902,7 +902,10 @@ does not read, so nothing is reported twice.
   temporary tree; the working tree is never read.
 - **pre-push**, through `hooks/pre-push`, only for a pushed commit that carries
   `.git-guard/mandate-baseline.json` (the debt register below). A repo without
-  one pushes exactly as before and the scanner prints nothing.
+  one pushes exactly as before and the scanner prints nothing. `mandate_scan.sh`
+  makes that selection in sh and git alone (`mandate_pushed_baselines`), so such a
+  push runs no interpreter and probes for none (git-guard #118); a ref list git
+  cannot resolve is a TOOL ERROR (exit 2), never a pass.
 - **Directly**, from a repo whose own hooks replace git-guard's (vigil-utils,
   vigil-spark): `sh <git-guard>/hooks/common/mandate_scan.sh --staged`, or
   `--range origin/main..HEAD` in CI. `qa.enabled=off` does not switch it off;

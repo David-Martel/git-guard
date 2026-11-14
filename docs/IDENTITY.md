@@ -119,9 +119,25 @@ Some properties of this block, each of them deliberate and tested:
 ### `verify` (CI and manual)
 
 The query in [`gg_verify_rows`](../hooks/common/identity.sh) preserves Git's
-`%G?`, `%GS` and `%GF` signature checks and runs them through
-[`identity_worker.py`](../hooks/common/identity_worker.py). It needs **uv and an
-already installed Python 3.10+ on Windows/Linux**. macOS needs Python 3.13+
+`%G?`, `%GS` and `%GF` signature checks. The decision for each commit (signer,
+principal, Agent trailer) is made in sh and awk on every platform. Only the
+bounded run of the query differs:
+
+- **Linux and other POSIX hosts** use `gg_verify_native`: `timeout -k 2 <deadline>`
+  around the one `git log`, stdin from `/dev/null`, a 1 MiB output rejection
+  threshold, and any nonzero exit failing closed. GNU and uutils `timeout` run the
+  command in its own process group and signal the whole group at the deadline, so
+  git and the `ssh-keygen` it starts are stopped together; `-k` escalates to KILL.
+  No Python, uv or interpreter probe runs on this route, which is what repositories
+  that forbid executing Python (clarius, git-guard #118) need. A descendant that
+  starts its own session escapes the group, as it escapes the worker's POSIX kill.
+  The [installer](../install.sh) proves this before promoting a release: `timeout`
+  must accept `-k` and stop a child together with its background grandchild.
+- **Windows** keeps [`identity_worker.py`](../hooks/common/identity_worker.py),
+  because an MSYS signal does not reach native descendants and a Job object needs
+  its Win32 calls. It needs **uv and an already installed Python 3.10+**.
+
+The rest of this section describes the worker. macOS needs Python 3.13+
 for `os.waitid` and remains unqualified by native execution here. The invocation
 is offline and disables Python
 downloads. An explicit minimum-version request (`--python '>=3.10'`, or
@@ -157,7 +173,7 @@ clock guarantee. Catchable SIGINT/SIGTERM cancellation is deferred until owned
 cleanup is armed; uncatchable termination such as POSIX SIGKILL cannot run that
 cleanup. Each cleanup wait has a two-second budget.
 
-Run `sh tests/run.sh identity_verify identity_hooks identity_worker`. The
+Run `sh tests/run.sh identity_verify identity_hooks identity_worker native_no_interpreter`. The
 [`worker selector`](../tests/34-identity-worker.t.sh) and its
 [`stdlib controls`](../tests/test_identity_worker.py) protect deadlines, partial
 results, binary/argument preservation, output overflow and descendant cleanup.
