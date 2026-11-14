@@ -461,6 +461,15 @@ cmd_doctor() {
   if [ "${LEFTHOOK:-}" = 0 ]; then
     dr_fail "hooks-bypass   LEFTHOOK=0 is set in this environment: every git-guard hook exits without checking anything"
   fi
+  # timeout(1) with -k bounds the pre-push mandate on every platform and, on POSIX, the
+  # identity query (#119). Without a usable one each push is refused with a TOOL ERROR, so
+  # report it here, at install or update time, not at the first push. Same probe as
+  # mandate_limit_init in hooks/common/mandate_scan.sh.
+  if timeout -k 1 5 sh -c : >/dev/null 2>&1; then
+    printf '  [ok]   %-12s %s (-k works)\n' timeout "$(command -v timeout)"
+  else
+    dr_fail "timeout      timeout(1) with -k is missing or unusable, so every push will be refused with a TOOL ERROR (fix: install GNU or uutils coreutils so that 'timeout -k 1 5 sh -c :' succeeds; on macOS, brew install coreutils and put its timeout on PATH)"
+  fi
 
   for t in git sg ast-grep shellcheck ruff python pwsh cygpath dotnet cargo; do
     if [ "$t" = sg ]; then
