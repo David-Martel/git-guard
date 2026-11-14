@@ -22,7 +22,11 @@ nm_dir="$(cd "$(dirname "$0")" && pwd -P)"
 nm_rules="$nm_dir/../../rules-examples/mandate"
 nm_tmp=""
 
-nm_say() { printf '%s\n' "$*" >&2; }
+# Messages go to fd 9, the script's own stderr, so a TOOL ERROR raised inside a command
+# substitution whose stderr is redirected (a hung `git rev-parse` under nm_b) still names
+# its cause instead of leaving only the caller's generic message.
+exec 9>&2
+nm_say() { printf '%s\n' "$*" >&9; }
 nm_cleanup() { [ -n "$nm_tmp" ] && rm -rf "$nm_tmp"; }
 trap nm_cleanup EXIT
 trap 'exit 2' HUP INT TERM
@@ -228,7 +232,9 @@ nm_changes() {
       if (c) { start = substr(h, 1, c - 1) + 0; cnt = substr(h, c + 1) + 0 } else start = h + 0
       for (l = start; l < start + cnt; l++) print cur "\t" l
     }' "$nm_tmp/diff" > "$nm_out" || nm_tool_error awk "cannot parse the staged diff"
-  tr '\000' '\n' < "$nm_tmp/names" | awk 'NF { print $0 "\t0" }' >> "$nm_out"
+  # NUL ends a record; a newline inside a name becomes \002, so a name is never split into
+  # fragments that could equal another path (odd Rust names were refused above).
+  tr '\000\012' '\012\002' < "$nm_tmp/names" | awk 'NF { print $0 "\t0" }' >> "$nm_out"
 }
 
 nm_merge_head="$(nm_b git rev-parse --git-path MERGE_HEAD 2>/dev/null)" || nm_tool_error git "cannot locate MERGE_HEAD" git rev-parse --git-path MERGE_HEAD
@@ -253,7 +259,10 @@ fi
 
 # --- scannable regular Rust files in the index -------------------------------------------
 nm_b git ls-files -s -z > "$nm_tmp/ls" || nm_tool_error git "git ls-files failed" git ls-files -s -z
-tr '\000' '\n' < "$nm_tmp/ls" | awk '
+# Same mapping as the changed names: an index entry named "src/x.rs<NL>zzz" used to yield a
+# fragment "src/x.rs" whose blob id replaced the real file's (same-class sweep of the #121
+# review). The tab after the stage number still separates the path, which may hold tabs.
+tr '\000\012' '\012\002' < "$nm_tmp/ls" | awk '
   { tab = index($0, "\t"); if (!tab) next
     split(substr($0, 1, tab - 1), m, " ")
     if (m[3] == "0" && (m[1] == "100644" || m[1] == "100755")) print m[2] "\t" substr($0, tab + 1) }' > "$nm_tmp/index"

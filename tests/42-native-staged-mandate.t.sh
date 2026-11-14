@@ -114,6 +114,33 @@ t_case_native_staged_mandate() {
   t_expect_rc 0 "$?" "odd name: a non-Rust name with a tab does not refuse a clean Rust commit"
   _nm_clean "odd staged names"
   gg_rmrepo "$r2"
+  # Same class, in the index walk: `ls-files -s -z` was turned into newline records, so a
+  # COMMITTED (unchanged) entry named "src/x.rs<NL>zzz" yielded a fragment "src/x.rs" that
+  # sorted after the real src/x.rs and replaced its blob id. The real file's staged
+  # content was then never scanned (same-class sweep of the #121 review).
+  r2="$(gg_mktemp_repo)" || { t_fail "repo"; rm -rf "$_nm_lab"; return; }
+  git -C "$r2" config core.protectNTFS false
+  _nm_clean_oid="$(printf 'pub fn ok() {}\n' | git -C "$r2" hash-object -w --stdin)"
+  git -C "$r2" update-index --add --cacheinfo "100644,$_nm_clean_oid,src/x.rs${_nm_nl}zzz"
+  # Commit the index as it is (_qm_commit's `add -A` would stage the entry's deletion,
+  # since no such file exists in the work tree).
+  mkdir -p "$GG_T_TMPROOT/qm-no-hooks"
+  git -C "$r2" -c core.hooksPath="$GG_T_TMPROOT/qm-no-hooks" commit -q -m "an odd committed name"
+  _qm_put "$r2" src/x.rs '// ast-grep-ignore: mandate-rust-panic\nfn p() {}\n'
+  ( cd "$r2" && NM_STUB_LINES="" PATH="$_nm_lab/stubsg:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+  t_expect_rc 1 "$?" "index walk: a committed odd name never replaces a staged Rust file's content"
+  _qm_has "$log" "suppresses a mandate rule with no reason" "index walk: the staged file's own content was scanned"
+  _nm_clean "odd committed names"
+  gg_rmrepo "$r2"
+  # A GitHub-escaped newline (%0A) or a tab in an ast-grep message must not split the
+  # tab- and newline-separated findings records (same-class sweep).
+  printf '#!/bin/sh\ncase "$1" in --version) echo "ast-grep 0.39.5"; exit 0 ;; esac\nprintf "::warning file=src/lib.rs,line=1,endLine=1,title=mandate-rust-panic::Panicking%%0Acall\\there\\n"\n' > "$_nm_lab/stubsg-msg"
+  mkdir -p "$_nm_lab/stubsgmsg"; mv "$_nm_lab/stubsg-msg" "$_nm_lab/stubsgmsg/ast-grep"; chmod +x "$_nm_lab/stubsgmsg/ast-grep"
+  _qm_put "$r" src/lib.rs 'fn p() { panic!("x"); }\n'
+  ( cd "$r" && PATH="$_nm_lab/stubsgmsg:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+  t_expect_rc 1 "$?" "message escapes: a finding whose message holds %0A and a tab still BLOCKS"
+  _qm_has "$log" "BLOCKED — 1 finding(s) on 1 file(s)" "message escapes: exactly one finding, the record was not split"
+  _nm_clean "message escapes"
   # Deadline parity with mandate_scan.py: every git and ast-grep run is bounded by
   # GIT_GUARD_MANDATE_TIMEOUT (default 300 s). A hung tool stops there as a TOOL ERROR;
   # without the bound a hung git or ast-grep stalled the commit indefinitely.
@@ -158,6 +185,42 @@ t_case_native_staged_mandate() {
     else
       t_fail "deadline: a hung sg fallback probe stops at GIT_GUARD_MANDATE_TIMEOUT as a TOOL ERROR (rc $_nm_rc, ${_nm_took}s: $(head -c 200 "$log"))"
     fi
+    # Probes whose deadline message used to be lost or that ran unbounded (same-class sweep
+    # of the #121 review): a hung `ast-grep --version` and a hung `git rev-parse` inside a
+    # command substitution must name GIT_GUARD_MANDATE_TIMEOUT, and the Python interpreter
+    # probe (staged Python takes mandate_scan.py) must stop at the deadline.
+    _nm_sleep="$(command -v sleep)"
+    mkdir -p "$_nm_lab/hang-sgver" "$_nm_lab/hang-revparse" "$_nm_lab/hang-py"
+    printf '#!/bin/sh\nexec "%s" 30\n' "$_nm_sleep" > "$_nm_lab/hang-sgver/ast-grep"
+    printf '#!/bin/sh\ncase " $* " in *" rev-parse "*) exec "%s" 30 ;; esac\nexec "%s" "$@"\n' "$_nm_sleep" "$_nm_real_git" > "$_nm_lab/hang-revparse/git"
+    printf '#!/bin/sh\nexec "%s" 30\n' "$_nm_sleep" > "$_nm_lab/hang-py/python3"
+    cp "$_nm_lab/hang-py/python3" "$_nm_lab/hang-py/python"
+    chmod +x "$_nm_lab/hang-sgver/ast-grep" "$_nm_lab/hang-revparse/git" "$_nm_lab/hang-py/python3" "$_nm_lab/hang-py/python"
+    for _nm_case in "ast-grep --version:$_nm_lab/hang-sgver" "git rev-parse:$_nm_lab/hang-revparse:$_nm_lab/stubsg"; do
+      _nm_label="${_nm_case%%:*}"; _nm_dirs="${_nm_case#*:}"
+      _nm_start="$(date +%s)"
+      ( cd "$r" && GIT_GUARD_MANDATE_TIMEOUT=1 PATH="$_nm_dirs:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+      _nm_rc=$?
+      _nm_took=$(( $(date +%s) - _nm_start ))
+      if [ "$_nm_rc" -eq 2 ] && [ "$_nm_took" -lt 10 ] && grep -q 'GIT_GUARD_MANDATE_TIMEOUT' "$log"; then
+        t_ok "deadline: a hung $_nm_label is reported as the deadline (${_nm_took}s)"
+      else
+        t_fail "deadline: a hung $_nm_label is reported as the deadline (rc $_nm_rc, ${_nm_took}s: $(head -c 200 "$log"))"
+      fi
+    done
+    _qm_put "$r" tools/x.py 'X = 1\n'
+    _nm_start="$(date +%s)"
+    # The hung interpreters stand in for python3/python; the tripwires are left off PATH
+    # because this case deliberately reaches the Python route.
+    ( cd "$r" && GIT_GUARD_MANDATE_TIMEOUT=1 PATH="$_nm_lab/hang-py:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+    _nm_rc=$?
+    _nm_took=$(( $(date +%s) - _nm_start ))
+    if [ "$_nm_rc" -eq 2 ] && [ "$_nm_took" -lt 10 ] && grep -q 'GIT_GUARD_MANDATE_TIMEOUT' "$log"; then
+      t_ok "deadline: a hung Python interpreter probe stops at the deadline as a TOOL ERROR (${_nm_took}s)"
+    else
+      t_fail "deadline: a hung Python interpreter probe stops at the deadline as a TOOL ERROR (rc $_nm_rc, ${_nm_took}s: $(head -c 200 "$log"))"
+    fi
+    ( cd "$r" && git rm -q --cached tools/x.py ) >/dev/null 2>&1
     ( cd "$r" && GIT_GUARD_MANDATE_TIMEOUT=soon PATH="$_nm_lab/stubsg:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
     t_expect_rc 2 "$?" "deadline: an invalid GIT_GUARD_MANDATE_TIMEOUT is a TOOL ERROR"
     _nm_clean "deadline cases"
