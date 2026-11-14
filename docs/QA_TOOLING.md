@@ -922,6 +922,16 @@ naming the overlay when one is present, so the governing policy is never an
 invisible input. (git-guard #72 review; `qa_gate.sh --get-prefix mandate.
 --repo-conf FILE` is the interface.)
 
+**Output encoding.** The scanner writes stdout and stderr as UTF-8 on every
+platform (`utf8_output()` in `mandate_scan.py`). A piped stream would otherwise
+use the locale code page: on Windows that is cp1252, and the summary line's em
+dash reached callers as the byte 0x97, which a UTF-8 decoder rejects
+(pyclarius-vigil#399). The wrapper runs Python with `-I`, which ignores
+`PYTHONIOENCODING` and `PYTHONUTF8`, so the setting lives in the scanner.
+`t_case_quality_mandate_utf8` in
+[`tests/32-quality-mandate.t.sh`](../tests/32-quality-mandate.t.sh) checks the
+PASSED and BLOCKED lines under a forced cp1252 stream.
+
 **Severities.** One key per rule, `mandate.<rule>=off|warn|changed|block`:
 
 | value | effect |
