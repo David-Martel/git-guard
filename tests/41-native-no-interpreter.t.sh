@@ -238,7 +238,7 @@ t_case_native_no_interpreter() {
   git -C "$r" config --unset gitGuard.identityTimeoutSeconds
   # install.sh's containment probe: a zombie (terminated, not yet reaped by a non-reaping
   # PID 1) is not a survivor; kill -0 alone said it was and refused a working timeout.
-  vnc_src="$(sed -n '/^vnc_alive() {$/,/^}$/p' "$GG_ROOT/install.sh")"
+  vnc_src="$(sed -n '/^vnc_dead_state() {$/,/^}$/p; /^vnc_alive() {$/,/^}$/p' "$GG_ROOT/install.sh")"
   if [ -z "$vnc_src" ]; then
     t_fail "install.sh defines vnc_alive"
   else
@@ -252,6 +252,22 @@ t_case_native_no_interpreter() {
     if vnc_alive "$dead"; then t_fail "vnc_alive: a reaped process is gone"; else t_ok "vnc_alive: a reaped process is gone"; fi
     if vnc_alive "$zpid"; then t_fail "vnc_alive: a zombie is not a survivor"; else t_ok "vnc_alive: a zombie is not a survivor"; fi
     kill "$live" "$zparent" 2>/dev/null; wait "$live" "$zparent" 2>/dev/null
+  fi
+  # State table for the decision itself: a killed process passes Z, then X (EXIT_DEAD;
+  # x on older kernels) for an instant while its parent reaps it, so all three are
+  # terminated. Running, sleeping and uninterruptible states are alive, and an empty
+  # (unreadable) state counts as alive, which fails closed.
+  vds_src="$(sed -n '/^vnc_dead_state() {$/,/^}$/p' "$GG_ROOT/install.sh")"
+  if [ -z "$vds_src" ]; then
+    t_fail "install.sh defines vnc_dead_state"
+  else
+    eval "$vds_src"
+    for st in S R D Z X x ""; do
+      case "$st" in Z|X|x) want=dead ;; *) want=alive ;; esac
+      if vnc_dead_state "$st"; then got=dead; else got=alive; fi
+      if [ "$got" = "$want" ]; then t_ok "vnc_dead_state '${st:-<empty>}' is $want"
+      else t_fail "vnc_dead_state '${st:-<empty>}' is $want (got $got)"; fi
+    done
   fi
   # Bounded: a verifier that hangs is stopped at the deadline and fails closed.
   printf '#!/bin/sh\nsleep 30\n' > "$lab/trip/ssh-keygen"; chmod +x "$lab/trip/ssh-keygen"

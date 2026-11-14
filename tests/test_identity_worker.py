@@ -81,7 +81,8 @@ class WorkerTests(unittest.TestCase):
         #118): a timeout that cannot stop a tree is refused, and a host without uv or
         identity_worker.py is admitted, from a directory with hostile caller pins.
         Needs: Python and POSIX sh; extracted real gate avoids global config.
-        Breadcrumb: install.sh (qa_verify_materialized_tree, verify_native_containment)
+        Breadcrumb: install.sh (qa_verify_materialized_tree, verify_native_containment,
+        vnc_alive, vnc_dead_state)
         """
         with tempfile.TemporaryDirectory(prefix="gg-install-runtime-") as directory:
             root = Path(directory)
@@ -97,14 +98,20 @@ class WorkerTests(unittest.TestCase):
             gate = installer.split("qa_verify_materialized_tree() {", 1)[1].split(
                 "\n}\n\nmaterialize_version", 1
             )[0]
-            containment = installer.split("verify_native_containment() {", 1)[1].split(
-                "\n}\n", 1
-            )[0]
+            # Every helper the gate reaches. A missing one is "not found" (127),
+            # which an elif silently reads as false, so each must be present and
+            # the harness refuses to run otherwise.
+            helpers = ""
+            for name in ("vnc_dead_state", "vnc_alive", "verify_native_containment"):
+                head = f"\n{name}() {{\n"
+                self.assertIn(head, installer, f"install.sh lost {name}")
+                body = installer.split(head, 1)[1].split("\n}\n", 1)[0]
+                helpers += f"{name}() {{\n{body}\n}}\n"
             harness = root / "gate.sh"
             harness.write_text(
-                "#!/bin/sh\nverify_native_containment() {"
-                + containment
-                + "\n}\nqa_verify_materialized_tree() {"
+                "#!/bin/sh\n"
+                + helpers
+                + "qa_verify_materialized_tree() {"
                 + gate
                 + '\n}\nqa_verify_materialized_tree "$1"\n',
                 encoding="utf-8",
