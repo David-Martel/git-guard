@@ -136,6 +136,7 @@ t_case_structured_data_encoding
 t_case_warn
 t_case_autofix
 t_case_precommit
+t_case_precommit_staged_names
 t_case_prepush
 t_case_backends
 t_case_rule_integrity

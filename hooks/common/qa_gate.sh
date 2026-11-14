@@ -319,8 +319,34 @@ qa_dbg "rules dir resolved to: $QA_RULES_DIR"
 # variable (no repeated `git diff` spawns).
 # ----------------------------------------------------------------------------
 # Include type changes: a symlink replaced by source needs the language gates.
-QA_STAGED="$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMRT 2>/dev/null)"
+# Read with -z: NUL ends a name and a newline inside one becomes \002, so the cached list is
+# exactly one name per line. A name with a newline cannot be carried in that list; it is set
+# aside in QA_STAGED_NL and qa_check_staged_names refuses or reports it (same-class sweep of
+# the git-guard #121 review).
+QA_STAGED_RAW="$(git -c core.quotePath=false diff --cached --name-only -z --diff-filter=ACMRT 2>/dev/null | tr '\000\012' '\012\002')"
+QA_STAGED="$(printf '%s\n' "$QA_STAGED_RAW" | LC_ALL=C grep -v "$(printf '\002')" || true)"
+QA_STAGED_NL="$(printf '%s\n' "$QA_STAGED_RAW" | LC_ALL=C grep "$(printf '\002')" || true)"
 qa_staged_all() { printf '%s' "$QA_STAGED"; }
+# Every gate gets its files as "$@" split on newlines only, with globbing off: the default
+# IFS also split on spaces and tabs, so `src/my bad.rs` reached ast-grep as two missing
+# paths and a BLOCK-trio violation in it was committed. Use as:
+#   qa_ifs_lines; set -- $files; qa_ifs_restore
+qa_ifs_lines() { qa_ifs_saved="$IFS"; IFS='
+'; set -f; }
+qa_ifs_restore() { set +f; IFS="$qa_ifs_saved"; }
+qa_check_staged_names() {
+  [ -n "$QA_STAGED_NL" ] || return 0
+  qa_ifs_lines
+  for f in $QA_STAGED_NL; do
+    shown="$(printf '%s' "$f" | awk '{ gsub(/\002/, "\\n"); print }')"
+    case "$f" in
+      *.rs|*.cs|*.ps1|*.psm1|*.psd1|*.py|*.ts|*.tsx|*.js|*.jsx|*.sh|*.bash|*.json|*.yml|*.yaml)
+        qa_block "staged name '$shown' contains a newline, which the QA gate cannot pass to its checks, so they could not run on it; rename the file." ;;
+      *) qa_warn "staged name '$shown' contains a newline; the QA gate did not check it (no gate reads this file type)." ;;
+    esac
+  done
+  qa_ifs_restore
+}
 qa_staged_match() {
   # $1 = ERE. Prints matching staged files from the cached list.
   [ -n "$QA_STAGED" ] || return 0
@@ -328,8 +354,9 @@ qa_staged_match() {
 }
 # Files that are staged but ALSO have unstaged edits (re-stage hazard).
 qa_partial_files() {
-  s="$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)"
-  u="$(git diff --name-only --diff-filter=ACMR 2>/dev/null)"
+  # Unquoted, like QA_STAGED, so these names compare equal to the files the gates restage.
+  s="$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR 2>/dev/null)"
+  u="$(git -c core.quotePath=false diff --name-only --diff-filter=ACMR 2>/dev/null)"
   [ -n "$s" ] && [ -n "$u" ] || return 0
   printf '%s\n' "$s" | while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -706,8 +733,8 @@ qa_astgrep_run() {
   # a precondition checked before this point (chicken-and-egg).
   qa_refresh_rule_cache
   [ -f "$QA_SGCONFIG" ] || { qa_dbg "sgconfig unavailable (no rules dir or cache build failed)"; return 0; }
-  # shellcheck disable=SC2086  # intentional word-splitting of the staged file list
-  set -- $files
+  # shellcheck disable=SC2086  # split on newlines only (qa_ifs_lines), names stay whole
+  qa_ifs_lines; set -- $files; qa_ifs_restore
   qa_dbg "ast-grep batched scan on: $*"
 
   # 1. Auto-fix pass (OPT-IN). Default OFF: a fix: like println!->tracing::info!
@@ -948,8 +975,8 @@ PY
 qa_check_python() {
   files="$(qa_staged_match '\.py$')"
   [ -n "$files" ] || return 0
-  # shellcheck disable=SC2086  # intentional word-splitting of the staged file list
-  set -- $files
+  # shellcheck disable=SC2086  # split on newlines only (qa_ifs_lines), names stay whole
+  qa_ifs_lines; set -- $files; qa_ifs_restore
 
   # Prefer each tool from the repo's own virtualenv over an ambient PATH copy —
   # see qa_py_tool. A repo pinned to an older linter must not be blocked by a
@@ -998,7 +1025,7 @@ qa_check_python() {
   mp_mode="$(qa_cfg python.mypy warn)"
   if [ "$mp_mode" != "off" ] && [ -n "$QA_MYPY" ]; then
     mp_files="$(qa_python_scoped_files mypy "$@")"; mp_scope_rc=$?
-    # shellcheck disable=SC2086  # newline-delimited staged paths; existing gate contract excludes spaces
+    # shellcheck disable=SC2086  # newline-delimited staged paths, split on newlines only (qa_ifs_lines)
     if [ "$mp_scope_rc" -ne 0 ]; then
       if [ "$mp_mode" = "block" ]; then
         qa_block "mypy project scope could not be read; configured blocking check cannot run."
@@ -1007,7 +1034,7 @@ qa_check_python() {
       fi
     elif [ -z "$mp_files" ]; then
       qa_dbg "no staged Python files are inside the configured mypy scope"
-    elif ! ( cd "$REPO_ROOT" && "$QA_MYPY" --ignore-missing-imports --no-error-summary $mp_files >/tmp/qa_mypy.$$ 2>&1 ); then
+    elif ! ( cd "$REPO_ROOT" && qa_ifs_lines && "$QA_MYPY" --ignore-missing-imports --no-error-summary $mp_files >/tmp/qa_mypy.$$ 2>&1 ); then
       [ "$QA_DEBUG" = "1" ] && cat /tmp/qa_mypy.$$ >&2
       # A mypy that is not the project's own (PATH fallback) usually fails on the
       # project config itself, e.g. "Error importing plugin 'pydantic.mypy'". That
@@ -1036,7 +1063,7 @@ qa_check_python() {
   bp_mode="$(qa_cfg python.basedpyright warn)"
   if [ "$bp_mode" != "off" ] && [ -n "$QA_BASEDPYRIGHT" ]; then
     bp_files="$(qa_python_scoped_files basedpyright "$@")"; bp_scope_rc=$?
-    # shellcheck disable=SC2086  # newline-delimited staged paths; existing gate contract excludes spaces
+    # shellcheck disable=SC2086  # newline-delimited staged paths, split on newlines only (qa_ifs_lines)
     if [ "$bp_scope_rc" -ne 0 ]; then
       if [ "$bp_mode" = "block" ]; then
         qa_block "basedpyright project scope could not be read; configured blocking check cannot run."
@@ -1045,7 +1072,7 @@ qa_check_python() {
       fi
     elif [ -z "$bp_files" ]; then
       qa_dbg "no staged Python files are inside the configured basedpyright scope"
-    elif ! ( cd "$REPO_ROOT" && "$QA_BASEDPYRIGHT" $bp_files >/dev/null 2>&1 ); then
+    elif ! ( cd "$REPO_ROOT" && qa_ifs_lines && "$QA_BASEDPYRIGHT" $bp_files >/dev/null 2>&1 ); then
       if [ "$bp_mode" = "block" ]; then
         qa_block "basedpyright type errors."
       else
@@ -1067,8 +1094,8 @@ qa_check_shell() {
   mode="$(qa_cfg shell.shellcheck block)"
   [ "$mode" = "off" ] && return 0
   have shellcheck || { qa_dbg "shellcheck absent"; return 0; }
-  # shellcheck disable=SC2086  # intentional word-splitting of the file list
-  set -- $files
+  # shellcheck disable=SC2086  # split on newlines only (qa_ifs_lines), names stay whole
+  qa_ifs_lines; set -- $files; qa_ifs_restore
   if ! ( cd "$REPO_ROOT" && shellcheck -S warning "$@" >/tmp/qa_sc.$$ 2>&1 ); then
     [ "$QA_DEBUG" = "1" ] && cat /tmp/qa_sc.$$ >&2
     if [ "$mode" = "block" ]; then
@@ -1215,6 +1242,7 @@ qa_check_validate() {
   if [ "$jmode" != "off" ]; then
     jf="$(qa_staged_match '\.json$')"
     if [ -n "$jf" ]; then
+      qa_ifs_lines
       for f in $jf; do
         [ -f "$REPO_ROOT/$f" ] || continue
         if ! "$QA_PY" -c "import json,sys; json.loads(open(sys.argv[1],'rb').read())" "$REPO_ROOT/$f" >/dev/null 2>&1; then
@@ -1225,12 +1253,14 @@ qa_check_validate() {
           fi
         fi
       done
+      qa_ifs_restore
     fi
   fi
   ymode="$(qa_cfg validate.yaml warn)"
   if [ "$ymode" != "off" ]; then
     yf="$(qa_staged_match '\.(yml|yaml)$')"
     if [ -n "$yf" ] && "$QA_PY" -c "import yaml" >/dev/null 2>&1; then
+      qa_ifs_lines
       for f in $yf; do
         [ -f "$REPO_ROOT/$f" ] || continue
         if ! "$QA_PY" -c "import yaml,sys; yaml.safe_load(open(sys.argv[1],'rb').read())" "$REPO_ROOT/$f" >/dev/null 2>&1; then
@@ -1241,6 +1271,7 @@ qa_check_validate() {
           fi
         fi
       done
+      qa_ifs_restore
     fi
   fi
 }
@@ -1281,8 +1312,9 @@ qa_main() {
   # an earlier malformed line) skip the very block it caused.
   [ "$QA_CFG_MALFORMED" = "0" ] || exit 1
   [ "$(qa_cfg qa.enabled on)" = "on" ] || { qa_dbg "qa.enabled=off -> skip"; exit 0; }
-  # Fast no-op when nothing is staged.
-  [ -n "$(qa_staged_all)" ] || { qa_dbg "no staged files"; exit 0; }
+  # Fast no-op when nothing is staged. A staged name with a newline is not in QA_STAGED,
+  # so it counts here, or a commit of only such names skipped qa_check_staged_names.
+  [ -n "$(qa_staged_all)" ] || [ -n "$QA_STAGED_NL" ] || { qa_dbg "no staged files"; exit 0; }
 
   # Restricted run for sibling hooks: only the named STRUCTURAL checks
   # (hooks/common/preserve.sh, the preserve/* exemption). An unknown name
@@ -1305,6 +1337,9 @@ qa_main() {
 
   # nul-cleanup first (filesystem hygiene, language-agnostic).
   qa_check_nul
+
+  # A staged name with a newline cannot reach the gates whole; refuse or report it.
+  qa_check_staged_names
 
   # Language-gated checks — each is a TRUE no-op if no matching staged files.
   qa_check_shell
