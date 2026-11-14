@@ -125,11 +125,18 @@ ln_symlink() {  # $1 target, $2 linkname — portable, idempotent
   echo "  linked: $lnk -> $tgt"
 }
 
+# vnc_dead_state STATE: 0 when a process state letter means terminated. Z is a zombie
+# (exited, not yet reaped: under a container PID 1 that does not reap orphans, a
+# grandchild timeout killed stays Z); X is EXIT_DEAD, the instant while its parent reaps
+# it (x on older kernels). R, S, D and the rest are alive, and so is an empty state that
+# could not be read (fail closed). Counting Z, and then X, as a survivor refused a
+# working timeout (autopilot review of #119; vigil-utils #1503/#1505 found X).
+vnc_dead_state() {
+  case "$1" in Z|X|x) return 0 ;; *) return 1 ;; esac
+}
+
 # vnc_alive PID: 0 when PID is a process that is still running. kill -0 also succeeds for
-# a zombie, which has terminated but waits for its parent to reap it; under a container
-# whose PID 1 does not reap orphans, a grandchild timeout killed stays Z, and counting it
-# as a survivor refused a working timeout (autopilot review of #119). State Z is
-# terminated; an unreadable state counts as running (fail closed).
+# a zombie, so the state from /proc/PID/stat (else ps) decides.
 vnc_alive() {
   kill -0 "$1" 2>/dev/null || return 1
   if [ -r "/proc/$1/stat" ]; then
@@ -137,7 +144,7 @@ vnc_alive() {
   else
     vnc_state="$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ' | cut -c1)"
   fi
-  [ "$vnc_state" != Z ]
+  ! vnc_dead_state "$vnc_state"
 }
 
 # verify_native_containment: timeout(1) accepts -k and, at the deadline, stops a child
