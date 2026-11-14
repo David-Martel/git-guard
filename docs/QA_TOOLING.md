@@ -899,7 +899,24 @@ does not read, so nothing is reported twice.
 **Where it runs.**
 - **pre-commit**, through `qa_gate.sh` (`qa_check_mandate`), on staged `*.py` and
   `*.rs`. The staged content is exported with `git checkout-index` into a
-  temporary tree; the working tree is never read.
+  temporary tree; the working tree is never read. A commit with no staged `*.py`
+  is scanned by `mandate_native.sh`, in sh, git, awk and ast-grep, with no
+  interpreter run or probed (git-guard #118): the same index policy, rules
+  (rust_panic, suppression_reason), test-path and vendored exemptions,
+  suppressions, merge-parent intersection, output and exit codes. Staged Python
+  keeps the Python scanner. Test 42 (`native_staged_mandate`) runs that route
+  with interpreter tripwires on PATH and checks its rule table against
+  `mandate_scan.py`. Every git, `qa_gate.sh` and ast-grep run on that route is bounded
+  by `GIT_GUARD_MANDATE_TIMEOUT` (default 300 s) through `timeout -k`, as the Python
+  scanner bounds its tools. That includes the `sg --version` probe that tells ast-grep
+  from util-linux `sg` when only `sg` is on PATH, and, on the scanner route,
+  `mandate_scan.sh`'s Python interpreter probe. A timeout, an invalid value or a host
+  without a usable `timeout` is a TOOL ERROR (2). Comment text keeps its tabs, so
+  `//<TAB>ast-grep-ignore` needs a reason as it does with a space. One difference from
+  the Python scanner is deliberate: a staged name that contains a tab or newline and
+  could be a Rust file (it contains `.rs`) is a TOOL ERROR. The native route's records
+  are tab- and newline-separated and cannot carry it, and before this refusal such a
+  file escaped the scan silently. Rename the file (codex autopilot review of #121).
 - **pre-push**, through `hooks/pre-push`, only for a pushed commit that carries
   `.git-guard/mandate-baseline.json` (the debt register below). A repo without
   one pushes exactly as before and the scanner prints nothing. `mandate_scan.sh`
@@ -911,6 +928,17 @@ does not read, so nothing is reported twice.
   `--range origin/main..HEAD` in CI. `qa.enabled=off` does not switch it off;
   `mandate.enabled=off` does. A direct caller owns the preserve/* decision:
   the exemption in §11 covers only the hook path.
+
+**POSIX prerequisite: `timeout(1)` with `-k`.** On Linux, WSL, macOS and other POSIX
+hosts, pre-push identity attestation, the pre-push mandate selection and the native
+pre-commit mandate route all run their tools under `timeout -k`, from GNU coreutils
+or uutils coreutils. Without a usable `timeout` (for example on stock macOS, which
+ships none), the mandate prints `git-guard mandate TOOL ERROR` and exits 2, which
+makes pre-push refuse every push unless `mandate.enabled=off`. Identity attestation
+fails closed with exit 3. Neither falls back to running
+unbounded, and neither passes. Install coreutils first (on macOS, `brew install
+coreutils` provides `gtimeout`; put a `timeout` from it on PATH). Before you roll out a
+git-guard release, check it on each host with `timeout -k 1 5 sh -c :`.
 
 **Policy comes from the snapshot being checked.** The repo layer of the
 config (`.qa-gate.conf`, else `.git-guard/qa-gate.conf`) is read from the same

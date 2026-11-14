@@ -119,18 +119,50 @@ if [ "${1:-}" = "--pre-push" ]; then
   [ -n "$mandate_found" ] || exit 0
 fi
 
+# Staged scan with no staged Python: every rule that can fire is a Rust rule or the
+# comment check, which mandate_native.sh evaluates with sh, git, awk and ast-grep, so no
+# interpreter is looked up or probed (git-guard #118). Staged Python keeps the scanner.
+if [ "$#" -eq 1 ] && [ "${1:-}" = "--staged" ]; then
+  # Shell builtins and git only: this runs before either route, including under the
+  # minimal PATH a host may give the Python scanner.
+  # Bounded like every mandate git (mandate_git, GIT_GUARD_MANDATE_TIMEOUT); a timeout or
+  # an invalid override exits 2 from mandate_limit_init or mandate_git.
+  mandate_limit_init
+  if ! mandate_names="$(mandate_git -c core.quotePath=true diff --cached --name-only -M --diff-filter=d)"; then
+    printf '%s\n' "git-guard mandate TOOL ERROR [git]: cannot list the staged files" \
+      "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
+    exit 2
+  fi
+  # A name git had to C-quote ends in .py" rather than .py; both route to the scanner.
+  case "
+$mandate_names
+" in
+    *.py"
+"*|*.py\""
+"*) : ;;
+    *) exec sh "$mandate_dir/mandate_native.sh" --staged ;;
+  esac
+fi
+
 # Probe, do not just look up: a version-manager shim (mise, pyenv) can be on
 # PATH as `python3` and still fail to start ("No version is set"). Exec-ing it
 # would turn that failure into this script's exit status, which callers read
 # as BLOCKED (1) or TOOL ERROR (2) with nothing explaining why.
+# The probe runs under the mandate deadline like every other tool: a hung shim stalled the
+# commit before the scanner's own bounds applied (same-class sweep of the #121 review).
+mandate_limit_init
 mandate_py=""
 for mandate_cand in python3 python; do
-  if command -v "$mandate_cand" >/dev/null 2>&1 &&
-     "$mandate_cand" -I -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' \
-       >/dev/null 2>&1; then
-    mandate_py="$mandate_cand"
-    break
-  fi
+  command -v "$mandate_cand" >/dev/null 2>&1 || continue
+  timeout -k 2 "$mandate_limit" "$mandate_cand" -I -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' \
+    >/dev/null 2>&1
+  case "$?" in
+    0) mandate_py="$mandate_cand"; break ;;
+    124|137)
+      printf '%s\n' "git-guard mandate TOOL ERROR [python]: $mandate_cand did not start within ${mandate_limit}s (GIT_GUARD_MANDATE_TIMEOUT)" \
+        "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
+      exit 2 ;;
+  esac
 done
 
 if [ -z "$mandate_py" ]; then
