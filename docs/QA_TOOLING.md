@@ -160,6 +160,15 @@ near-zero-false-positive, AND (c) it is fast. Otherwise it **WARNs**. This keeps
 ~40 naked WIP repos committing while still hard-failing real, fast, configured
 errors. The default blocking surface is deliberately NARROW.
 
+**Staged names reach every check whole.** `qa_gate.sh` reads the staged list with
+`git diff --cached --name-only -z` and passes it to each tool split on newlines only,
+with globbing off (`qa_ifs_lines`). Under the default IFS, `src/my bad.rs` reached
+ast-grep as `src/my` and `bad.rs`, so a BLOCK-trio violation in it was committed, and
+the JSON/YAML validators skipped such files. A name with a newline cannot be carried
+in that list. With an extension a check reads (`.rs`, `.py`, `.sh`, `.json`, `.yml`
+and so on), it BLOCKs (rename the file). With any other extension it is reported as
+unchecked (WARN).
+
 | Check | Trigger (staged files) | Tool | Default | Notes |
 |---|---|---|---|---|
 | secret-scan | added lines (any file) | `secret_scan.sh` | **BLOCK** | MVC; added-lines-only |
