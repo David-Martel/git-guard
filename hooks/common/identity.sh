@@ -449,7 +449,7 @@ gg_verify_native() {
   size="$(wc -c < "$out" | tr -d ' ')"
   if [ "$rc" -ne 0 ] || [ "${size:-0}" -gt 1048576 ]; then
     case "$rc" in
-      124|137) printf 'git-guard identity: signature query exceeded %ss\n' "$deadline" >&2 ;;
+      124|137) printf 'git-guard identity: signature query exceeded its %ss deadline\n' "$deadline" >&2 ;;
       0) printf 'git-guard identity: signature query output exceeds 1 MiB\n' >&2 ;;
     esac
     head -c 4096 "$err" >&2
