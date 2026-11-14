@@ -65,7 +65,13 @@ mandate_pushed_baselines() {
 # (git-guard #118: clarius forbids executing Python, hooks included).
 mandate_refs=""
 if [ "${1:-}" = "--pre-push" ]; then
-  mandate_refs="$(cat)"
+  # A ref list that cannot be read is a TOOL ERROR. A failed capture used to become an
+  # empty list, so a push carrying a debt register passed unscanned (review of #119).
+  if ! mandate_refs="$(cat)"; then
+    printf '%s\n' "git-guard mandate TOOL ERROR [stdin]: cannot read the pushed ref list" \
+      "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
+    exit 2
+  fi
   if ! mandate_found="$(printf '%s\n' "$mandate_refs" | mandate_pushed_baselines)"; then
     printf '%s\n' "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
     exit 2

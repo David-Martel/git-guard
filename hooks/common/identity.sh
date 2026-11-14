@@ -433,43 +433,72 @@ gg_native_runner() {
 }
 
 # gg_verify_native OUT DEADLINE SIGNERS REV-ARGS... ; writes the records to OUT or dies.
-# Same contract as the worker: the deadline, a 1 MiB output cap, any nonzero exit or
-# oversized output fails closed. stdin is /dev/null: pre-push is reading the ref list.
+# The worker's contract on POSIX without Python (parity table: docs/IDENTITY.md):
+# - deadline: timeout -k signals the query's process group, exit 124/137 = deadline;
+# - output: each stream is capped at 1 MiB while it runs (ulimit -f stops a writer near
+#   the cap, so temporary storage stays bounded) and both are checked afterwards;
+# - cleanup: the process group is killed when the query returns, fails or is cancelled
+#   (HUP/INT/TERM), and git's own temp files live in a private directory removed on
+#   every path; descendants that leave the group are outside this boundary, as they are
+#   outside the worker's ("ordinary descendants, not escaped sessions");
+# - any nonzero exit, overflow or cancellation dies with exit 3 (fail closed).
+# stdin is /dev/null: pre-push is reading the ref list.
 gg_verify_native() {
   # sh has no local variables. cmd_pre_push keeps its running status in rc across refs,
-  # and an rc set here let a clean ref erase an earlier mismatch, so enforce accepted
-  # [mismatched, clean] (autopilot review of #119). Everything of this runner's own is
-  # gvn_-prefixed; out and err keep their names for the caller's cleanup.
+  # and an rc set here let a clean ref erase an earlier mismatch (review of #119).
+  # Everything of this runner's own is gvn_-prefixed; out and err keep their names for
+  # the caller's cleanup.
   out="$1" gvn_deadline="$2" gvn_signers="$3"; shift 3
+  gvn_limit=1048576
+  gvn_pid="" gvn_tmp=""
   err="$(mktemp "${TMPDIR:-/tmp}/gg-id-err.XXXXXX")" || { rm -f "$out"; gg_die "mktemp failed"; }
   gvn_git="$(command -v git)" || { rm -f "$out" "$err"; gg_die "verify: git unavailable"; }
   if ! timeout -k 1 5 true >/dev/null 2>&1; then
     rm -f "$out" "$err"
     gg_die "verify: timeout(1) with -k (GNU or uutils coreutils) is required to bound the signature query; not checked"
   fi
+  gvn_tmp="$(mktemp -d "${TMPDIR:-/tmp}/gg-id-q.XXXXXX")" || { rm -f "$out" "$err"; gg_die "mktemp failed"; }
+  # Armed before the launch, so a cancellation at any point stops the group it started.
+  trap 'gvn_stop; rm -f "$out" "$err"; gg_die "verify: interrupted; the signature query was stopped and nothing was verified"' HUP INT TERM
   gvn_rc=0
   # In the background so its pid is known: timeout leads its own process group (pgid =
-  # its pid) but signals that group only at the deadline. A verifier descendant still in
-  # the group when the query returns is killed below, as the worker kills its remaining
-  # descendants; otherwise it outlived a query that returned 0.
-  timeout -k 2 "$gvn_deadline" "$gvn_git" -c "gpg.ssh.allowedSignersFile=$gvn_signers" -c log.showSignature=false \
-    log --no-show-signature "--format=$GG_VERIFY_FMT" "$@" </dev/null >"$out" 2>"$err" &
+  # its pid) but signals that group only at the deadline. ulimit -f (512-byte blocks in
+  # sh) caps every file the query writes just above 1 MiB; a writer past it gets SIGXFSZ.
+  (
+    ulimit -f 2049 || exit 125
+    TMPDIR="$gvn_tmp" exec timeout -k 2 "$gvn_deadline" "$gvn_git" -c "gpg.ssh.allowedSignersFile=$gvn_signers" \
+      -c log.showSignature=false log --no-show-signature "--format=$GG_VERIFY_FMT" "$@"
+  ) </dev/null >"$out" 2>"$err" &
   gvn_pid=$!
   wait "$gvn_pid" || gvn_rc=$?
-  # dash takes a negative pid only after "--" (kill -s KILL -PG and kill -9 -- -PG are
-  # usage errors there); this spelling works in dash and bash. An empty group is fine.
-  kill -s KILL -- "-$gvn_pid" 2>/dev/null || :
-  gvn_size="$(wc -c < "$out" | tr -d ' ')"
-  if [ "$gvn_rc" -ne 0 ] || [ "${gvn_size:-0}" -gt 1048576 ]; then
+  gvn_stop
+  trap 'exit 3' HUP INT TERM
+  gvn_out_size="$(wc -c < "$out" | tr -d ' ')"
+  gvn_err_size="$(wc -c < "$err" | tr -d ' ')"
+  if [ "${gvn_out_size:-0}" -gt "$gvn_limit" ] || [ "${gvn_err_size:-0}" -gt "$gvn_limit" ]; then
+    printf 'git-guard identity: signature query output exceeds 1 MiB (stdout %s, stderr %s bytes)\n' \
+      "${gvn_out_size:-0}" "${gvn_err_size:-0}" >&2
+    rm -f "$out" "$err"
+    gg_die "verify: bounded signature query failed (output limit); check git and verifier configuration"
+  fi
+  if [ "$gvn_rc" -ne 0 ]; then
     case "$gvn_rc" in
       124|137) printf 'git-guard identity: signature query exceeded its %ss deadline\n' "$gvn_deadline" >&2 ;;
-      0) printf 'git-guard identity: signature query output exceeds 1 MiB\n' >&2 ;;
     esac
     head -c 4096 "$err" >&2
     rm -f "$out" "$err"
     gg_die "verify: bounded signature query failed (exit $gvn_rc); check git and verifier configuration"
   fi
   rm -f "$err"
+}
+
+# gvn_stop: kill the query's process group (empty is fine) and remove its private temp
+# directory. dash takes a negative pid only after "--" (kill -s KILL -PG and
+# kill -9 -- -PG are usage errors there); this spelling works in dash and bash.
+gvn_stop() {
+  if [ -n "${gvn_pid:-}" ]; then kill -s KILL -- "-$gvn_pid" 2>/dev/null || :; fi
+  if [ -n "${gvn_tmp:-}" ]; then rm -rf "$gvn_tmp"; fi
+  gvn_pid="" gvn_tmp=""
 }
 
 # gg_verify_worker OUT DEADLINE SIGNERS REV-ARGS... ; the contained Python worker (Windows).

@@ -124,18 +124,46 @@ principal, Agent trailer) is made in sh and awk on every platform. Only the
 bounded run of the query differs:
 
 - **Linux and other POSIX hosts** use `gg_verify_native`: `timeout -k 2 <deadline>`
-  around the one `git log`, stdin from `/dev/null`, a 1 MiB output rejection
-  threshold, and any nonzero exit failing closed. GNU and uutils `timeout` run the
-  command in its own process group and signal the whole group at the deadline, so
-  git and the `ssh-keygen` it starts are stopped together; `-k` escalates to KILL.
-  No Python, uv or interpreter probe runs on this route, which is what repositories
-  that forbid executing Python (clarius, git-guard #118) need. A descendant that
-  starts its own session escapes the group, as it escapes the worker's POSIX kill.
-  The [installer](../install.sh) proves this before promoting a release: `timeout`
-  must accept `-k` and stop a child together with its background grandchild.
+  around the one `git log`, stdin from `/dev/null`, `ulimit -f` capping each output
+  stream just above 1 MiB while it runs (both are checked again afterwards), git's own
+  temporary files in a private directory, and the query's process group killed when it
+  returns, fails or is cancelled. Any nonzero exit, overflow or cancellation fails
+  closed (exit 3). GNU and uutils `timeout` run the command in its own process group
+  and signal the whole group at the deadline, so git and the `ssh-keygen` it starts are
+  stopped together; `-k` escalates to KILL. No Python, uv or interpreter probe runs on
+  this route, which is what repositories that forbid executing Python (clarius,
+  git-guard #118) need. The [installer](../install.sh) proves this before promoting a
+  release: `timeout` must accept `-k` and stop a child together with its background
+  grandchild (a zombie left by a non-reaping PID 1 counts as stopped).
 - **Windows** keeps [`identity_worker.py`](../hooks/common/identity_worker.py),
   because an MSYS signal does not reach native descendants and a Job object needs
   its Win32 calls. It needs **uv and an already installed Python 3.10+**.
+
+#### Native route parity with the worker
+
+Each guarantee the worker enforces, and where the native route enforces and tests it
+([test 41](../tests/41-native-no-interpreter.t.sh) unless named).
+
+| # | Guarantee | Worker (`identity_worker.py`) | Native (`gg_verify_native`) | Test |
+| --- | --- | --- | --- | --- |
+| 1 | Deadline 1-300 s, then failure naming it | poll loop, exit 124, "deadline exceeded" | `gitGuard.identityTimeoutSeconds` checked 1-300 in `gg_verify_rows`; `timeout -k 2`; 124/137 reported as "exceeded its Ns deadline", exit 3 | hanging verifier stopped at the deadline; `test_identity_deadline_discards_partial_attestation` |
+| 2 | The whole process group stops at the deadline | `killpg(SIGKILL)` | `timeout` signals its group, `-k` escalates to KILL | hanging verifier; installer `verify_native_containment` |
+| 3 | 1 MiB cap per stream, enforced while the query runs | `exceeded()` polled every 25 ms, then kill | `ulimit -f 2049` (512-byte blocks) stops any writer at 1,049,088 bytes (SIGXFSZ) | 50 MiB on stdout, and on stderr: exit 3 and "exceeds 1 MiB" |
+| 4 | Both streams checked after the query | `exceeded((out, err))` | `wc -c` of both after `wait`; either over 1 MiB fails closed | same |
+| 5 | Temporary storage stays bounded | the cap, while writing | the `ulimit` bound, and git's temp files in a private directory removed on every path | stream file "stopped near the cap"; cancellation leaves no temp file |
+| 6 | Descendants killed when the query returns | `finally: killpg` | `gvn_stop` kills the group after `wait` | no verifier descendant survives a successful query |
+| 7 | Cancellation (INT, TERM) cleans up, then fails | handler flag, kill, reap, exit 125 | HUP/INT/TERM trap armed before launch: kill the group, remove temp files, exit 3 | SIGTERM mid-query: exit 3, no descendant, no temp file |
+| 8 | A descendant that leaves the group | Linux: child subreaper; adopted descendants must exit within 2 s or the run fails; documented scope "ordinary descendants, not escaped sessions" | not covered: sh cannot become a subreaper. Same documented scope (ordinary descendants). Known limitation | none |
+| 9 | Failure mapping | child status passed through; signal or out of range is 125 | any nonzero status fails closed with exit 3, as `gg_verify_worker` does with any worker failure | native runner error and missing `timeout` both exit 3, no Python |
+| 10 | stdin is not the caller's | `/dev/null` | `</dev/null` (pre-push reads its ref list on stdin) | pre-push cases verify after reading refs |
+| 11 | Runtime proven before an install is promoted | `--check-runtime` | `verify_native_containment` (tree kill, zombie-aware) | `test_install_runtime_failure_prevents_promotion_gate`; `vnc_alive` cases |
+| 12 | Signature, principal and trailer policy | shared `gg_verify_parse` | the same `gg_verify_parse` | identity_verify suite; clean passes, mismatch fails |
+| 13 | Result over a multi-ref push | (sets no shell status) | runner variables are `gvn_`-prefixed so `cmd_pre_push`'s status survives | [mismatched, clean], [clean, mismatched], [unlistable, clean], [clean, clean] |
+| 14 | Error output surfaced, bounded | first 4096 bytes of the worker's stderr and the query's | first 4096 bytes of the query's stderr | native runner error reports its exit status |
+
+One difference is deliberate: `ulimit -f` also bounds git's own temporary files, so a
+commit object larger than about 1 MiB cannot be verified on the native route and fails
+closed; the worker has no such bound.
 
 The rest of this section describes the worker. macOS needs Python 3.13+
 for `os.waitid` and remains unqualified by native execution here. The invocation
