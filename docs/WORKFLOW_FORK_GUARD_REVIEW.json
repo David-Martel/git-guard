@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "source_commit": "1350e157cb9b451c27824fa2376c4706ecea199d + proposed working-tree diff",
+  "hash_normalization": "Raw full-file SHA256; shell selector/helper UTF-8 with CRLF normalized to LF, no trailing newline",
+  "source_hashes": {
+    "tests/37-workflow-fork-guard.t.sh": "1693dc9d31300c1770c81b31217d91dd491858c65ee8ad2b1a33282750750f69",
+    "tests/run.sh": "8b8c9a4b611027fc7ac80400b4759ba8a5416691af46700afb50d808dd7c4f1b"
+  },
+  "target": {
+    "name": "wfg_check",
+    "source": "tests/37-workflow-fork-guard.t.sh",
+    "sha256": "067b46a525f51c62add27e7bb1bc83e3fc9e54c57c365473536f974ef6908f0c",
+    "scope": "Static local workflow checker only; no dispatch, network workflow resolution or deployed runner qualification"
+  },
+  "author_evidence": {
+    "platform": "Windows dtm-p1gen9 / Git Bash / isolated native CPython3.14.7 + PyYAML6.0.3",
+    "command": "sh tests/run.sh workflow_fork_guard",
+    "baseline": "24 passed, 0 failed, 0 skipped",
+    "red": "29 passed, 18 failed, 0 skipped; all nine new unsafe cases falsely accepted by original checker",
+    "red_log": "worktrees/fork-guard-evidence/baseline-with-controls.log",
+    "red_log_sha256": "812c34855efb4cae37300ce06e1b78e92de7f576caf31cc6dd878e9844c87453",
+    "green": "47 passed, 0 failed, 0 skipped",
+    "green_log": "worktrees/fork-guard-evidence/final-green.log",
+    "green_log_sha256": "c238ce32aaf8631e0c810ce48c1406458ba9548122b3b19182412d6d77134c53",
+    "mutants": [
+      {
+        "mutant": "baseline-with-controls",
+        "exit": 1,
+        "summary": "mutation controls: 29 passed, 18 failed, 0 skipped",
+        "sha256": "812c34855efb4cae37300ce06e1b78e92de7f576caf31cc6dd878e9844c87453"
+      },
+      {
+        "mutant": "caller",
+        "exit": 1,
+        "summary": "mutation controls: 43 passed, 4 failed, 0 skipped",
+        "sha256": "7d3abbb9240b14b1de4f10ddf033554ffebb3fef000bc88e8b3eb1e75a562b23"
+      },
+      {
+        "mutant": "callee",
+        "exit": 1,
+        "summary": "mutation controls: 41 passed, 6 failed, 0 skipped",
+        "sha256": "1d8f76a678fd20c6cc7eadc02a2fee139b3fd65fca7993de7fb7eb7bd1d4948d"
+      },
+      {
+        "mutant": "workflow-env",
+        "exit": 1,
+        "summary": "mutation controls: 41 passed, 6 failed, 0 skipped",
+        "sha256": "e137b67d5b711a544e7dd63f2e26afca7ed21257a3a3821230057d560dfcaa95"
+      },
+      {
+        "mutant": "unsafe-event",
+        "exit": 1,
+        "summary": "mutation controls: 43 passed, 4 failed, 0 skipped",
+        "sha256": "83ab19fc1d619615ff44fdd42591245679149bebfd0f01fe25fc7a218748ce50"
+      }
+    ],
+    "pending": "Full-suite Docker/WSL and Rust runtime stages not repeated during active storage/runner repair; required remote CI remains authoritative; no gate/skip changes"
+  },
+  "rows": [
+    {
+      "selector": "t_case_workflow_fork_guard",
+      "group": "Reusable caller/callee boundary",
+      "fixture_ids": [
+        "reusecaller",
+        "reusecallee",
+        "reusecalleesecret",
+        "reusenested",
+        "reuseevent[issue_comment,workflow_run]",
+        "reuseok",
+        "reusehostedok",
+        "reusepushok"
+      ],
+      "selector_sha256": "91e93326e978a902ebf37952884659f8983f641b139a879d192e06d5e4dd4d15",
+      "reviewer": null,
+      "reviewer_type": null,
+      "reviewed_utc": null,
+      "disposition": "unreviewed",
+      "protects": "Privileged reusable descendants cannot bypass PR guards through missing runs-on or workflow_call trigger",
+      "detects": "Restoring caller exemption fails4 assertions; restoring workflow_call exemption fails6; ignoring reusable unsafe-event calls fails4",
+      "needs": "Local Python/PyYAML only; actual checker consumes fixture YAML as data",
+      "breadcrumb": "tests/37-workflow-fork-guard.t.sh::wfg_check"
+    },
+    {
+      "selector": "t_case_workflow_fork_guard",
+      "group": "Workflow environment secret boundary",
+      "fixture_ids": [
+        "workflowenv[dot,index,toJSON]",
+        "workflowenvok",
+        "workflowenvplain"
+      ],
+      "selector_sha256": "91e93326e978a902ebf37952884659f8983f641b139a879d192e06d5e4dd4d15",
+      "reviewer": null,
+      "reviewer_type": null,
+      "reviewed_utc": null,
+      "disposition": "unreviewed",
+      "protects": "Hosted jobs inheriting workflow env secret expressions require a job guard",
+      "detects": "Ignoring workflow env secrets fails6 assertions; guarded and plain-env positives retain acceptance",
+      "needs": "Local Python/PyYAML only",
+      "breadcrumb": "tests/37-workflow-fork-guard.t.sh::secret_expressions"
+    }
+  ],
+  "documentation": "docs/QA_TOOLING.md#workflow-fork-guards-category-37",
+  "limitations": [
+    "All original 24 assertions retained; independent review disposition pending",
+    "Conservative unknown reusable-call classification, no transitive workflow downloader",
+    "Workflow env overrides not modeled; secret presence conservatively requires guard",
+    "No HIL, deployment, runner isolation or universal transport/firewall qualification"
+  ]
+}

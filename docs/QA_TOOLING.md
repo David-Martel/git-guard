@@ -1894,3 +1894,30 @@ and `7A1D59EF7BDC1ABE8DC9F65488FCAAFBB994E1B1854BD01062A2786B910E0157`;
 the installer raw file pin is
 `9E430B7B3F19E150614BD36F1E7AA057D8060D7D27D95CA403E26A9BB78BB442`.
 The unchanged worker-only selector/target bindings above remain applicable.
+
+## Workflow fork guards (category 37)
+
+Run `sh tests/run.sh workflow_fork_guard` with Python and PyYAML to exercise the
+[actual checker and its boundary controls](../tests/37-workflow-fork-guard.t.sh).
+The existing [suite runner](../tests/run.sh) also selects this category in CI.
+Without PyYAML the category reports a skip; that is not executed qualification.
+
+For `pull_request` and `workflow_call`, every self-hosted job, secret-reading
+job and reusable-workflow call requires the exact job-level fork guard in the
+test header. Reusable calls are treated as potentially privileged even without
+`runs-on` or explicit secrets. Their descendants are not downloaded or resolved.
+Locally scanned called workflows are checked independently because their `github` context comes
+from the caller, as documented by [GitHub's reusable-workflow reference](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
+`issue_comment` and `workflow_run` are refused when either self-hosted jobs or
+reusable calls are present; the PR guard cannot restrict those events.
+
+Secret expressions in the workflow's own `env` count for each runnable job.
+This conservatively ignores job/step overrides rather than attempting expression
+or dataflow evaluation. The caller's workflow environment is not propagated to
+the callee. Ordinary hosted jobs without secret expressions remain unguarded;
+push-only workflows retain their existing behavior. See GitHub's
+[workflow environment reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#env).
+
+The [hash-bound review register](WORKFLOW_FORK_GUARD_REVIEW.json) records the new
+selector groups, failing-first evidence and mutation results. This static test
+does not qualify a deployed runner, dispatch workflows or replace required CI.
