@@ -909,7 +909,8 @@ does not read, so nothing is reported twice.
   `mandate_scan.py`. Every git, `qa_gate.sh` and ast-grep run on that route is bounded
   by `GIT_GUARD_MANDATE_TIMEOUT` (default 300 s) through `timeout -k`, as the Python
   scanner bounds its tools. That includes the `sg --version` probe that tells ast-grep
-  from util-linux `sg` when only `sg` is on PATH. A timeout, an invalid value or a host
+  from util-linux `sg` when only `sg` is on PATH, and, on the scanner route,
+  `mandate_scan.sh`'s Python interpreter probe. A timeout, an invalid value or a host
   without a usable `timeout` is a TOOL ERROR (2). Comment text keeps its tabs, so
   `//<TAB>ast-grep-ignore` needs a reason as it does with a space. One difference from
   the Python scanner is deliberate: a staged name that contains a tab or newline and
