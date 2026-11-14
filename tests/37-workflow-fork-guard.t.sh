@@ -7,7 +7,8 @@
 #   ci-runners/dtm-work/gitguard-carrier/README.md, "Who may run jobs here".
 #   Their safety rests on these workflow rules:
 #   - no `pull_request_target` trigger;
-#   - no `issue_comment` or `workflow_run` trigger with a self-hosted job or reusable call. Those
+#   - no `issue_comment`, `workflow_run`, `pull_request_review` or `pull_request_review_comment`
+#     trigger with a self-hosted job or reusable call. Those
 #     events run on the base repository with fork-controlled input, the classic route for fork
 #     code onto a self-hosted runner;
 #   - in a workflow that runs on pull_request or workflow_call, every self-hosted job,
@@ -34,6 +35,9 @@
 #   ../docs/WORKFLOW_FORK_GUARD_REVIEW.json. GitHub's contract:
 #   https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations
 #   https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#env
+#   Review events also use PR merge refs; the PR-only guard is always true there:
+#   https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review
+#   https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review_comment
 # Needs: python with PyYAML (skips without it); no network or runner.
 # Breadcrumb: .github/workflows/qa.yml (self-test-docker, self-test-native);
 #   vigil-utils PR #1352 review, finding 2.
@@ -56,6 +60,7 @@ GUARD = ("github.event_name != 'pull_request' || "
          "github.event.pull_request.head.repo.full_name == github.repository")
 EXPR = re.compile(r"\$\{\{(.*?)\}\}", re.S)
 SECRETS = re.compile(r"\bsecrets\b")
+UNSAFE_PRIVILEGED_EVENTS = {"issue_comment", "workflow_run", "pull_request_review", "pull_request_review_comment"}
 root = pathlib.Path(sys.argv[1])
 bad = []
 files = sorted([*root.glob("*.yml"), *root.glob("*.yaml")])
@@ -116,7 +121,7 @@ for path in files:
     if "pull_request_target" in triggers:
         bad.append(f"{path.name}: uses pull_request_target")
     if any(self_hosted(j) or "uses" in j for j in jobs.values()):
-        for trig in sorted(triggers & {"issue_comment", "workflow_run"}):
+        for trig in sorted(triggers & UNSAFE_PRIVILEGED_EVENTS):
             bad.append(f"{path.name}: {trig} trigger in a workflow with a self-hosted job or reusable call")
     if not triggers & {"pull_request", "workflow_call"}:
         continue
@@ -462,6 +467,39 @@ jobs:
     uses: David-Martel/git-guard/.github/workflows/reusable.yml@main'
   wfg_check "$_wfg_tmp/reusepushok" >/dev/null 2>&1
   t_expect_rc 0 "$?" "control: a push-only reusable caller needs no PR guard"
+
+  # Protects: review events on fork PR merge refs cannot schedule persistent
+  # runners through a direct job or a reusable call. Detects: trusting GUARD
+  # when event_name is not pull_request (its left side is then always true).
+  # Needs: local checker/PyYAML only. Breadcrumb: wfg_check unsafe-event set.
+  for _wfg_review_event in pull_request_review pull_request_review_comment; do
+    wfg_fixture "$_wfg_tmp/reviewdirect" "on: $_wfg_review_event
+jobs:
+  docker:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: git-guard-docker
+    steps:
+      - run: true"
+    wfg_refused "$_wfg_tmp/reviewdirect" "$_wfg_review_event trigger" \
+      "$_wfg_review_event reaching a guarded self-hosted job is refused"
+
+    wfg_fixture "$_wfg_tmp/reviewreuse" "on: $_wfg_review_event
+jobs:
+  call:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: David-Martel/git-guard/.github/workflows/reusable.yml@main"
+    wfg_refused "$_wfg_tmp/reviewreuse" "$_wfg_review_event trigger" \
+      "$_wfg_review_event reaching a guarded reusable caller is refused"
+
+    wfg_fixture "$_wfg_tmp/reviewhosted" "on: $_wfg_review_event
+jobs:
+  hosted:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true"
+    wfg_check "$_wfg_tmp/reviewhosted" >/dev/null 2>&1
+    t_expect_rc 0 "$?" "control: an unprivileged hosted $_wfg_review_event job passes"
+  done
 
   rm -rf "$_wfg_tmp"
 }

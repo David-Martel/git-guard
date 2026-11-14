@@ -1908,8 +1908,12 @@ test header. Reusable calls are treated as potentially privileged even without
 `runs-on` or explicit secrets. Their descendants are not downloaded or resolved.
 Locally scanned called workflows are checked independently because their `github` context comes
 from the caller, as documented by [GitHub's reusable-workflow reference](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
-`issue_comment` and `workflow_run` are refused when either self-hosted jobs or
-reusable calls are present; the PR guard cannot restrict those events.
+`issue_comment`, `workflow_run`, `pull_request_review` and
+`pull_request_review_comment` are refused when either self-hosted jobs or reusable
+calls are present; the PR-only guard cannot restrict those events. GitHub documents
+both [review events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review)
+and [review-comment events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review_comment)
+on PR merge refs, including fork events delivered to the base repository.
 
 Secret expressions in the workflow's own `env` count for each runnable job.
 This conservatively ignores job/step overrides rather than attempting expression
