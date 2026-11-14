@@ -169,12 +169,25 @@ nm_diff() {
   nm_b git -c core.quotePath=false -c diff.interHunkContext=0 diff -U0 --no-color --no-ext-diff \
     --no-textconv --text --src-prefix=a/ --dst-prefix=b/ -M --diff-filter=d "$@"
 }
+# nm_refuse_odd_names FILE: FILE holds NUL-separated staged paths. A name with a tab or a
+# newline would be split by the tab- and newline-separated records this scan builds, and
+# such a file escaped the scan silently (codex review of #121). One that could be a Rust
+# file (it contains ".rs") is a TOOL ERROR; mandate_scan.py would scan it, but the native
+# route cannot fall back to it.
+nm_refuse_odd_names() {
+  nm_odd="$(tr '\000\011\012' '\012\001\002' < "$1" |
+    awk 'index($0, ".rs") && (index($0, "\001") || index($0, "\002")) { gsub(/\001/, "\\t"); gsub(/\002/, "\\n"); print; exit }')" ||
+    nm_tool_error awk "cannot check the staged names"
+  [ -z "$nm_odd" ] ||
+    nm_tool_error git "staged path '$nm_odd' has a tab or newline in its name, which the native Rust scan cannot carry; rename it"
+}
 # nm_changes OUT DIFF-ARGS... : "path<TAB>line" records, plus "path<TAB>0" for every
 # changed path (a pure rename has no +++ header but stays in scope for BLOCK rules).
 nm_changes() {
   nm_out="$1"; shift
   nm_diff "$@" > "$nm_tmp/diff" || nm_tool_error git "git diff failed" git diff --cached "$@"
   nm_diff --name-only -z "$@" > "$nm_tmp/names" || nm_tool_error git "git diff --name-only failed" git diff --cached --name-only "$@"
+  nm_refuse_odd_names "$nm_tmp/names"
   awk '
     function unq(s,   out, i, c, n, o) {
       if (substr(s, 1, 1) != "\"" || substr(s, length(s), 1) != "\"") return s
@@ -281,7 +294,11 @@ if [ "$nm_panic_sev" != "off" ]; then
     esac
   elif command -v sg >/dev/null 2>&1; then
     nm_c="$(command -v sg)"
-    case "$("$nm_c" --version 2>/dev/null | tr 'A-Z' 'a-z')" in *ast-grep*) nm_sg="$nm_c" ;; esac
+    # Under the deadline like every other tool (review of #121). Not through nm_b: its
+    # TOOL ERROR would fire inside this command substitution, so test the status here.
+    nm_ver="$(timeout -k 2 "$nm_limit" "$nm_c" --version 2>/dev/null)"
+    case "$?" in 124|137) nm_tool_error sg "version probe did not finish within ${nm_limit}s (GIT_GUARD_MANDATE_TIMEOUT)" "$nm_c" --version ;; esac
+    case "$(printf '%s' "$nm_ver" | tr 'A-Z' 'a-z')" in *ast-grep*) nm_sg="$nm_c" ;; esac
   fi
   if [ -z "$nm_sg" ]; then
     nm_skipped="rust_panic"
@@ -346,9 +363,10 @@ while IFS= read -r nm_path; do
       # A line counts as comment-only when it starts with # or // (mandate_scan.py suppressed()).
       s = line; sub(/^[ \t\f\v]+/, "", s)
       lead = (substr(s, 1, 1) == "#" || substr(s, 1, 2) == "//") ? 1 : 0
-      if (at) print p, NR, substr(line, at), lead
+      # The comment goes last: it may contain tabs, and readers take the rest of the record.
+      if (at) print p, NR, lead, substr(line, at)
     }' "$nm_tmp/tree/$nm_path"
-done < "$nm_tmp/paths" > "$nm_tmp/comments"   # path<TAB>line<TAB>comment<TAB>comment-only
+done < "$nm_tmp/paths" > "$nm_tmp/comments"   # path<TAB>line<TAB>comment-only<TAB>comment (rest of record)
 
 if [ "$nm_reason_sev" != "off" ]; then
   # Every mandate ast-grep id (the rule inventory; mandate_scan.py SG_TO_KEY).
@@ -357,7 +375,9 @@ if [ "$nm_reason_sev" != "off" ]; then
   awk -F'\t' -v OFS='\t' -v codes=" $nm_codes " -v sgids=" $nm_sgids " '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     {
-      c = $3; lc = tolower(c); problem = ""
+      # The comment is everything after the third tab, tabs included (review of #121).
+      c = $0; for (k = 0; k < 3; k++) c = substr(c, index(c, "\t") + 1)
+      lc = tolower(c); problem = ""
       # NOQA_RE: #, optional ruff:/flake8:, noqa:, then codes (case-insensitive).
       named = ""
       if (match(lc, /#[ \t]*((ruff|flake8)[ \t]*:[ \t]*)?noqa[ \t]*:[ \t]*[a-z]+[0-9]+([ \t,]+[a-z]+[0-9]+)*/)) {
@@ -403,7 +423,8 @@ fi
 sort -t "$(printf '\t')" -k1,1 -k2,2n -k4,4 -k5,5 "$nm_tmp/findings" | awk -F'\t' -v OFS='\t' \
   -v psev="$nm_panic_sev" -v rsev="$nm_reason_sev" '
   FILENAME == ARGV[1] { if ($2 != 0) chg[$1, $2] = 1; next }
-  FILENAME == ARGV[2] { com[$1, $2] = $3; only[$1, $2] = $4; next }
+  FILENAME == ARGV[2] { c = $0; for (k = 0; k < 3; k++) c = substr(c, index(c, "\t") + 1)
+                        com[$1, $2] = c; only[$1, $2] = $3; next }
   {
     path = $1; line = $2 + 0; endl = $3 + 0; key = $4
     if (key == "rust_panic") {

@@ -78,7 +78,42 @@ t_case_native_staged_mandate() {
   _nm_stub 1; t_expect_rc 1 "$?" "filter: an ignore inside a string literal does not suppress"
   _qm_put "$r" src/lib.rs 'pub fn s() -> &'"'"'static str { "// ast-grep-ignore: mandate-rust-panic" }\n'
   _nm_stub ""; t_expect_rc 0 "$?" "an ignore inside a string literal is not a suppression without a reason"
+  # A tab inside a comment is comment text. The comments file is tab-separated, and reading
+  # only its third field cut the comment at the tab: `//<TAB>ast-grep-ignore` passed with no
+  # reason, and a tab before a valid `// SAFETY:` reason blocked (codex autopilot review of
+  # #121 at ea38992 and f40f7cb). mandate_scan.py handles both.
+  _qm_put "$r" src/lib.rs '//\tast-grep-ignore: mandate-rust-panic\nfn p() {}\n'
+  _nm_stub ""; t_expect_rc 1 "$?" "tab in comment: an unjustified ignore after a tab is BLOCKED"
+  _qm_has "$log" "suppresses a mandate rule with no reason" "tab in comment: the missing reason is named"
+  _qm_put "$r" src/lib.rs '// ast-grep-ignore: mandate-rust-panic\t// SAFETY: fixture\nfn p() { panic!("x"); }\n'
+  _nm_stub 2; t_expect_rc 0 "$?" "tab in comment: a reason after a tab is read, and the ignore suppresses"
   _nm_clean "suppression filter (stub ast-grep)"
+  # A staged name with a tab or newline cannot be carried through the native route's
+  # tab- and newline-separated records, and such a file escaped the scan silently (codex
+  # autopilot review of #121). It is refused as a TOOL ERROR, never passed. Only a name that
+  # could be a Rust file is refused. The index is written directly, so this runs on Windows
+  # too (core.protectNTFS=false in the fixture repo only).
+  r2="$(gg_mktemp_repo)" || { t_fail "repo"; rm -rf "$_nm_lab"; return; }
+  git -C "$r2" config core.protectNTFS false
+  _nm_oid="$(printf '// ast-grep-ignore: mandate-rust-panic\nfn p() {}\n' | git -C "$r2" hash-object -w --stdin)"
+  _nm_tab="$(printf '\t')"
+  _nm_nl='
+'
+  for _nm_odd in "src/a${_nm_tab}b.rs:tab" "src/c${_nm_nl}d.rs:newline"; do
+    _nm_name="${_nm_odd%:*}"; _nm_kind="${_nm_odd##*:}"
+    git -C "$r2" update-index --add --cacheinfo "100644,$_nm_oid,$_nm_name"
+    ( cd "$r2" && NM_STUB_LINES="" PATH="$_nm_lab/stubsg:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+    t_expect_rc 2 "$?" "odd name: a staged Rust file whose name has a $_nm_kind is a TOOL ERROR, not skipped"
+    _qm_has "$log" "tab or newline" "odd name ($_nm_kind): the refusal says why"
+    git -C "$r2" update-index --force-remove -- "$_nm_name"
+  done
+  # Control: an odd name that cannot be a Rust file does not stop a clean Rust commit.
+  git -C "$r2" update-index --add --cacheinfo "100644,$_nm_oid,notes${_nm_tab}x.txt"
+  _qm_put "$r2" src/lib.rs 'pub fn ok() {}\n'
+  ( cd "$r2" && NM_STUB_LINES="" PATH="$_nm_lab/stubsg:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+  t_expect_rc 0 "$?" "odd name: a non-Rust name with a tab does not refuse a clean Rust commit"
+  _nm_clean "odd staged names"
+  gg_rmrepo "$r2"
   # Deadline parity with mandate_scan.py: every git and ast-grep run is bounded by
   # GIT_GUARD_MANDATE_TIMEOUT (default 300 s). A hung tool stops there as a TOOL ERROR;
   # without the bound a hung git or ast-grep stalled the commit indefinitely.
@@ -107,6 +142,22 @@ t_case_native_staged_mandate() {
         t_fail "deadline: a hung $_nm_label stops at GIT_GUARD_MANDATE_TIMEOUT as a TOOL ERROR (rc $_nm_rc, ${_nm_took}s: $(head -c 200 "$log"))"
       fi
     done
+    # The `sg` fallback (no ast-grep on PATH) probes `sg --version` to tell ast-grep from
+    # util-linux sg. That probe ran outside the deadline, so a hung sg stalled the commit
+    # (codex autopilot review of #121). The minimal PATH has no ast-grep.
+    mkdir -p "$_nm_lab/hang-sgfb"
+    # sleep by absolute path: the minimal PATH below has no sleep.
+    printf '#!/bin/sh\nexec "%s" 30\n' "$(command -v sleep)" > "$_nm_lab/hang-sgfb/sg"
+    chmod +x "$_nm_lab/hang-sgfb/sg"
+    _nm_start="$(date +%s)"
+    ( cd "$r" && GIT_GUARD_MANDATE_TIMEOUT=1 PATH="$_nm_lab/hang-sgfb:$_nm_lab/trip:$_nm_min" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+    _nm_rc=$?
+    _nm_took=$(( $(date +%s) - _nm_start ))
+    if [ "$_nm_rc" -eq 2 ] && [ "$_nm_took" -lt 10 ] && grep -q 'GIT_GUARD_MANDATE_TIMEOUT' "$log"; then
+      t_ok "deadline: a hung sg fallback probe stops at GIT_GUARD_MANDATE_TIMEOUT as a TOOL ERROR (${_nm_took}s)"
+    else
+      t_fail "deadline: a hung sg fallback probe stops at GIT_GUARD_MANDATE_TIMEOUT as a TOOL ERROR (rc $_nm_rc, ${_nm_took}s: $(head -c 200 "$log"))"
+    fi
     ( cd "$r" && GIT_GUARD_MANDATE_TIMEOUT=soon PATH="$_nm_lab/stubsg:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
     t_expect_rc 2 "$?" "deadline: an invalid GIT_GUARD_MANDATE_TIMEOUT is a TOOL ERROR"
     _nm_clean "deadline cases"

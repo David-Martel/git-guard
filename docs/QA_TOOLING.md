@@ -908,8 +908,14 @@ does not read, so nothing is reported twice.
   with interpreter tripwires on PATH and checks its rule table against
   `mandate_scan.py`. Every git, `qa_gate.sh` and ast-grep run on that route is bounded
   by `GIT_GUARD_MANDATE_TIMEOUT` (default 300 s) through `timeout -k`, as the Python
-  scanner bounds its tools; a timeout, an invalid value or a host without a usable
-  `timeout` is a TOOL ERROR (2).
+  scanner bounds its tools. That includes the `sg --version` probe that tells ast-grep
+  from util-linux `sg` when only `sg` is on PATH. A timeout, an invalid value or a host
+  without a usable `timeout` is a TOOL ERROR (2). Comment text keeps its tabs, so
+  `//<TAB>ast-grep-ignore` needs a reason as it does with a space. One difference from
+  the Python scanner is deliberate: a staged name that contains a tab or newline and
+  could be a Rust file (it contains `.rs`) is a TOOL ERROR. The native route's records
+  are tab- and newline-separated and cannot carry it, and before this refusal such a
+  file escaped the scan silently. Rename the file (codex autopilot review of #121).
 - **pre-push**, through `hooks/pre-push`, only for a pushed commit that carries
   `.git-guard/mandate-baseline.json` (the debt register below). A repo without
   one pushes exactly as before and the scanner prints nothing. `mandate_scan.sh`

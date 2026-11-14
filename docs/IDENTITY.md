@@ -141,7 +141,7 @@ bounded run of the query differs:
 
 #### Native route parity with the worker
 
-Each guarantee the worker (rows 1-14) and the mandate scanner (rows 15-17) enforce, and where the native route enforces and tests it
+Each guarantee the worker (rows 1-14) and the mandate scanner (rows 15-18) enforce, and where the native route enforces and tests it
 ([test 41](../tests/41-native-no-interpreter.t.sh) unless named).
 
 | # | Guarantee | Worker (`identity_worker.py`) | Native (`gg_verify_native`) | Test |
@@ -162,7 +162,8 @@ Each guarantee the worker (rows 1-14) and the mandate scanner (rows 15-17) enfor
 | 14 | Error output surfaced, bounded | first 4096 bytes of the worker's stderr and the query's | first 4096 bytes of the query's stderr | native runner error reports its exit status |
 | 15 | Mandate pre-push: every git the selection runs is bounded by `GIT_GUARD_MANDATE_TIMEOUT` (default 300 s) | `mandate_scan.py` `run()`: timeout is a TOOL ERROR | [`mandate_scan.sh`](../hooks/common/mandate_scan.sh) `mandate_git` under `timeout -k 2`; a timeout, an invalid override or no usable `timeout` is a TOOL ERROR (2) | hung `git rev-list` and hung `git cat-file` with a 1 s override; invalid override |
 | 16 | Mandate pre-push: an unreadable ref list never passes | the scanner reads stdin and fails | `cat` failure is a TOOL ERROR (2) | failing `cat` on a push carrying a register |
-| 17 | Mandate pre-commit (native staged Rust scan): every git, `qa_gate.sh` and ast-grep run bounded by `GIT_GUARD_MANDATE_TIMEOUT` | `mandate_scan.py` `run()`: timeout is a TOOL ERROR | [`mandate_native.sh`](../hooks/common/mandate_native.sh) `nm_b` and the `--staged` dispatch's `mandate_git`, under `timeout -k 2`; a timeout, an invalid override or no usable `timeout` is a TOOL ERROR (2) | [test 42](../tests/42-native-staged-mandate.t.sh): hung `git diff`, hung `git ls-files`, hung `ast-grep scan` with a 1 s override; invalid override |
+| 17 | Mandate pre-commit (native staged Rust scan): every git, `qa_gate.sh`, ast-grep and `sg` probe run bounded by `GIT_GUARD_MANDATE_TIMEOUT` | `mandate_scan.py` `run()`: timeout is a TOOL ERROR | [`mandate_native.sh`](../hooks/common/mandate_native.sh) `nm_b`, the `sg` fallback's `--version` probe and the `--staged` dispatch's `mandate_git`, under `timeout -k 2`; a timeout, an invalid override or no usable `timeout` is a TOOL ERROR (2) | [test 42](../tests/42-native-staged-mandate.t.sh): hung `git diff`, hung `git ls-files`, hung `ast-grep scan` and a hung `sg` fallback probe with a 1 s override; invalid override |
+| 18 | Mandate pre-commit (native staged Rust scan): every staged Rust file is scanned with its full comment text | the scanner reads names and comment lines as Python strings | comments carried as the last field, so tabs survive; a staged name with a tab or newline that could be a Rust file is a TOOL ERROR (2), a deliberate difference, since the records cannot carry it | test 42: `//<TAB>ast-grep-ignore` blocks; a tab before `// SAFETY:` passes; tab and newline names refused; a non-Rust odd name does not refuse a clean commit |
 
 One difference is deliberate: `ulimit -f` also bounds git's own temporary files, so a
 commit object larger than about 1 MiB cannot be verified on the native route and fails
