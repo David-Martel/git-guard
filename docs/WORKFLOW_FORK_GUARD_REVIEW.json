@@ -134,17 +134,14 @@
             "reusepushok"
           ],
           "selector_sha256": "91e93326e978a902ebf37952884659f8983f641b139a879d192e06d5e4dd4d15",
-          "reviewer": "codex-p1gen9-hook-artifact-review",
-          "reviewer_type": "independent-agent",
-          "reviewed_utc": "2026-11-14T07:38:55.7281514Z",
-          "disposition": "keep",
+          "reviewer": null,
+          "reviewer_type": null,
+          "reviewed_utc": null,
+          "disposition": "unreviewed",
           "protects": "Privileged reusable descendants cannot bypass PR guards through missing runs-on or workflow_call trigger",
           "detects": "Restoring caller exemption fails4 assertions; restoring workflow_call exemption fails6; ignoring reusable unsafe-event calls fails4",
           "needs": "Local Python/PyYAML only; actual checker consumes fixture YAML as data",
-          "breadcrumb": "tests/37-workflow-fork-guard.t.sh::wfg_check",
-          "reviewed_source": "d4ecf1bee16a86899c0fe375557cf242aefb7b6b",
-          "review_scope": "Independent static review of actual helper, controls, unchanged harness/real workflows, actual mutation diffs and hash-bound producer logs; no independent execution",
-          "review_rationale": "Relevant to persistent-runner PR protection. Actual helper caller/callee/unsafe-event regressions fail the new literal refusal and policy-diagnostic assertions; guarded and hosted/push controls preserve acceptance. No rule weakened."
+          "breadcrumb": "tests/37-workflow-fork-guard.t.sh::wfg_check"
         },
         {
           "selector": "t_case_workflow_fork_guard",
@@ -155,17 +152,14 @@
             "workflowenvplain"
           ],
           "selector_sha256": "91e93326e978a902ebf37952884659f8983f641b139a879d192e06d5e4dd4d15",
-          "reviewer": "codex-p1gen9-hook-artifact-review",
-          "reviewer_type": "independent-agent",
-          "reviewed_utc": "2026-11-14T07:38:55.7336894Z",
-          "disposition": "keep",
+          "reviewer": null,
+          "reviewer_type": null,
+          "reviewed_utc": null,
+          "disposition": "unreviewed",
           "protects": "Hosted jobs inheriting workflow env secret expressions require a job guard",
           "detects": "Ignoring workflow env secrets fails6 assertions; guarded and plain-env positives retain acceptance",
           "needs": "Local Python/PyYAML only",
-          "breadcrumb": "tests/37-workflow-fork-guard.t.sh::secret_expressions",
-          "reviewed_source": "d4ecf1bee16a86899c0fe375557cf242aefb7b6b",
-          "review_scope": "Independent static review of actual helper, controls, unchanged harness/real workflows, actual mutation diffs and hash-bound producer logs; no independent execution",
-          "review_rationale": "Relevant because workflow env expressions are inherited by hosted jobs. Actual helper env-inspection mutant fails all three refusal/diagnostic pairs; guarded and non-secret environment positives preserve acceptance. No rule weakened."
+          "breadcrumb": "tests/37-workflow-fork-guard.t.sh::secret_expressions"
         }
       ],
       "reason": "Initial author snapshot before independent source review; immutable preimage retained at record_commit"
@@ -204,5 +198,15 @@
       "Existing category-number collision and PyYAML unusual-value traceback remain outside this scoped repair",
       "Initial source-binding/unreviewed metadata superseded by current reviewed rows and retained historical preimage; ignored evidence storage explicitly disclosed"
     ]
-  }
+  },
+  "corrections": [
+    {
+      "prior_record_commit": "8990c75b52b9fcd3cadaafab5133a4ae2078e4a9",
+      "prior_record_sha256": "b5b655eafc77bb6082f0ef681d3172c9885522845127322f992b5485160cbf67",
+      "corrected_field": "history[0].rows",
+      "source_of_truth": "d4ecf1bee16a86899c0fe375557cf242aefb7b6b:docs/WORKFLOW_FORK_GUARD_REVIEW.json",
+      "reason": "The receipt builder shallow-copied initial row objects and then updated current dispositions, causing the embedded history rows to inherit KEEP. Restore original unreviewed rows from the immutable preimage. Current independent KEEP rows, source hashes, reviews and execution evidence are unchanged.",
+      "corrected_utc": "2026-11-14T07:43:48.8775137Z"
+    }
+  ]
 }
