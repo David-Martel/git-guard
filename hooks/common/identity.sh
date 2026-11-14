@@ -645,6 +645,12 @@ cmd_pre_push() {
   max="${GIT_GUARD_IDENTITY_MAX_COMMITS:-500}"
   case "$max" in ""|*[!0-9]*) max=500 ;; esac
   rows="$(mktemp "${TMPDIR:-/tmp}/gg-id.XXXXXX")" || gg_die "mktemp failed"
+  # gg_die exits from inside the verifier (fail closed), past the rm below, so the
+  # temp files go on EXIT too. A signal exits 3 (fail closed) so the trap still runs.
+  # out and err are the verifier's own temp files, set only while it runs.
+  out="" err=""
+  trap 'rm -f "$rows" ${out:+"$out"} ${err:+"$err"}' EXIT
+  trap 'exit 3' HUP INT TERM
   rc=0
   while read -r _lref lsha _rref rsha; do
     [ -n "${lsha:-}" ] || continue
