@@ -66,6 +66,16 @@ t_case_native_no_interpreter() {
   (cd "$r" && printf 'refs/heads/main %s refs/heads/main %s\n' "1111111111111111111111111111111111111111" "$zero" |
     PATH="$lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --pre-push >"$lab/m3.out" 2>&1)
   t_expect_rc 2 "$?" "mandate pre-push: an unresolvable pushed commit is a TOOL ERROR"
+  # A ref list that cannot be read is a TOOL ERROR too. A failed capture used to become an
+  # empty list, so a push carrying a register (tip2) passed unscanned (review of b8b082f).
+  mkdir -p "$lab/badcat"
+  printf '#!/bin/sh\necho "cat: read error" >&2\nexit 1\n' > "$lab/badcat/cat"
+  chmod +x "$lab/badcat/cat"
+  (cd "$r" && printf 'refs/heads/main %s refs/heads/main %s\n' "$tip2" "$tip" |
+    PATH="$lab/trip:$lab/badcat:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --pre-push >"$lab/m4.out" 2>&1)
+  t_expect_rc 2 "$?" "mandate pre-push: a ref list that cannot be read is a TOOL ERROR"
+  grep -q 'TOOL ERROR' "$lab/m4.out"
+  t_assert "$?" "mandate pre-push: the unreadable ref list is reported as a TOOL ERROR"
   gg_rmrepo "$r"
   : > "$marker"
 
@@ -179,6 +189,52 @@ t_case_native_no_interpreter() {
   sleep 3
   if [ -e "$lab/survivor" ]; then t_fail "identity verify (native): no verifier descendant survives a successful query"
   else t_ok "identity verify (native): no verifier descendant survives a successful query"; fi
+  git -C "$r" config --unset gitGuard.identityTimeoutSeconds
+  # Parity with identity_worker.py's output cap (1 MiB per stream, during execution): a
+  # query flooding stdout or stderr fails closed, and the stream file it wrote stays near
+  # the cap (temporary storage is bounded, not just checked afterwards).
+  real_git="$(command -v git)"
+  for gg_stream in stdout stderr; do
+    mkdir -p "$lab/flood-$gg_stream"
+    case "$gg_stream" in stdout) fd=1 ;; *) fd=2 ;; esac
+    # Only the signature query (git ... log) floods; identity.sh's own git calls (config,
+    # inside $(...)) must pass through, or the size probe would read its own pipe. Where
+    # /proc names the stream's file, the flood appends to it from a subshell whose own
+    # stderr is /dev/null: a shell reporting "File size limit exceeded" on a capped stderr
+    # would itself be stopped before it could measure.
+    printf '#!/bin/sh\ncase " $* " in *" log "*)\n  t="$(readlink /proc/$$/fd/%s 2>/dev/null)"\n  if [ -n "$t" ] && [ -f "$t" ]; then\n    ( head -c 52428800 /dev/zero >>"$t" ) 2>/dev/null\n    wc -c < "$t" > "%s/flood-%s.size"\n  else\n    head -c 52428800 /dev/zero >&%s\n  fi ;;\nesac\nexec "%s" "$@"\n' \
+      "$fd" "$lab" "$gg_stream" "$fd" "$real_git" > "$lab/flood-$gg_stream/git"
+    chmod +x "$lab/flood-$gg_stream/git"
+    (cd "$r" && PATH="$lab/trip:$lab/flood-$gg_stream:$PATH" sh "$GG_ROOT/hooks/common/identity.sh" verify --allowed-signers "$as" "$clean" >"$lab/fl.out" 2>&1)
+    t_expect_rc 3 "$?" "identity verify (native): 50 MiB on $gg_stream fails closed (exit 3)"
+    grep -q 'output exceeds 1 MiB' "$lab/fl.out"
+    t_assert "$?" "identity verify (native): the $gg_stream overflow is named"
+    if [ -s "$lab/flood-$gg_stream.size" ]; then
+      fsz="$(cat "$lab/flood-$gg_stream.size")"
+      if [ "$fsz" -le 1049088 ]; then t_ok "identity verify (native): the $gg_stream file stopped near the cap ($fsz bytes)"
+      else t_fail "identity verify (native): the $gg_stream file stopped near the cap ($fsz bytes written)"; fi
+    else
+      t_skip "identity verify (native): no /proc/self/fd here to measure the $gg_stream file"
+    fi
+  done
+  # Parity with the worker's cancellation cleanup: SIGTERM to the hook while the query runs
+  # stops the verifier's process group, removes the temp files and fails closed.
+  mkdir -p "$lab/hang" "$lab/cancel-tmp"
+  printf '#!/bin/sh\n( sleep 3; : > "%s/after-cancel" ) </dev/null >/dev/null 2>&1 &\nsleep 30\n' "$lab" > "$lab/hang/ssh-keygen"
+  chmod +x "$lab/hang/ssh-keygen"
+  (cd "$r" && git config gitGuard.identityTimeoutSeconds 20)
+  (cd "$r" && TMPDIR="$lab/cancel-tmp" PATH="$lab/trip:$lab/hang:$PATH" exec sh "$GG_ROOT/hooks/common/identity.sh" verify --allowed-signers "$as" "$clean" >"$lab/cx.out" 2>&1) &
+  cx_pid=$!
+  sleep 1
+  kill -TERM "$cx_pid" 2>/dev/null
+  wait "$cx_pid"; cx_rc=$?
+  sleep 4
+  if [ "$cx_rc" -eq 3 ]; then t_ok "identity verify (native): cancellation fails closed (exit 3)"
+  else t_fail "identity verify (native): cancellation fails closed (exit 3, got $cx_rc)"; fi
+  if [ -e "$lab/after-cancel" ]; then t_fail "identity verify (native): no verifier descendant survives cancellation"
+  else t_ok "identity verify (native): no verifier descendant survives cancellation"; fi
+  if [ -z "$(ls -A "$lab/cancel-tmp")" ]; then t_ok "identity verify (native): cancellation removes its temp files"
+  else t_fail "identity verify (native): cancellation removes its temp files (left: $(ls -A "$lab/cancel-tmp" | tr '\n' ' '))"; fi
   git -C "$r" config --unset gitGuard.identityTimeoutSeconds
   # install.sh's containment probe: a zombie (terminated, not yet reaped by a non-reaping
   # PID 1) is not a survivor; kill -0 alone said it was and refused a working timeout.
