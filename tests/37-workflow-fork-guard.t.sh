@@ -24,13 +24,19 @@
 #   string, a list, or a mapping's `labels`. A custom label alone (`runs-on: git-guard-docker`)
 #   selects a self-hosted runner, so it counts without `self-hosted` beside it (codex review of
 #   #105 at eb48e68). A mapping `group:` and an expression also count, because both can
-#   resolve to a self-hosted runner. Reading a secret means any `secrets`
-#   inside `${{ }}` (`secrets.X`, `secrets['X']`, `toJSON(secrets)`), or a job-level `secrets:`
+#   resolve to a self-hosted runner. Secret detection conservatively matches an unquoted,
+#   case-insensitive `secrets` token inside `${{ }}` (`secrets.X`, `secrets['X']`,
+#   `toJSON(secrets)`), or a job-level `secrets:`
 #   passed to a reusable workflow. Workflow-level env expressions count for the jobs that
 #   inherit them too. Reusable calls count conservatively even without runs-on or secrets:
 #   this checker does not fetch or resolve their descendants. Local callees are checked
 #   independently because GitHub's github context retains the caller's event. A caller's
 #   workflow env is not propagated to a callee; each workflow's own env is checked here.
+#   Actual scalar strings are scanned independently. Single-quoted literals (including
+#   doubled quote escapes and embedded }}) are masked; their words read no context.
+#   Incomplete/lexically invalid templates fail closed before applying the job guard.
+#   This is not a full grammar or semantic context resolver: e.g. inputs.secrets still
+#   counts conservatively. Quoted literal words are deliberately no longer false positives.
 #   Both findings and the review bindings are recorded in
 #   ../docs/WORKFLOW_FORK_GUARD_REVIEW.json. GitHub's contract:
 #   https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations
@@ -38,6 +44,8 @@
 #   Review events also use PR merge refs; the PR-only guard is always true there:
 #   https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review
 #   https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review_comment
+#   https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#literals
+#   https://github.com/actions/languageservices/blob/4043eda158e16579cc5fb1b0b07a4bce2a76f0b5/expressions/src/parser.ts#L239
 # Needs: python with PyYAML (skips without it); no network or runner.
 # Breadcrumb: .github/workflows/qa.yml (self-test-docker, self-test-native);
 #   vigil-utils PR #1352 review, finding 2.
@@ -49,7 +57,6 @@
 wfg_check() {
   # wfg_check DIR — exit 0 if every workflow under DIR keeps the rules; print each breach.
   "$(gg_python)" - "$1" <<'PY'
-import json
 import pathlib
 import re
 import sys
@@ -58,8 +65,7 @@ import yaml
 
 GUARD = ("github.event_name != 'pull_request' || "
          "github.event.pull_request.head.repo.full_name == github.repository")
-EXPR = re.compile(r"\$\{\{(.*?)\}\}", re.S)
-SECRETS = re.compile(r"\bsecrets\b")
+SECRETS = re.compile(r"\bsecrets\b", re.IGNORECASE)
 UNSAFE_PRIVILEGED_EVENTS = {"issue_comment", "workflow_run", "pull_request_review", "pull_request_review_comment"}
 root = pathlib.Path(sys.argv[1])
 bad = []
@@ -95,14 +101,73 @@ def self_hosted(job):
                for lab in labels)
 
 
+def scalar_strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from scalar_strings(key)
+            yield from scalar_strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from scalar_strings(item)
+
+
+def expression_code(text):
+    # Only the template/string boundary is parsed, never evaluated. Literal
+    # content is masked so its words cannot be mistaken for context tokens.
+    offset = 0
+    while True:
+        start = text.find("${{", offset)
+        if start < 0:
+            return
+        pos = start + 3
+        quoted = False
+        code = []
+        while pos < len(text):
+            char = text[pos]
+            if quoted:
+                if char == "'":
+                    if pos + 1 < len(text) and text[pos + 1] == "'":
+                        pos += 2  # GitHub escapes a quote by doubling it
+                        continue
+                    quoted = False
+                pos += 1
+                continue
+            if char == "'":
+                quoted = True
+                code.append(" ")
+                pos += 1
+            elif char == '"':
+                raise ValueError("double-quoted expression literal")
+            elif text.startswith("${{", pos):
+                raise ValueError("nested expression opener")
+            elif text.startswith("}}", pos):
+                if not text[start + 3:pos].strip():
+                    raise ValueError("empty expression")
+                yield "".join(code)
+                offset = pos + 2
+                break
+            else:
+                code.append(char)
+                pos += 1
+        else:
+            detail = "unterminated single-quoted literal" if quoted else "missing closing delimiter"
+            raise ValueError(detail)
+
+
 def secret_expressions(value):
-    return any(SECRETS.search(e) for e in EXPR.findall(json.dumps(value)))
+    found = False
+    for text in scalar_strings(value):
+        for code in expression_code(text):
+            if SECRETS.search(code):
+                found = True
+    return found  # consume every scalar/expression, including malformed tails
 
 
 def reads_secrets(job):
-    if "secrets" in job:  # a reusable-workflow call passing secrets, or `inherit`
-        return True
-    return secret_expressions(job)
+    found = secret_expressions(job)
+    return "secrets" in job or found  # passing secrets or `inherit` also counts
 
 
 def guarded(job):
@@ -125,13 +190,18 @@ for path in files:
             bad.append(f"{path.name}: {trig} trigger in a workflow with a self-hosted job or reusable call")
     if not triggers & {"pull_request", "workflow_call"}:
         continue
-    workflow_secrets = secret_expressions(doc.get("env") or {})
+    try:
+        workflow_secrets = secret_expressions(doc.get("env") or {})
+        job_secrets = {name: reads_secrets(job) for name, job in jobs.items()}
+    except ValueError as exc:
+        bad.append(f"{path.name}: invalid or incomplete expression: {exc}")
+        continue
     for name, job in jobs.items():
         if "uses" in job and not guarded(job):
             bad.append(f"{path.name}: job {name} calls a reusable workflow without the fork guard")
         elif self_hosted(job) and not guarded(job):
             bad.append(f"{path.name}: job {name} runs on self-hosted without the fork guard")
-        elif (reads_secrets(job) or workflow_secrets) and not guarded(job):
+        elif (job_secrets[name] or workflow_secrets) and not guarded(job):
             bad.append(f"{path.name}: job {name} reads a secret without the fork guard")
 for line in bad:
     print(line)
@@ -500,6 +570,83 @@ jobs:
     wfg_check "$_wfg_tmp/reviewhosted" >/dev/null 2>&1
     t_expect_rc 0 "$?" "control: an unprivileged hosted $_wfg_review_event job passes"
   done
+
+  # Protects: actual secret contexts remain guarded regardless of identifier
+  # case or quoted expression delimiters, without rejecting mere string literals.
+  # Detects: case-sensitive token matching, early }} inside a single-quoted
+  # literal, lost later expressions, or scanning literal words as context reads.
+  # Needs: local checker/PyYAML only. Breadcrumb: secret_expressions.
+  while IFS='|' read -r _wfg_case _wfg_scope _wfg_expected _wfg_expr; do
+    if [ "$_wfg_scope" = workflow ]; then
+      wfg_fixture "$_wfg_tmp/expression" "on: pull_request
+env:
+  TOKEN: $_wfg_expr
+jobs:
+  hosted:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true"
+    else
+      wfg_fixture "$_wfg_tmp/expression" "on: workflow_call
+jobs:
+  hosted:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+        env:
+          TOKEN: $_wfg_expr"
+    fi
+    if [ "$_wfg_expected" = 1 ]; then
+      wfg_refused "$_wfg_tmp/expression" 'reads a secret without the fork guard' \
+        "expression $_wfg_case requires a job guard"
+    else
+      wfg_check "$_wfg_tmp/expression" >/dev/null 2>&1
+      t_expect_rc 0 "$?" "control: expression $_wfg_case reads no secret context"
+    fi
+  done <<'WFG_EXPRESSIONS'
+upper-dot|job|1|${{ SECRETS.SOME_TOKEN }}
+mixed-dot|job|1|${{ SeCrEtS.SOME_TOKEN }}
+upper-bracket|workflow|1|${{ SECRETS['SOME_TOKEN'] }}
+mixed-tojson|workflow|1|${{ toJSON(SeCrEtS) }}
+quoted-closer|workflow|1|${{ format('}}{0}', secrets.SOME_TOKEN) }}
+escaped-quote-closer|job|1|${{ format('it''s }}{0}', secrets.SOME_TOKEN) }}
+multiple-expressions|job|1|${{ format('}}{0}', 'plain') }} ${{ SeCrEtS.SOME_TOKEN }}
+secret-before-literal|job|1|${{ secrets.SOME_TOKEN }} ${{ '}} secrets' }}
+literal-lower|job|0|${{ 'secrets' }}
+literal-upper|workflow|0|${{ 'SECRETS' }}
+quoted-nonsecret-closer|workflow|0|${{ format('}}{0}', 'plain') }}
+escaped-literal-context|workflow|0|${{ format('it''s }}{0}', 'secrets') }}
+quoted-multiple|job|0|${{ 'secrets' }} ${{ format('}}{0}', 'plain') }}
+literal-template-marker|job|0|${{ '${{ secrets.SOME_TOKEN }}' }}
+plaintext-closer|job|0|the word secrets and }} outside expressions are plain text
+WFG_EXPRESSIONS
+
+  # Protects: incomplete or lexically invalid templates never become a silent
+  # non-secret result, even with a valid job guard or an earlier secret read.
+  # Detects: cross-scalar JSON joins, early return, or tolerating broken quotes.
+  # Needs: local checker/PyYAML only. Breadcrumb: expression extraction.
+  while IFS='|' read -r _wfg_case _wfg_expr; do
+    wfg_fixture "$_wfg_tmp/invalidexpression" "on: pull_request
+jobs:
+  hosted:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+        env:
+          TOKEN: $_wfg_expr
+          UNRELATED: plain tail }}"
+    wfg_refused "$_wfg_tmp/invalidexpression" 'invalid or incomplete expression' \
+      "malformed expression $_wfg_case is refused even with the job guard"
+  done <<'WFG_INVALID_EXPRESSIONS'
+missing-close|${{ secrets.SOME_TOKEN
+unclosed-literal|${{ 'unfinished }}
+double-quoted-literal|${{ "plain" }}
+secret-then-incomplete|${{ secrets.SOME_TOKEN }} ${{ 'unfinished
+cross-scalar-close|${{ 'plain'
+nested-opener|${{ ${{ 'plain' }} }}
+empty-expression|${{ }}
+WFG_INVALID_EXPRESSIONS
 
   rm -rf "$_wfg_tmp"
 }

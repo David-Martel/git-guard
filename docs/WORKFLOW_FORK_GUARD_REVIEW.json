@@ -1,70 +1,93 @@
 {
   "schema_version": 1,
-  "source_commit": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
+  "source_commit": "7f9e4b9667d5aed70956e766f4d9c48ef20c21a2 + proposed lexical-parser repair",
   "hash_normalization": "Raw full-file SHA256; shell selector/helper UTF-8 with CRLF normalized to LF, no trailing newline",
   "source_hashes": {
-    "tests/37-workflow-fork-guard.t.sh": "27ad8b82d807ac1298e39c811e4432b193f5060897a9abda4e59caf2aa7cdfac",
+    "tests/37-workflow-fork-guard.t.sh": "c1ebc78abc71a096945c993f67d94523424fe4b1902b176c1c3fa6d0d93c9cd9",
     "tests/run.sh": "5d196ea7159c9af4b9a5d07a25f3c3be7fc5e4f1859fca46bb0a02e73fdc77b7"
   },
   "target": {
     "name": "wfg_check",
     "source": "tests/37-workflow-fork-guard.t.sh",
-    "sha256": "2bdf6dca92b232091325bc61df0a8eab7babaab101ea872dcb827a7d1245ff18",
+    "sha256": "8b46ccd55f598804d6c3d959516b24b6bd19970f3b55375ec9681e93aac32d32",
     "scope": "Static local workflow checker only; no dispatch, network workflow resolution or deployed runner qualification"
   },
   "author_evidence": {
     "platform": "Windows dtm-p1gen9 / Git Bash / isolated native CPython3.14.7 + PyYAML6.0.3",
     "command": "sh tests/run.sh workflow_fork_guard",
-    "baseline": "Prior47 assertion sources preserved byte-for-byte; old24 included",
-    "red": "49 passed, 8 failed, 0 skipped; all four new unsafe review-event fixtures falsely accepted by47-case checker",
-    "red_log": "worktrees/fork-guard-evidence/review-events-red.log",
-    "red_log_sha256": "6c99095d48c1c1947f489fd0c2d29493ea57bad8f8e4ae04c107b4e5601b0bf5",
+    "baseline": "All published57 control sources retained byte-for-byte",
+    "red": "63 passed, 31 failed, 0 skipped: seven newly exposed secret bypasses (14 failures), three literal false positives, seven guarded malformed templates (14 failures)",
+    "red_log": "worktrees/fork-guard-evidence/expression-parser-boundary-red.log",
+    "red_log_sha256": "a60f405433e9936678189068ab319d528d1d19c98bdad0fd7183396bee7f3139",
     "baseline_replay": {
-      "source": "Actual d4 checker/helper prefix plus current unchanged fixture-helper and control suffix",
-      "artifact": "worktrees/fork-guard-evidence/review-events-baseline47.t.sh",
-      "artifact_sha256": "808060a1eabb2364478e7ad32e27f44ad4eb5713d23c445e8811c2a7594fae2f",
-      "log": "worktrees/fork-guard-evidence/review-events-baseline47.log",
-      "log_sha256": "d3c8cd17ef5946123db7437ce56656df23b7fa913b76dde6414f0a21ae9d5939",
-      "result": "49 passed, 8 failed, 0 skipped, exit1"
+      "source": "Actual published7f checker prefix plus current unchanged fixture/helper/control suffix",
+      "artifact": "worktrees/fork-guard-evidence/expression-parser-baseline57.t.sh",
+      "artifact_sha256": "2bbe6d119b9ddb9ec30ef2230f2df91d43e699eba34f60963da036c7bf2a027c",
+      "log": "worktrees/fork-guard-evidence/expression-parser-baseline57.log",
+      "log_sha256": "93a68a1e5f055d94ebc6cc6f3c89d8e7795d915f8ffa27267e08af3d3e01bb31",
+      "result": "63 passed, 31 failed, 0 skipped, exit1"
     },
-    "green": "57 passed, 0 failed, 0 skipped",
-    "green_log": "worktrees/fork-guard-evidence/review-events-green.log",
-    "green_log_sha256": "8947aa62589a22fcaf024363083a1c78bddc67add36db461de3a55bfc32763e2",
+    "green": "94 passed, 0 failed, 0 skipped",
+    "green_log": "worktrees/fork-guard-evidence/expression-parser-green.log",
+    "green_log_sha256": "7fcb17d8efbc1704d5278834f33d87c94a835f82e853d594d438459980733681",
     "mutants": [
       {
-        "mutant": "caller",
+        "mutant": "casefold",
         "exit": 1,
-        "summary": "mutation controls: 53 passed, 4 failed, 0 skipped",
-        "sha256": "a23b218255cbe2176979804aa68639553201601542f19b9726113024c1f2781a"
+        "summary": "mutation controls: 84 passed, 10 failed, 0 skipped",
+        "sha256": "e8d37157e115ed91c45f469a2333f100315bd17173ba6b1dfce8ebd40aa684cc"
       },
       {
-        "mutant": "callee",
+        "mutant": "quoted-close",
         "exit": 1,
-        "summary": "mutation controls: 51 passed, 6 failed, 0 skipped",
-        "sha256": "d5dd30a0b6f00d01fe463f1ecdf75582348d06bdf3fffbc9ca33bd32b9d6c29b"
+        "summary": "mutation controls: 88 passed, 6 failed, 0 skipped",
+        "sha256": "eddbcc4d9803d911e1f598a44067038819bff4681906b689e2c30b581a15b953"
       },
       {
-        "mutant": "workflow-env",
+        "mutant": "escaped-quote",
         "exit": 1,
-        "summary": "mutation controls: 51 passed, 6 failed, 0 skipped",
-        "sha256": "d3eb0a9ddf26a596614560bb837d8af4ba24a504112aae37f5118b8e1a39be87"
+        "summary": "mutation controls: 92 passed, 2 failed, 0 skipped",
+        "sha256": "133dabb21f297f649998f79f44c79c7fb40961a4852e5b5243745eda16cd9e4e"
       },
       {
-        "mutant": "unsafe-event",
+        "mutant": "literal-mask",
         "exit": 1,
-        "summary": "mutation controls: 49 passed, 8 failed, 0 skipped",
-        "sha256": "365959da41e62e01dd3505bdec1623d47772899b1c911a11d0ec633f96a11130"
+        "summary": "mutation controls: 89 passed, 5 failed, 0 skipped",
+        "sha256": "8272ca9c8f018816b5b74c0ae16fd1aa864a12ae3771462fc759c98948ed981c"
       },
       {
-        "mutant": "review-event-set",
+        "mutant": "early-return",
         "exit": 1,
-        "summary": "mutation controls: 49 passed, 8 failed, 0 skipped",
-        "sha256": "d3c8cd17ef5946123db7437ce56656df23b7fa913b76dde6414f0a21ae9d5939"
+        "summary": "mutation controls: 92 passed, 2 failed, 0 skipped",
+        "sha256": "8a95b97cacd19298f8f890335f033245a90f50a62206bf6114761ee7318fbfcb"
+      },
+      {
+        "mutant": "scalar-boundary",
+        "exit": 1,
+        "summary": "mutation controls: 90 passed, 4 failed, 0 skipped",
+        "sha256": "ffce47a29e79ff50d88b3fd1e469d88618ee1d2ddabcd50bdb525915f1b18556"
+      },
+      {
+        "mutant": "later-expression",
+        "exit": 1,
+        "summary": "mutation controls: 90 passed, 4 failed, 0 skipped",
+        "sha256": "7fb5f1452686e9e8f11edd6d3d69c6b84ab5e4714d39c059db7cbba3ce237b7b"
+      },
+      {
+        "mutant": "fail-closed",
+        "exit": 1,
+        "summary": "mutation controls: 80 passed, 14 failed, 0 skipped",
+        "sha256": "41b7ec3ba1f46038e7ffadbebd5df11c38e7fcca9a7413326f4f6807066073b5"
+      },
+      {
+        "mutant": "baseline57",
+        "exit": 1,
+        "summary": "mutation controls: 63 passed, 31 failed, 0 skipped",
+        "sha256": "93a68a1e5f055d94ebc6cc6f3c89d8e7795d915f8ffa27267e08af3d3e01bb31"
       }
     ],
-    "pending": "Full-suite Docker/WSL and Rust runtime stages not repeated during active storage/runner repair; required remote CI remains authoritative; no gate/skip changes",
-    "artifact_storage": "Producer logs, mutants, prompts and raw prior reviews are local-only ignored worktrees/fork-guard-evidence artifacts. Inline summaries and SHA256 bindings are committed; ignored artifacts remain preserved in this checkout.",
-    "log_acquisition_note": "Source green, integrated green, old-helper replay and mutant controls were separate author tool invocations. Deterministic output is byte-identical for matching cases; a matching log hash authenticates content and alone does not prove separate or independent execution."
+    "pending": "Fresh independent review and required remote CI for new source pending; previous7f CI success does not qualify lexer repair. No local Docker/Rust/full-suite execution or skip/gate changes.",
+    "artifact_storage": "Producer logs/mutants and raw reviews are local-only ignored worktrees/fork-guard-evidence artifacts, retained with original publication1553 and completed7f CI logs. Inline summaries/hashes are committed; no ignored-data migration or cleanup occurred."
   },
   "rows": [
     {
@@ -80,18 +103,18 @@
         "reusehostedok",
         "reusepushok"
       ],
-      "selector_sha256": "86419253b297813468a36cb30337590bbea2a98a36504b86baef409acd61c081",
-      "reviewer": "codex-p1gen9-hook-artifact-review",
-      "reviewer_type": "independent-agent",
-      "reviewed_utc": "2026-11-14T08:03:25.5492163Z",
-      "disposition": "keep",
+      "selector_sha256": "a8cf03f784f662785f87cac775b8e7c2298157a52ea1c86ad5923bd9c19c9057",
+      "reviewer": null,
+      "reviewer_type": null,
+      "reviewed_utc": null,
+      "disposition": "unreviewed",
       "protects": "Privileged reusable descendants cannot bypass PR guards through missing runs-on or workflow_call trigger",
-      "detects": "Caller exemption fails4 assertions; workflow_call exemption fails6; ignoring reusable unsafe-event calls fails8 (issue_comment/workflow_run plus both review events)",
+      "detects": "Retained caller/callee/unsafe-event fixtures reject bypassed job guards; earlier57-case guard mutation counts are historical, not new94-case execution claims",
       "needs": "Local Python/PyYAML only; actual checker consumes fixture YAML as data",
       "breadcrumb": "tests/37-workflow-fork-guard.t.sh::wfg_check",
-      "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
-      "review_scope": "Independent static full checker/control review plus final bounded main-integration/metadata verification; actual helper/selector/source/run hashes recomputed, targeted mutant diffs and producer log hashes verified; no independent execution",
-      "review_rationale": "Relevant persistent-runner boundary; caller, callee and reusable unsafe-event helper mutants fail4,6,8 assertions respectively. Guarded callers/callees and hosted/push controls retain acceptance. No old control weakened."
+      "reviewed_source": null,
+      "review_scope": "Pending fresh independent review of lexical-parser repair; all prior approvals retained as historical snapshots",
+      "review_rationale": null
     },
     {
       "selector": "t_case_workflow_fork_guard",
@@ -101,18 +124,18 @@
         "workflowenvok",
         "workflowenvplain"
       ],
-      "selector_sha256": "86419253b297813468a36cb30337590bbea2a98a36504b86baef409acd61c081",
-      "reviewer": "codex-p1gen9-hook-artifact-review",
-      "reviewer_type": "independent-agent",
-      "reviewed_utc": "2026-11-14T08:03:25.5566019Z",
-      "disposition": "keep",
+      "selector_sha256": "a8cf03f784f662785f87cac775b8e7c2298157a52ea1c86ad5923bd9c19c9057",
+      "reviewer": null,
+      "reviewer_type": null,
+      "reviewed_utc": null,
+      "disposition": "unreviewed",
       "protects": "Hosted jobs inheriting workflow env secret expressions require a job guard",
-      "detects": "Ignoring workflow env secrets fails6 assertions; guarded and plain-env positives retain acceptance",
+      "detects": "Retained workflow-env fixtures still guard actual secret expressions; new lexical controls also cover case-insensitive and quote-aware reads without JSON field joining",
       "needs": "Local Python/PyYAML only",
       "breadcrumb": "tests/37-workflow-fork-guard.t.sh::secret_expressions",
-      "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
-      "review_scope": "Independent static full checker/control review plus final bounded main-integration/metadata verification; actual helper/selector/source/run hashes recomputed, targeted mutant diffs and producer log hashes verified; no independent execution",
-      "review_rationale": "Workflow env secrets still require PR/workflow_call guards. Actual env helper mutant fails all6 refusal/diagnostic assertions; guarded and plain-env controls retain acceptance."
+      "reviewed_source": null,
+      "review_scope": "Pending fresh independent review of lexical-parser repair; all prior approvals retained as historical snapshots",
+      "review_rationale": null
     },
     {
       "selector": "t_case_workflow_fork_guard",
@@ -122,27 +145,86 @@
         "reviewreuse[pull_request_review,pull_request_review_comment]",
         "reviewhosted[pull_request_review,pull_request_review_comment]"
       ],
-      "selector_sha256": "86419253b297813468a36cb30337590bbea2a98a36504b86baef409acd61c081",
-      "reviewer": "codex-p1gen9-hook-artifact-review",
-      "reviewer_type": "independent-agent",
-      "reviewed_utc": "2026-11-14T08:03:25.5566780Z",
-      "disposition": "keep",
-      "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
+      "selector_sha256": "a8cf03f784f662785f87cac775b8e7c2298157a52ea1c86ad5923bd9c19c9057",
+      "reviewer": null,
+      "reviewer_type": null,
+      "reviewed_utc": null,
+      "disposition": "unreviewed",
+      "reviewed_source": null,
       "protects": "Review events delivered to base repositories cannot schedule fork PR merge code on self-hosted jobs or reusable descendants",
-      "detects": "Restoring the old two-event unsafe set falsely accepts four already-guarded privileged fixtures, failing8 assertions; ordinary hosted review jobs still pass",
+      "detects": "Retained four already-guarded review-event refusals and two ordinary hosted positives preserve event policy; prior event-set mutation evidence remains historical",
       "needs": "Local Python/PyYAML only; no event dispatch",
       "breadcrumb": "tests/37-workflow-fork-guard.t.sh::UNSAFE_PRIVILEGED_EVENTS",
-      "review_scope": "Independent static full checker/control review plus final bounded main-integration/metadata verification; actual helper/selector/source/run hashes recomputed, targeted mutant diffs and producer log hashes verified; no independent execution",
-      "review_rationale": "Both fork review events use PR merge refs while the PR-only guard is true. Four already-guarded direct/reusable cases are rejected before the PR filter; restoring the two-event set fails8 assertions, and ordinary hosted review jobs pass."
+      "review_scope": "Pending fresh independent review of lexical-parser repair; all prior approvals retained as historical snapshots",
+      "review_rationale": null
+    },
+    {
+      "selector": "t_case_workflow_fork_guard",
+      "group": "Expression context and literal boundary",
+      "fixture_ids": [
+        "upper-dot",
+        "mixed-dot",
+        "upper-bracket",
+        "mixed-tojson",
+        "quoted-closer",
+        "escaped-quote-closer",
+        "multiple-expressions",
+        "secret-before-literal",
+        "literal-lower",
+        "literal-upper",
+        "quoted-nonsecret-closer",
+        "escaped-literal-context",
+        "quoted-multiple",
+        "literal-template-marker",
+        "plaintext-closer"
+      ],
+      "selector_sha256": "a8cf03f784f662785f87cac775b8e7c2298157a52ea1c86ad5923bd9c19c9057",
+      "reviewer": null,
+      "reviewer_type": null,
+      "reviewed_utc": null,
+      "disposition": "unreviewed",
+      "reviewed_source": null,
+      "protects": "Real case-insensitive secret-context reads remain job-guarded across quoted delimiters/escapes and multiple expressions",
+      "detects": "Actual helper casefold/quoted-close/escaped-quote/literal-mask/later-expression regressions fail10/6/2/5/4 assertions respectively",
+      "needs": "Local Python/PyYAML only; expressions parsed as data, never evaluated",
+      "breadcrumb": "tests/37-workflow-fork-guard.t.sh::expression_code/secret_expressions",
+      "review_scope": "Pending fresh independent review",
+      "review_rationale": null,
+      "behavior_change": "Deliberately permits constant quoted literal words such as secrets and literal template markers, which read no context; prior false positives are corrected while bare-token conservatism remains"
+    },
+    {
+      "selector": "t_case_workflow_fork_guard",
+      "group": "Lexically invalid templates fail closed per scalar",
+      "fixture_ids": [
+        "missing-close",
+        "unclosed-literal",
+        "double-quoted-literal",
+        "secret-then-incomplete",
+        "cross-scalar-close",
+        "nested-opener",
+        "empty-expression"
+      ],
+      "selector_sha256": "a8cf03f784f662785f87cac775b8e7c2298157a52ea1c86ad5923bd9c19c9057",
+      "reviewer": null,
+      "reviewer_type": null,
+      "reviewed_utc": null,
+      "disposition": "unreviewed",
+      "reviewed_source": null,
+      "protects": "Malformed lexical templates cannot be hidden by an existing guard, an earlier secret match or a different scalar closing delimiter",
+      "detects": "Actual helper early-return/scalar-boundary/fail-closed regressions fail2/4/14 assertions respectively; all seven fixtures carry a valid job guard",
+      "needs": "Local Python/PyYAML only",
+      "breadcrumb": "tests/37-workflow-fork-guard.t.sh::scalar_strings/expression_code and pre-guard scan",
+      "review_scope": "Pending fresh independent review",
+      "review_rationale": null
     }
   ],
   "documentation": "docs/QA_TOOLING.md#workflow-fork-guards-category-37",
   "limitations": [
-    "All3 current groups independently KEEP at the exact integrated source a78; reviews are static and producer execution is separately attributed",
-    "All prior47 control sources preserved byte-for-byte; code/helper/selector hashes unchanged through integration and receipt updates",
-    "Conservative reusable-call classification; no transitive workflow downloader or env override dataflow evaluation",
-    "Full-suite runtime checks and required remote CI remain pending; no gate or skip changes",
-    "No deployment, runner isolation, HIL or universal transport/firewall qualification"
+    "New lexical repair currentlyUNREVIEWED; old approvals/greenCI bind prior57-case source only",
+    "All published57 control sources retained byte-for-byte; producer execution separately attributed",
+    "Conservative lexical token detection still treats inputs.secrets as sensitive; quoted literal words no longer cause false positives",
+    "No full GitHub grammar or semantic context resolution; no expression evaluation, transitive downloader, YAML-key casefold or env override dataflow",
+    "Fresh exact-head required CI remains pending; no check/skip waiver, Docker/Rust/local full-suite run, hardware/runner deployment or cleanup"
   ],
   "history": [
     {
@@ -505,37 +587,215 @@
         "scope": "Actual integrated checker/harness targeted execution only. Inherited main runtime changes not requalified; no Docker/Rust/full-suite execution."
       },
       "scope": "Historical pending-review snapshot after normal main integration; current independent dispositions recorded separately"
+    },
+    {
+      "record_commit": "7f9e4b9667d5aed70956e766f4d9c48ef20c21a2",
+      "record_sha256": "e48fb65b84ab263572befc79910cb416502c3bf0bf2c7d5c4a0f25fcd042c417",
+      "source_commit": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
+      "source_hashes": {
+        "tests/37-workflow-fork-guard.t.sh": "27ad8b82d807ac1298e39c811e4432b193f5060897a9abda4e59caf2aa7cdfac",
+        "tests/run.sh": "5d196ea7159c9af4b9a5d07a25f3c3be7fc5e4f1859fca46bb0a02e73fdc77b7"
+      },
+      "target": {
+        "name": "wfg_check",
+        "source": "tests/37-workflow-fork-guard.t.sh",
+        "sha256": "2bdf6dca92b232091325bc61df0a8eab7babaab101ea872dcb827a7d1245ff18",
+        "scope": "Static local workflow checker only; no dispatch, network workflow resolution or deployed runner qualification"
+      },
+      "rows": [
+        {
+          "selector": "t_case_workflow_fork_guard",
+          "group": "Reusable caller/callee boundary",
+          "fixture_ids": [
+            "reusecaller",
+            "reusecallee",
+            "reusecalleesecret",
+            "reusenested",
+            "reuseevent[issue_comment,workflow_run]",
+            "reuseok",
+            "reusehostedok",
+            "reusepushok"
+          ],
+          "selector_sha256": "86419253b297813468a36cb30337590bbea2a98a36504b86baef409acd61c081",
+          "reviewer": "codex-p1gen9-hook-artifact-review",
+          "reviewer_type": "independent-agent",
+          "reviewed_utc": "2026-11-14T08:03:25.5492163Z",
+          "disposition": "keep",
+          "protects": "Privileged reusable descendants cannot bypass PR guards through missing runs-on or workflow_call trigger",
+          "detects": "Caller exemption fails4 assertions; workflow_call exemption fails6; ignoring reusable unsafe-event calls fails8 (issue_comment/workflow_run plus both review events)",
+          "needs": "Local Python/PyYAML only; actual checker consumes fixture YAML as data",
+          "breadcrumb": "tests/37-workflow-fork-guard.t.sh::wfg_check",
+          "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
+          "review_scope": "Independent static full checker/control review plus final bounded main-integration/metadata verification; actual helper/selector/source/run hashes recomputed, targeted mutant diffs and producer log hashes verified; no independent execution",
+          "review_rationale": "Relevant persistent-runner boundary; caller, callee and reusable unsafe-event helper mutants fail4,6,8 assertions respectively. Guarded callers/callees and hosted/push controls retain acceptance. No old control weakened."
+        },
+        {
+          "selector": "t_case_workflow_fork_guard",
+          "group": "Workflow environment secret boundary",
+          "fixture_ids": [
+            "workflowenv[dot,index,toJSON]",
+            "workflowenvok",
+            "workflowenvplain"
+          ],
+          "selector_sha256": "86419253b297813468a36cb30337590bbea2a98a36504b86baef409acd61c081",
+          "reviewer": "codex-p1gen9-hook-artifact-review",
+          "reviewer_type": "independent-agent",
+          "reviewed_utc": "2026-11-14T08:03:25.5566019Z",
+          "disposition": "keep",
+          "protects": "Hosted jobs inheriting workflow env secret expressions require a job guard",
+          "detects": "Ignoring workflow env secrets fails6 assertions; guarded and plain-env positives retain acceptance",
+          "needs": "Local Python/PyYAML only",
+          "breadcrumb": "tests/37-workflow-fork-guard.t.sh::secret_expressions",
+          "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
+          "review_scope": "Independent static full checker/control review plus final bounded main-integration/metadata verification; actual helper/selector/source/run hashes recomputed, targeted mutant diffs and producer log hashes verified; no independent execution",
+          "review_rationale": "Workflow env secrets still require PR/workflow_call guards. Actual env helper mutant fails all6 refusal/diagnostic assertions; guarded and plain-env controls retain acceptance."
+        },
+        {
+          "selector": "t_case_workflow_fork_guard",
+          "group": "PR review-event privileged-job boundary",
+          "fixture_ids": [
+            "reviewdirect[pull_request_review,pull_request_review_comment]",
+            "reviewreuse[pull_request_review,pull_request_review_comment]",
+            "reviewhosted[pull_request_review,pull_request_review_comment]"
+          ],
+          "selector_sha256": "86419253b297813468a36cb30337590bbea2a98a36504b86baef409acd61c081",
+          "reviewer": "codex-p1gen9-hook-artifact-review",
+          "reviewer_type": "independent-agent",
+          "reviewed_utc": "2026-11-14T08:03:25.556678Z",
+          "disposition": "keep",
+          "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
+          "protects": "Review events delivered to base repositories cannot schedule fork PR merge code on self-hosted jobs or reusable descendants",
+          "detects": "Restoring the old two-event unsafe set falsely accepts four already-guarded privileged fixtures, failing8 assertions; ordinary hosted review jobs still pass",
+          "needs": "Local Python/PyYAML only; no event dispatch",
+          "breadcrumb": "tests/37-workflow-fork-guard.t.sh::UNSAFE_PRIVILEGED_EVENTS",
+          "review_scope": "Independent static full checker/control review plus final bounded main-integration/metadata verification; actual helper/selector/source/run hashes recomputed, targeted mutant diffs and producer log hashes verified; no independent execution",
+          "review_rationale": "Both fork review events use PR merge refs while the PR-only guard is true. Four already-guarded direct/reusable cases are rejected before the PR filter; restoring the two-event set fails8 assertions, and ordinary hosted review jobs pass."
+        }
+      ],
+      "author_evidence": {
+        "platform": "Windows dtm-p1gen9 / Git Bash / isolated native CPython3.14.7 + PyYAML6.0.3",
+        "command": "sh tests/run.sh workflow_fork_guard",
+        "baseline": "Prior47 assertion sources preserved byte-for-byte; old24 included",
+        "red": "49 passed, 8 failed, 0 skipped; all four new unsafe review-event fixtures falsely accepted by47-case checker",
+        "red_log": "worktrees/fork-guard-evidence/review-events-red.log",
+        "red_log_sha256": "6c99095d48c1c1947f489fd0c2d29493ea57bad8f8e4ae04c107b4e5601b0bf5",
+        "baseline_replay": {
+          "source": "Actual d4 checker/helper prefix plus current unchanged fixture-helper and control suffix",
+          "artifact": "worktrees/fork-guard-evidence/review-events-baseline47.t.sh",
+          "artifact_sha256": "808060a1eabb2364478e7ad32e27f44ad4eb5713d23c445e8811c2a7594fae2f",
+          "log": "worktrees/fork-guard-evidence/review-events-baseline47.log",
+          "log_sha256": "d3c8cd17ef5946123db7437ce56656df23b7fa913b76dde6414f0a21ae9d5939",
+          "result": "49 passed, 8 failed, 0 skipped, exit1"
+        },
+        "green": "57 passed, 0 failed, 0 skipped",
+        "green_log": "worktrees/fork-guard-evidence/review-events-green.log",
+        "green_log_sha256": "8947aa62589a22fcaf024363083a1c78bddc67add36db461de3a55bfc32763e2",
+        "mutants": [
+          {
+            "mutant": "caller",
+            "exit": 1,
+            "summary": "mutation controls: 53 passed, 4 failed, 0 skipped",
+            "sha256": "a23b218255cbe2176979804aa68639553201601542f19b9726113024c1f2781a"
+          },
+          {
+            "mutant": "callee",
+            "exit": 1,
+            "summary": "mutation controls: 51 passed, 6 failed, 0 skipped",
+            "sha256": "d5dd30a0b6f00d01fe463f1ecdf75582348d06bdf3fffbc9ca33bd32b9d6c29b"
+          },
+          {
+            "mutant": "workflow-env",
+            "exit": 1,
+            "summary": "mutation controls: 51 passed, 6 failed, 0 skipped",
+            "sha256": "d3eb0a9ddf26a596614560bb837d8af4ba24a504112aae37f5118b8e1a39be87"
+          },
+          {
+            "mutant": "unsafe-event",
+            "exit": 1,
+            "summary": "mutation controls: 49 passed, 8 failed, 0 skipped",
+            "sha256": "365959da41e62e01dd3505bdec1623d47772899b1c911a11d0ec633f96a11130"
+          },
+          {
+            "mutant": "review-event-set",
+            "exit": 1,
+            "summary": "mutation controls: 49 passed, 8 failed, 0 skipped",
+            "sha256": "d3c8cd17ef5946123db7437ce56656df23b7fa913b76dde6414f0a21ae9d5939"
+          }
+        ],
+        "pending": "Full-suite Docker/WSL and Rust runtime stages not repeated during active storage/runner repair; required remote CI remains authoritative; no gate/skip changes",
+        "artifact_storage": "Producer logs, mutants, prompts and raw prior reviews are local-only ignored worktrees/fork-guard-evidence artifacts. Inline summaries and SHA256 bindings are committed; ignored artifacts remain preserved in this checkout.",
+        "log_acquisition_note": "Source green, integrated green, old-helper replay and mutant controls were separate author tool invocations. Deterministic output is byte-identical for matching cases; a matching log hash authenticates content and alone does not prove separate or independent execution."
+      },
+      "main_integration": {
+        "source_commit": "30af75695ec3dfdc62381508dd07d3b548268227",
+        "owned_main": "ac8039499d69b256214f78b345b5bf26e15fd953",
+        "merge_commit": "d0afe08daa3f38be61f59cf8ecdf377536d34dc7",
+        "method": "Normal signed merge of explicitly fetched canonical owned main; no rebase, force or conflicts",
+        "source_file_sha256": "27ad8b82d807ac1298e39c811e4432b193f5060897a9abda4e59caf2aa7cdfac",
+        "unchanged_policy_inputs": [
+          ".github/workflows/qa.yml",
+          "tests/lib.sh",
+          "tools/posix-tool-path.sh"
+        ],
+        "harness_delta": "Main contributes four category registrations39-42; existing category37 selection preserved",
+        "bounded_blobs": [
+          "72799f0e399645a7e5dccfdff4459988590b20df",
+          "f3b250359055ecc03fd93baa60082c8b0132b2b6"
+        ],
+        "blob_receipt": "worktrees/fork-guard-evidence/main-integration-blobs/receipt.json",
+        "integrated_green": "57 passed, 0 failed, 0 skipped",
+        "log": "worktrees/fork-guard-evidence/integrated-green.log",
+        "log_sha256": "8947aa62589a22fcaf024363083a1c78bddc67add36db461de3a55bfc32763e2",
+        "scope": "Actual integrated checker/harness targeted execution only. Inherited main runtime changes not requalified; no Docker/Rust/full-suite execution."
+      },
+      "independent_source_review": {
+        "reviewer": "codex-p1gen9-hook-artifact-review",
+        "reviewer_type": "independent-agent",
+        "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
+        "verdict": "APPROVE",
+        "groups": "All three current groups KEEP",
+        "scope": "Actual full checker/controls, original47-prefix equality, full targeted mutant diffs/log bindings and bounded integrated netPR/metadata history reviewed statically. No supplied code or tests executed."
+      },
+      "outside_family_review": {
+        "reviewer": "Claude Code",
+        "reviewer_type": "independent-agent",
+        "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
+        "verdict": "APPROVE",
+        "groups": {
+          "Reusable caller/callee boundary": "keep",
+          "Workflow environment secret boundary": "keep",
+          "PR review-event privileged-job boundary": "keep"
+        },
+        "artifact": "worktrees/fork-guard-evidence/claude-integrated-review.json",
+        "artifact_sha256": "0bce2ca6d10b38e761c793abfa961eaccc85f6a43dbcaf1fabef7e7b0ce17727",
+        "session_id": "1a8716da-c420-4842-a97a-96cf2a3f513f",
+        "reviewed_utc": "2026-11-14T08:03:25.5637066Z",
+        "tools": "Read, Glob, Grep only; strict empty MCP; fresh session after unavailable prior conversation",
+        "scope": "Fresh actual read of review-event delta, full checker/control context, final net4path PR diff, current metadata and producer logs/mutant lines. All3 groups KEEP; no blocking findings.",
+        "limits": [
+          "No code/tests/commands, independent hashing, Git object/commit/signature or remote CI verification; GitHub event semantics supplied by coordinator primary-source checks",
+          "Mutation spot checks were at changed lines, not independent byte-for-byte mutation diffs; independent Codex review supplies that separate evidence",
+          "Producer logs are not independent executions; identical deterministic log hashes alone do not establish separate acquisition",
+          "Inherited main runtime changes and full Docker/Rust/required CI remain outside qualification"
+        ],
+        "nonblocking_notes": [
+          "Current reusable unsafe-event detects count corrected from4 to8; historical47-case source count4 retained unchanged",
+          "Unlisted events and secret-reading hosted jobs on unsafe events remain outside the declared self-hosted/reusable event contract",
+          "No over-rejection or guarded-job-exemption mutant executed; direct fixture/source causality and positive controls reviewed statically"
+        ]
+      },
+      "limitations": [
+        "All3 current groups independently KEEP at the exact integrated source a78; reviews are static and producer execution is separately attributed",
+        "All prior47 control sources preserved byte-for-byte; code/helper/selector hashes unchanged through integration and receipt updates",
+        "Conservative reusable-call classification; no transitive workflow downloader or env override dataflow evaluation",
+        "Full-suite runtime checks and required remote CI remain pending; no gate or skip changes",
+        "No deployment, runner isolation, HIL or universal transport/firewall qualification"
+      ],
+      "scope": "Historical57-case source approvals preceded actual autopilot6874392556 REQUEST_CHANGES; no approval of the later lexer repair"
     }
   ],
   "root_review": null,
-  "outside_family_review": {
-    "reviewer": "Claude Code",
-    "reviewer_type": "independent-agent",
-    "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
-    "verdict": "APPROVE",
-    "groups": {
-      "Reusable caller/callee boundary": "keep",
-      "Workflow environment secret boundary": "keep",
-      "PR review-event privileged-job boundary": "keep"
-    },
-    "artifact": "worktrees/fork-guard-evidence/claude-integrated-review.json",
-    "artifact_sha256": "0bce2ca6d10b38e761c793abfa961eaccc85f6a43dbcaf1fabef7e7b0ce17727",
-    "session_id": "1a8716da-c420-4842-a97a-96cf2a3f513f",
-    "reviewed_utc": "2026-11-14T08:03:25.5637066Z",
-    "tools": "Read, Glob, Grep only; strict empty MCP; fresh session after unavailable prior conversation",
-    "scope": "Fresh actual read of review-event delta, full checker/control context, final net4path PR diff, current metadata and producer logs/mutant lines. All3 groups KEEP; no blocking findings.",
-    "limits": [
-      "No code/tests/commands, independent hashing, Git object/commit/signature or remote CI verification; GitHub event semantics supplied by coordinator primary-source checks",
-      "Mutation spot checks were at changed lines, not independent byte-for-byte mutation diffs; independent Codex review supplies that separate evidence",
-      "Producer logs are not independent executions; identical deterministic log hashes alone do not establish separate acquisition",
-      "Inherited main runtime changes and full Docker/Rust/required CI remain outside qualification"
-    ],
-    "nonblocking_notes": [
-      "Current reusable unsafe-event detects count corrected from4 to8; historical47-case source count4 retained unchanged",
-      "Unlisted events and secret-reading hosted jobs on unsafe events remain outside the declared self-hosted/reusable event contract",
-      "No over-rejection or guarded-job-exemption mutant executed; direct fixture/source causality and positive controls reviewed statically"
-    ]
-  },
+  "outside_family_review": null,
   "corrections": [
     {
       "prior_record_commit": "8990c75b52b9fcd3cadaafab5133a4ae2078e4a9",
@@ -568,12 +828,25 @@
     "log_sha256": "8947aa62589a22fcaf024363083a1c78bddc67add36db461de3a55bfc32763e2",
     "scope": "Actual integrated checker/harness targeted execution only. Inherited main runtime changes not requalified; no Docker/Rust/full-suite execution."
   },
-  "independent_source_review": {
-    "reviewer": "codex-p1gen9-hook-artifact-review",
-    "reviewer_type": "independent-agent",
-    "reviewed_source": "a78e68c7c51b510a17a7c0908b59dbea588d9766",
-    "verdict": "APPROVE",
-    "groups": "All three current groups KEEP",
-    "scope": "Actual full checker/controls, original47-prefix equality, full targeted mutant diffs/log bindings and bounded integrated netPR/metadata history reviewed statically. No supplied code or tests executed."
+  "independent_source_review": null,
+  "autopilot_feedback": {
+    "source": "7f9e4b9667d5aed70956e766f4d9c48ef20c21a2",
+    "verdict": "REQUEST_CHANGES",
+    "comment": "https://github.com/David-Martel/git-guard/pull/105#issuecomment-6874392556",
+    "findings": [
+      "Case-sensitive context-token matching falsely accepts SECRETS.SOME_TOKEN",
+      "Non-greedy delimiter regex truncates at quoted }} before a real secret read"
+    ],
+    "disposition": "New fail-first controls and bounded actual-scalar lexical repair; current groups remain unreviewed until fresh exact-source review"
+  },
+  "expression_spec": {
+    "literals": "https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#literals",
+    "context_parser": "https://github.com/actions/languageservices/blob/4043eda158e16579cc5fb1b0b07a4bce2a76f0b5/expressions/src/parser.ts#L239",
+    "context_parser_blob": "965af74fb3a652f815f32216169c541c200112fd",
+    "verified_lines": [
+      40,
+      242
+    ],
+    "scope": "Case-insensitive context identifiers only; no structural YAML key casefold. Single-quote literals/doubled apostrophes; quoted delimiters ignored. Lexical validation only, no full grammar, semantic resolver, network or evaluation."
   }
 }

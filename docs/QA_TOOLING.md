@@ -1944,6 +1944,23 @@ the callee. Ordinary hosted jobs without secret expressions remain unguarded;
 push-only workflows retain their existing behavior. See GitHub's
 [workflow environment reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#env).
 
+Secret detection scans actual scalar strings recursively, preserving their
+boundaries rather than joining serialized YAML fields. A `secrets` token outside
+expression literals is matched case-insensitively, following the official
+[context-name parser](https://github.com/actions/languageservices/blob/4043eda158e16579cc5fb1b0b07a4bce2a76f0b5/expressions/src/parser.ts#L239).
+Single-quoted literals and doubled apostrophe escapes follow GitHub's
+[expression literal syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#literals);
+`}}` inside a literal does not end the expression. Quoted words such as
+`${{ 'secrets' }}` are deliberately accepted because they read no context.
+
+In the scanned PR/workflow-call jobs, missing delimiters, unterminated literals,
+double-quoted literals, nested openers outside literals and empty expressions
+are policy errors, including in already-guarded jobs or after an earlier secret
+read. All scalar strings and expressions are consumed before deciding guards.
+This bounded lexical check does not evaluate expressions or validate their full
+grammar. Other bare-token false positives, such as `${{ inputs.secrets }}`, remain
+conservative; structural YAML keys retain their existing case-sensitive handling.
+
 The [hash-bound review register](WORKFLOW_FORK_GUARD_REVIEW.json) records the new
 selector groups, failing-first evidence and mutation results. This static test
 does not qualify a deployed runner, dispatch workflows or replace required CI.
