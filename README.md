@@ -128,7 +128,10 @@ untracked files, has no hidden index entries, no operation in progress, no
 `index.lock`, and no other process working inside it. Everything else is a
 logged skip, and nothing is ever deleted. A host keeps `sync` off a checkout
 it must not write to with a line in `~/.config/git-guard/sync.exclude` (or a
-global `hygiene.syncExclude`), without touching that repository. Each pass writes every repository's
+global `hygiene.syncExclude`), without touching that repository. Removal is
+opt-in: with a global `hygiene.syncRemove=true`, sync also removes what
+`drain --unattended` proves integrated and `~/.config/git-guard/custody.grants`
+grants, unless an agent-bus claim names the item. Each pass writes every repository's
 `drain --dry-run` to `~/.local/state/git-guard/sync-report.json`.
 `git-guard sync install-timer` runs it every 30 minutes under systemd
 `--user`; `git config hygiene.sync false` keeps a repository out. See
@@ -239,7 +242,7 @@ git-guard install    materialize + install a versioned release (delegates to ins
                       default --to v$(cat VERSION); accepts --to/--store/--rules-dir/--dev-symlink)
 git-guard update      --to <tag>  re-point the installed `current` release at another tag (atomic)
 git-guard uninstall   remove hooks (delegates to install.sh --uninstall)
-git-guard hygiene     backlog limits: report | check | drain [--dry-run|--apply] | defaults
+git-guard hygiene     backlog limits: report | check | drain [--dry-run|--apply] [--unattended] | defaults
 git-guard sync        fast-forward clean checkouts under hygiene.syncRoots + drain report:
                       [--dry-run] [--no-drain] | install-timer | uninstall-timer
 ```

@@ -723,6 +723,9 @@ when the repo is over a limit, and never fails.
 | `hygiene.preserveDir` | `${XDG_STATE_HOME:-~/.local/state}/git-guard/preserve` | where `drain` writes bundles |
 | `hygiene.sync` | unset (on) | `false` in a repository keeps `sync` out of it; `false` globally turns `sync` off everywhere that does not set it back |
 | `hygiene.syncExclude` | unset | multi-valued, read from the global and system config only, never a repository's own; a path or glob (`~` expanded) that `sync` neither fetches nor moves, nor anything below it. Lines of `${XDG_CONFIG_HOME:-~/.config}/git-guard/sync.exclude` (`#` comments allowed) count the same. Use it for a repository this host must not write to, such as one another org owns |
+| `hygiene.syncRemove` | unset (off) | `true` in the global or system config makes `sync` run `drain --apply --unattended` in each repository instead of the dry run; a repository's own `false` opts it out, and its own `true` alone does nothing. See "Auto-remove" below |
+| `hygiene.custodyBus` | unset (on) | global only; `false` lets `--unattended` grant custody without asking agent-bus for claims |
+| `hygiene.custodyBusCommand` | `agent-bus` | global only; the agent-bus CLI that `--unattended` asks for claims (a systemd timer's PATH is short, so give a full path) |
 | `hygiene.syncRoots` | `~/dev/repos`, `~/.claude/repos` | multi-valued (`git config --global --add`); `sync` takes each directory that has a `.git` directory, and each direct child that does |
 | `hygiene.syncFetchTimeout` | 60 | seconds allowed for each remote fetch in `sync` |
 | `hygiene.syncDrainTimeout` | 300 | seconds allowed for each repository's drain dry run in `sync` |
@@ -753,9 +756,10 @@ removes only what passes every check:
   move after the merge (LEARNED_RULES 48).
 
 Merge state is judged from your remote-tracking refs, so run
-`git fetch --prune` first; drain does not fetch. drain is not owner-aware:
-read the dry-run list and use `--apply` only when every item is yours or is
-covered by an explicit custody transfer.
+`git fetch --prune` first; drain does not fetch. Plain drain is not
+owner-aware: read the dry-run list and use `--apply` only when every item is
+yours or is covered by an explicit custody transfer. `--unattended` (below)
+adds the custody check.
 
 Before anything else, drain reads which branches the worktrees are using:
 each git dir's HEAD and its rebase and bisect state. If it cannot list or
@@ -863,6 +867,51 @@ under the timer), then a summary. `--dry-run` fetches and decides the same way
 but moves nothing (`would-ff`). `--no-drain` leaves the drain section empty. A
 lock in the state directory keeps two passes apart; a lock older than two
 hours is treated as a crashed run.
+
+**Auto-remove (opt-in, default off).** Owner direction (2026-10-31): sync may
+remove what drain already proves integrated, but never another lane's work
+without proof of custody. With `hygiene.syncRemove=true` set globally, each
+pass runs `drain --apply --unattended` in place of the dry run (`sync
+--dry-run` runs `drain --dry-run --unattended`, which shows the custody
+verdicts and removes nothing). `--unattended` is ordinary drain plus:
+
+- it refuses `--allow-ignored` outright. A tree holding ignored data (a venv,
+  build output) is always kept, because nothing is ever archived; only
+  bundles and manifests are written;
+- the age guard cannot be shortened below a day, whatever a repository sets
+  in `hygiene.drainMinAgeMinutes`. It covers stale branches too, by each
+  branch's own reflog (a branch with no reflog has an unknown age and is
+  kept);
+- every removal needs custody. First, a line of
+  `${XDG_CONFIG_HOME:-~/.config}/git-guard/custody.grants`,
+  `<repo path or glob><TAB><branch glob>` (`#` comments, `~` expanded),
+  must match the repository's physical path and the branch (`(detached)`
+  for a detached worktree). Then, unless `hygiene.custodyBus=false`, no
+  agent-bus claim of any status may name the branch or the path. The
+  listing is parsed with Python 3 and matched on decoded strings, so a JSON
+  escape (`\/`, `\u00e9`, `\"`) cannot hide a name. A missing CLI, a failed
+  or timed-out read (20 s), output that is not an object with a `claims`
+  list of objects, one that carries an `error`, or a host with no Python 3
+  keeps every item. The CLI is read once per repository per pass;
+- a worktree is removed only when no process has its current directory in
+  the tree, the same check sync makes before a fast-forward. It runs after
+  custody and again right before `git worktree remove`; no process is exempt,
+  not even the shell that started the run. Off Linux there is no `/proc` to
+  ask, so every worktree is kept (`cwd-check-unavailable`), as sync keeps
+  every checkout there. Processes of other users whose cwd cannot be read are
+  not visible to the check.
+
+Every drain, attended or not, also keeps a worktree whose index has
+`skip-worktree` or `assume-unchanged` entries: they hide modified bytes from
+`git status`, so its clean check cannot see them.
+
+Each drain line names the tip's `Agent:` trailer and the custody verdict.
+Each removal is recorded in the report's `removals` array and appended to
+`${XDG_STATE_HOME:-~/.local/state}/git-guard/sync-removals.jsonl`, with its
+repository, kind, path, branch, tip, how it was integrated, bundle, agent and
+custody reason. The report is replaced on every pass, but the manifest is
+only ever appended to. An ancestor of the base is removed without a bundle,
+as with plain drain, because the base still reaches it.
 
 **Timer.** `git-guard sync install-timer` writes
 `~/.config/systemd/user/git-guard-sync.{service,timer}`: a oneshot service at
