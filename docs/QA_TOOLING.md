@@ -1945,3 +1945,60 @@ Author execution, not an independent review: on Linux (GNU timeout 9.1, uv conta
 the unfixed head failed both tests exactly as CI did (`deadline` missing;
 `verify_native_containment: not found`), and the fixed head passed all 10 worker
 tests. On Windows the worker suite passed with its one POSIX-only skip.
+
+## Workflow fork guards (category 37)
+
+Run `sh tests/run.sh workflow_fork_guard` with Python and PyYAML to exercise the
+[actual checker and its boundary controls](../tests/37-workflow-fork-guard.t.sh).
+The existing [suite runner](../tests/run.sh) also selects this category in CI.
+Without PyYAML the category reports a skip; that is not executed qualification.
+
+For `pull_request` and `workflow_call`, every self-hosted job, secret-reading
+job and reusable-workflow call requires the exact job-level fork guard in the
+test header. Reusable calls are treated as potentially privileged even without
+`runs-on` or explicit secrets. Their descendants are not downloaded or resolved.
+Locally scanned called workflows are checked independently because their `github` context comes
+from the caller, as documented by [GitHub's reusable-workflow reference](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
+`issue_comment`, `workflow_run`, `pull_request_review` and
+`pull_request_review_comment` are refused when either self-hosted jobs or reusable
+calls are present; the PR-only guard cannot restrict those events. GitHub documents
+both [review events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review)
+and [review-comment events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review_comment)
+on PR merge refs, including fork events delivered to the base repository.
+
+Secret expressions in the workflow's own `env` count for each runnable job.
+This conservatively ignores job/step overrides rather than attempting expression
+or dataflow evaluation. The caller's workflow environment is not propagated to
+the callee. Ordinary hosted jobs without secret expressions remain unguarded;
+push-only workflows retain their existing behavior. See GitHub's
+[workflow environment reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#env).
+
+Secret detection scans actual scalar strings recursively, preserving their
+boundaries rather than joining serialized YAML fields. A `secrets` token outside
+expression literals is matched case-insensitively, following the official
+[context-name parser](https://github.com/actions/languageservices/blob/4043eda158e16579cc5fb1b0b07a4bce2a76f0b5/expressions/src/parser.ts#L242).
+Single-quoted literals and doubled apostrophe escapes follow GitHub's
+[expression literal syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#literals);
+`}}` inside a literal does not end the expression. Quoted words such as
+`${{ 'secrets' }}` are deliberately accepted because they read no context.
+
+In the scanned PR/workflow-call jobs, missing delimiters, unterminated literals,
+double-quoted literals, nested openers outside literals and empty expressions
+are policy errors, including in already-guarded jobs or after an earlier secret
+read. All scalar strings and expressions are consumed before deciding guards.
+This bounded lexical check does not evaluate expressions or validate their full
+grammar. Other bare-token false positives, such as `${{ inputs.secrets }}`, remain
+conservative; structural YAML keys retain their existing case-sensitive handling.
+
+Tuple members produced by PyYAML's `!!pairs`/`!!omap` constructors are inspected
+like lists. Uninspectable non-JSON values, including sets that have discarded
+mapping values, bytes and date objects, are refused; `None`, booleans, integers
+and floats contain no expression text. Whether GitHub accepts these tagged
+workflow forms is unverified. The fixtures protect this checker's inspection and
+fail-closed contract, not GitHub schema acceptance. A job-level `secrets:` key
+cannot bypass scanning of malformed inputs, and workflow-call environment
+templates receive the same validation before job guards.
+
+The [hash-bound review register](WORKFLOW_FORK_GUARD_REVIEW.json) records the new
+selector groups, failing-first evidence and mutation results. This static test
+does not qualify a deployed runner, dispatch workflows or replace required CI.

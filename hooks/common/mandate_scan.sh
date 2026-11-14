@@ -29,30 +29,67 @@ set -u
 
 mandate_dir="$(cd "$(dirname "$0")" && pwd -P)"
 
+# mandate_git ARGS...: git under the scanner's deadline. mandate_scan.py bounds every git
+# it runs by GIT_GUARD_MANDATE_TIMEOUT (default 300 s), and so does this prefilter: a
+# hung git used to stall pre-push indefinitely here (autopilot review of #119). A
+# timeout is a TOOL ERROR (exit 2, never a pass); any other status is git's own.
+mandate_git() {
+  # git's stderr is dropped here, not at the call site, so the TOOL ERROR below still shows.
+  timeout -k 2 "$mandate_limit" git "$@" 2>/dev/null
+  mandate_git_rc=$?
+  case "$mandate_git_rc" in
+    124|137)
+      printf '%s\n' "git-guard mandate TOOL ERROR [git]: git $1 did not finish within ${mandate_limit}s (GIT_GUARD_MANDATE_TIMEOUT)" >&2
+      exit 2 ;;
+  esac
+  return "$mandate_git_rc"
+}
+
+# mandate_limit_init: the deadline from GIT_GUARD_MANDATE_TIMEOUT (default 300), a
+# positive number of seconds as mandate_scan.py requires, and a timeout(1) that accepts
+# -k to enforce it. Either missing is a TOOL ERROR: git never runs unbounded.
+mandate_limit_init() {
+  mandate_limit="${GIT_GUARD_MANDATE_TIMEOUT:-300}"
+  case "$mandate_limit" in
+    ''|.|*[!0-9.]*|*.*.*) mandate_limit_bad=1 ;;
+    *) mandate_limit_bad=0
+       awk -v t="$mandate_limit" 'BEGIN { exit !(t + 0 > 0) }' || mandate_limit_bad=1 ;;
+  esac
+  if [ "$mandate_limit_bad" = 1 ]; then
+    printf '%s\n' "git-guard mandate TOOL ERROR [config]: GIT_GUARD_MANDATE_TIMEOUT='$mandate_limit' must be a positive number of seconds" >&2
+    exit 2
+  fi
+  if ! timeout -k 1 5 true >/dev/null 2>&1; then
+    printf '%s\n' "git-guard mandate TOOL ERROR [timeout]: timeout(1) with -k is required to bound git by GIT_GUARD_MANDATE_TIMEOUT" >&2
+    exit 2
+  fi
+}
+
 # mandate_pushed_baselines: read a pre-push ref list on stdin and print every pushed
 # commit that carries the debt register; exit 2 when git cannot list them. The same
 # selection as mandate_scan.py pushed_baseline_shas / new_register_commits: tags and
 # deletions are skipped; a known remote tip bounds the walk, otherwise everything no
 # remote has; the pushed tip itself is always checked.
 mandate_pushed_baselines() {
+  mandate_limit_init
   mandate_zero=0000000000000000000000000000000000000000
   while read -r mandate_lref mandate_lsha _mandate_rref mandate_rsha mandate_extra; do
     [ -n "${mandate_rsha:-}" ] && [ -z "${mandate_extra:-}" ] || continue
     [ "$mandate_lsha" = "$mandate_zero" ] && continue
     case "$mandate_lref" in refs/tags/*) continue ;; esac
     if [ "$mandate_rsha" != "$mandate_zero" ] &&
-       git cat-file -e "$mandate_rsha^{commit}" 2>/dev/null; then
+       mandate_git cat-file -e "$mandate_rsha^{commit}"; then
       set -- --not "$mandate_rsha"
     else
       set -- --not --remotes
     fi
-    if ! mandate_list="$(git rev-list --full-history "$mandate_lsha" "$@" 2>/dev/null)"; then
+    if ! mandate_list="$(mandate_git rev-list --full-history "$mandate_lsha" "$@")"; then
       printf '%s\n' "git-guard mandate TOOL ERROR [git]: cannot enumerate introduced commits" \
         "    command: git rev-list --full-history $mandate_lsha $*" >&2
       return 2
     fi
     for mandate_sha in $mandate_lsha $mandate_list; do
-      if git cat-file -e "$mandate_sha:.git-guard/mandate-baseline.json" 2>/dev/null; then
+      if mandate_git cat-file -e "$mandate_sha:.git-guard/mandate-baseline.json"; then
         printf '%s\n' "$mandate_sha"
       fi
     done

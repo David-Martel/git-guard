@@ -417,5 +417,20 @@ t_case_identity_hooks() {
     t_ok "pre-push ENFORCE: unwritable-TMPDIR push did not land"
   fi
 
+  # A fail-closed exit inside the verifier (here an invalid deadline, which dies
+  # before any interpreter is looked up) must still remove pre-push's temp files.
+  # Before the EXIT trap, each such push left one empty gg-id.* in TMPDIR.
+  mkdir -p "$lab/tmp-failclosed"
+  fourth="$lab/fourth.git"; git init -q --bare "$fourth"
+  git -C "$r" remote add fourth "$fourth"
+  git -C "$r" config gitGuard.identityTimeoutSeconds 0
+  (cd "$r" && TMPDIR="$lab/tmp-failclosed" GIT_GUARD_IDENTITY=enforce git push -q fourth mixed) 2>"$lab/p.err"
+  git -C "$r" config --unset gitGuard.identityTimeoutSeconds
+  grep -q 'identityTimeoutSeconds must be an integer' "$lab/p.err"
+  t_assert "$?" "pre-push fail-closed: the invalid deadline is reported (positive control)"
+  left="$(ls -A "$lab/tmp-failclosed")"
+  if [ -z "$left" ]; then t_ok "pre-push fail-closed: no temp file is left in TMPDIR"
+  else t_fail "pre-push fail-closed: no temp file is left in TMPDIR (left: $left)"; fi
+
   gg_rmrepo "$r"; rm -rf "$lab"
 }

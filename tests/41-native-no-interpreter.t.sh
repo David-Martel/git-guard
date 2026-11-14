@@ -76,6 +76,33 @@ t_case_native_no_interpreter() {
   t_expect_rc 2 "$?" "mandate pre-push: a ref list that cannot be read is a TOOL ERROR"
   grep -q 'TOOL ERROR' "$lab/m4.out"
   t_assert "$?" "mandate pre-push: the unreadable ref list is reported as a TOOL ERROR"
+  # The prefilter's git runs under the scanner's deadline (GIT_GUARD_MANDATE_TIMEOUT,
+  # default 300 s). Without it a hung git stalled pre-push indefinitely where the Python
+  # selection stopped at the override (autopilot review of #119 at e249aa7).
+  if timeout -k 1 5 true >/dev/null 2>&1; then
+    real_git_m="$(command -v git)"
+    for gg_hang in rev-list cat-file; do
+      mkdir -p "$lab/hang-$gg_hang"
+      printf '#!/bin/sh\ncase " $* " in *" %s "*) exec sleep 30 ;; esac\nexec "%s" "$@"\n' "$gg_hang" "$real_git_m" > "$lab/hang-$gg_hang/git"
+      chmod +x "$lab/hang-$gg_hang/git"
+      start="$(date +%s)"
+      (cd "$r" && printf 'refs/heads/main %s refs/heads/main %s\n' "$tip2" "$tip" |
+        GIT_GUARD_MANDATE_TIMEOUT=1 PATH="$lab/trip:$lab/hang-$gg_hang:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --pre-push >"$lab/m5.out" 2>&1)
+      m5_rc=$?
+      took=$(( $(date +%s) - start ))
+      if [ "$m5_rc" -eq 2 ] && [ "$took" -lt 10 ] && grep -q 'GIT_GUARD_MANDATE_TIMEOUT' "$lab/m5.out"; then
+        t_ok "mandate pre-push: a hung git $gg_hang stops at the deadline as a TOOL ERROR (${took}s)"
+      else
+        t_fail "mandate pre-push: a hung git $gg_hang stops at the deadline as a TOOL ERROR (rc $m5_rc, ${took}s: $(head -c 200 "$lab/m5.out"))"
+      fi
+    done
+    (cd "$r" && printf 'refs/heads/main %s refs/heads/main %s\n' "$tip2" "$tip" |
+      GIT_GUARD_MANDATE_TIMEOUT=soon PATH="$lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --pre-push >"$lab/m6.out" 2>&1)
+    t_expect_rc 2 "$?" "mandate pre-push: an invalid GIT_GUARD_MANDATE_TIMEOUT is a TOOL ERROR"
+    : > "$marker"
+  else
+    t_skip "mandate pre-push deadline: no timeout with -k on this host"
+  fi
   gg_rmrepo "$r"
   : > "$marker"
 
