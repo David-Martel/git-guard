@@ -282,6 +282,34 @@ _qm_receiver_plain_and_unknown() {
     'class Parser:\n    def __getattribute__(self, name):\n        return factory()\n    def parse_file(self, path):\n        return path\nParser().parse_file("m.json")\n' 0 unknown
 }
 
+# Protects: plain receiver certainty expires after explicit method mutation.
+# Detects: aliases/deferred functions or shadowed decorators hiding model calls.
+# Needs: real scanner/exported Git source; fixture classes are never imported.
+# Breadcrumb: hooks/common/mandate_scan.py PydanticReceivers assignment/scope handling.
+_qm_receiver_attribute_mutations() {
+  _qmr_classes='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    @classmethod\n    def parse_file(cls, path):\n        return path\n'
+  _qm_receiver_case 'class method rebind loses plain proof' \
+    "${_qmr_classes}Parser.parse_file = Model.parse_file\nParser.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'instance method rebind loses plain proof' \
+    "${_qmr_classes}parser = Parser()\nparser.parse_file = Model.parse_file\nparser.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'alias method rebind invalidates original receiver' \
+    "${_qmr_classes}Alias = Parser\nAlias.parse_file = Model.parse_file\nParser.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'deferred function sees later class mutation' \
+    "${_qmr_classes}def probe():\n    return Parser.parse_file('m.json')\nParser.parse_file = Model.parse_file\n" 0 unknown
+  _qm_receiver_case 'deferred function sees later alias mutation' \
+    "${_qmr_classes}def probe():\n    return Parser.parse_file('m.json')\nAlias = Parser\nAlias.parse_file = Model.parse_file\n" 0 unknown
+  _qm_receiver_case 'unrelated parser mutation retains known model block' \
+    "${_qmr_classes}Parser.parse_file = external\nModel.parse_file('m.json')\n" 1 model
+  for _qmr_decorator in classmethod staticmethod; do
+    _qm_receiver_case "builtin $_qmr_decorator stays plain" \
+      "class Parser:\n    @${_qmr_decorator}\n    def parse_file(path):\n        return path\nParser().parse_file('notes.md')\n" 0 plain
+    _qm_receiver_case "shadowed $_qmr_decorator is not a builtin proof" \
+      "def ${_qmr_decorator}(method):\n    return factory()\nclass Parser:\n    @${_qmr_decorator}\n    def parse_file(path):\n        return path\nParser().parse_file('m.json')\n" 0 unknown
+  done
+  _qm_receiver_case 'deferred class method sees later mutation' \
+    "${_qmr_classes}    @classmethod\n    def probe(cls):\n        return cls.parse_file('m.json')\nParser.parse_file = Model.parse_file\n" 0 unknown
+}
+
 _qm_receiver_modes() {
   _qmr_repo="$(_qm_repo)"; _qmr_log="$GG_T_TMPROOT/receiver-modes.log"
   _qm_put "$_qmr_repo" src/model.py 'marker = 1\n'
@@ -347,6 +375,7 @@ t_case_pydantic_receiver_classification() {
   fi
   _qm_receiver_models
   _qm_receiver_plain_and_unknown
+  _qm_receiver_attribute_mutations
   _qm_receiver_modes
   _qm_receiver_snapshot_case model
   _qm_receiver_snapshot_case plain

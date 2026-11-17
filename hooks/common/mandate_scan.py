@@ -1156,10 +1156,14 @@ class ReceiverBinding:
 
     kind: str
     methods: FrozenSet[str] = frozenset()
+    identity: str = ""
+    dependencies: FrozenSet[str] = frozenset()
 
 
 UNKNOWN_RECEIVER = ReceiverBinding("unknown")
-MODEL_RECEIVER = ReceiverBinding("model")
+MODEL_RECEIVER = ReceiverBinding(
+    "model", identity="pydantic-model", dependencies=frozenset({"pydantic-model"})
+)
 PYDANTIC_MODULE = ReceiverBinding("module")
 LEGACY_MODEL_METHODS = frozenset({"parse_obj", "parse_raw", "parse_file", "from_orm"})
 MODEL_BASES = frozenset({"BaseModel", "BaseSettings", "RootModel"})
@@ -1194,6 +1198,44 @@ def receiver_rebound_names(nodes: Iterable[ast.AST]) -> Set[str]:
     return {name for name, count in counts.items() if count > 1}
 
 
+def receiver_target_name(node: ast.AST) -> Optional[str]:
+    """Find a syntactic target root without evaluating an expression."""
+    while isinstance(node, (ast.Attribute, ast.Subscript)):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else None
+
+
+def receiver_mutated_names(nodes: Iterable[ast.AST]) -> Set[str]:
+    """Find explicit scope mutations and their simple local name aliases."""
+    pending = list(nodes)
+    aliases: Dict[str, Set[str]] = {}
+    mutated: Set[str] = set()
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        targets: Sequence[ast.AST] = ()
+        if isinstance(node, (ast.Assign, ast.Delete)):
+            targets = node.targets
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            targets = (node.target,)
+        for target in targets:
+            if isinstance(target, (ast.Attribute, ast.Subscript)):
+                name = receiver_target_name(target)
+                if name:
+                    mutated.add(name)
+            value = getattr(node, "value", None)
+            if isinstance(target, ast.Name) and isinstance(value, ast.Name):
+                aliases.setdefault(target.id, set()).add(value.id)
+                aliases.setdefault(value.id, set()).add(target.id)
+        pending.extend(ast.iter_child_nodes(node))
+    while True:
+        expanded = mutated | set().union(*(aliases.get(n, set()) for n in mutated))
+        if expanded == mutated:
+            return mutated
+        mutated = expanded
+
+
 class PydanticReceivers(ast.NodeVisitor):
     """Track local class/constructor/annotation evidence without executing imports."""
 
@@ -1203,10 +1245,12 @@ class PydanticReceivers(ast.NodeVisitor):
         self.class_binding: Optional[ReceiverBinding] = None
         self.class_outer: Optional[Dict[str, ReceiverBinding]] = None
         self.rebound: Set[str] = set()
+        self.mutated: Set[str] = set()
         self.calls: Dict[Tuple[int, int, str], Set[str]] = {}
 
     def visit_Module(self, node: ast.Module) -> None:
         self.rebound = receiver_rebound_names(node.body)
+        self.mutated = receiver_mutated_names(node.body)
         self.generic_visit(node)
 
     def value(self, node: Optional[ast.AST]) -> ReceiverBinding:
@@ -1271,6 +1315,7 @@ class PydanticReceivers(ast.NodeVisitor):
         self.visit(node.value)
         binding = self.value(node.value)
         for target in node.targets:
+            self.invalidate_target(target)
             for name in receiver_bound_names(target):
                 self.env[name] = (
                     binding if isinstance(target, ast.Name) else UNKNOWN_RECEIVER
@@ -1282,6 +1327,7 @@ class PydanticReceivers(ast.NodeVisitor):
         binding = self.value(node.value)
         if binding == UNKNOWN_RECEIVER:
             binding = self.value(node.annotation)
+        self.invalidate_target(node.target)
         for name in receiver_bound_names(node.target):
             self.env[name] = binding
 
@@ -1289,6 +1335,30 @@ class PydanticReceivers(ast.NodeVisitor):
         self.visit(node.value)
         for name in receiver_bound_names(node.target):
             self.env[name] = self.value(node.value)
+
+    @staticmethod
+    def invalidate_binding(env: Dict[str, ReceiverBinding], name: str) -> None:
+        binding = env.get(name, UNKNOWN_RECEIVER)
+        for candidate, value in list(env.items()):
+            if candidate == name or (
+                binding.identity and binding.identity in value.dependencies
+            ):
+                env[candidate] = UNKNOWN_RECEIVER
+
+    def invalidate_target(self, target: ast.AST) -> None:
+        if isinstance(target, (ast.Attribute, ast.Subscript)):
+            name = receiver_target_name(target)
+            if name:
+                self.invalidate_binding(self.env, name)
+
+    def stable_binding(
+        self, binding: ReceiverBinding, outer: Mapping[str, ReceiverBinding]
+    ) -> ReceiverBinding:
+        for name in self.mutated:
+            changed = outer.get(name, UNKNOWN_RECEIVER)
+            if changed.identity and changed.identity in binding.dependencies:
+                return UNKNOWN_RECEIVER
+        return binding
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         bases = [self.value(base) for base in node.bases]
@@ -1304,16 +1374,26 @@ class PydanticReceivers(ast.NodeVisitor):
             and all(
                 isinstance(decorator, ast.Name)
                 and decorator.id in {"classmethod", "staticmethod"}
+                and decorator.id not in self.env
                 for decorator in child.decorator_list
             )
         )
         if node.decorator_list or node.keywords or dynamic:
             binding = UNKNOWN_RECEIVER
-        elif any(base.kind == "model" for base in bases):
-            binding = MODEL_RECEIVER
-        elif all(base.kind == "plain" for base in bases):
+        elif any(base.kind == "model" for base in bases) or all(
+            base.kind == "plain" for base in bases
+        ):
+            identity = f"class:{node.lineno}:{node.name}"
+            dependencies = frozenset({identity}).union(
+                *(base.dependencies for base in bases)
+            )
             inherited = frozenset().union(*(base.methods for base in bases))
-            binding = ReceiverBinding("plain", methods | inherited)
+            binding = ReceiverBinding(
+                "model" if any(base.kind == "model" for base in bases) else "plain",
+                methods | inherited,
+                identity,
+                dependencies,
+            )
         else:
             binding = UNKNOWN_RECEIVER
         self.env[node.name] = binding
@@ -1341,6 +1421,8 @@ class PydanticReceivers(ast.NodeVisitor):
             else self.env
         )
         local = dict(outer)
+        for name in self.mutated:
+            self.invalidate_binding(local, name)
         for name in self.rebound:
             local[name] = UNKNOWN_RECEIVER
         for statement in node.body:
@@ -1352,7 +1434,9 @@ class PydanticReceivers(ast.NodeVisitor):
         if node.args.kwarg:
             args.append(node.args.kwarg)
         for argument in args:
-            local[argument.arg] = self.value(argument.annotation)
+            local[argument.arg] = self.stable_binding(
+                self.value(argument.annotation), outer
+            )
             if (
                 isinstance(argument.annotation, ast.Name)
                 and argument.annotation.id in self.rebound
@@ -1363,14 +1447,17 @@ class PydanticReceivers(ast.NodeVisitor):
             for d in node.decorator_list
         )
         if self.class_binding and args and not static and args[0].annotation is None:
-            local[args[0].arg] = self.class_binding
+            local[args[0].arg] = self.stable_binding(self.class_binding, outer)
         previous = self.class_binding
         previous_rebound = self.rebound
+        previous_mutated = self.mutated
         self.class_binding = None
         self.rebound = self.rebound | receiver_rebound_names(node.body)
+        self.mutated = self.mutated | receiver_mutated_names(node.body)
         self.scoped(node.body, local)
         self.class_binding = previous
         self.rebound = previous_rebound
+        self.mutated = previous_mutated
         self.env[node.name] = UNKNOWN_RECEIVER
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -1411,11 +1498,14 @@ class PydanticReceivers(ast.NodeVisitor):
     visit_GeneratorExp = comprehension
 
     def visit_Delete(self, node: ast.Delete) -> None:
+        for target in node.targets:
+            self.invalidate_target(target)
         for name in receiver_bound_names(node):
             self.env[name] = UNKNOWN_RECEIVER
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self.visit(node.value)
+        self.invalidate_target(node.target)
         for name in receiver_bound_names(node.target):
             self.env[name] = UNKNOWN_RECEIVER
 

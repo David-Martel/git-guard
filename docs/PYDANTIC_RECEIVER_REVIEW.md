@@ -25,6 +25,11 @@ dispatch remain under the
 [ambiguous rule](../rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml).
 Its default remains WARN. This analysis is deliberately local; it does not claim
 whole-program type inference or resolve arbitrary imported project classes.
+Explicit attribute changes invalidate the receiver and its local aliases,
+instances and derived classes. Deferred functions account for later mutations
+in their enclosing scope. Shadowed `classmethod` and `staticmethod` names do
+not establish plain-method proof. This is bounded static analysis, rather than
+a guarantee about arbitrary cross-module runtime monkey-patching.
 
 Namespace imports, deprecated validator decorators and the existing nested
 Config matcher retain their strong classification. Existing `.dict()` and
@@ -48,7 +53,8 @@ The initial implementation with these controls failed the intended boundaries:
 the first author red run reported 20 passed and 24 failed. Additional controls
 exposed relative-import and dynamic-dispatch misclassification and were kept
 when those defects were corrected. The final focused Windows/Git Bash run
-reported **84 passed, zero failures and zero skips**. A real Pydantic 2.14.3
+reported **84 passed, zero failures and zero skips** at the first source head.
+A real Pydantic 2.14.3
 model's legacy `parse_file()` produced the expected deprecation warnings;
 `model_validate_json()` returned the same value without warnings. These runtime
 observations corroborate the model-library boundary without making Pydantic an
@@ -57,12 +63,21 @@ execution dependency of the static scanner.
 The combined Windows regression command above reported **418 passed, zero
 failures and 14 skips**. Those skips are the existing raw-rule controls whose
 inert or overmatching behavior is described in their test output; none belongs
-to the new receiver selector. No Linux execution is claimed by these receipts.
+to the new receiver selector. Independent review then rejected that head:
+replacing a parser's method with `Model.parse_file` still cleared its finding.
+Seven new real scanner controls reproduced the defect with **98 passed and
+seven failed assertions**. A further deferred-classmethod control failed after
+the first correction (**115 passed, one failed**). Both red receipts are kept.
+The corrected receiver checks now report **116 passed, zero failures and zero
+skips**, including genuine builtin decorator positives and an unrelated model
+that must still block. The broader suite is being repeated at this corrected
+source; the register distinguishes its result from the previous source head.
+No Linux execution is claimed by these author receipts.
 
 ShellCheck passed at warning severity for the two changed test files and runner.
 The installed global pre-commit hook passed and made no source changes; it
 reported non-blocking basedpyright and walrus-style warnings. The author also
-measured 1,000 actual AST model calls in approximately 0.22 seconds on CPython
+measured 1,000 actual AST model calls in approximately 0.21 seconds on CPython
 3.15.2. This single-fixture measurement is not a fleet performance benchmark.
 
 The [review register](PYDANTIC_RECEIVER_REVIEW.json) binds source and selector
