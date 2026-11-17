@@ -84,8 +84,9 @@ skips**, and **464 broader checks** with the same 14 existing raw-rule skips.
 Two public settings-module import forms then reproduced four failed assertions
 (**133 passed, four failed**). Their bounded namespace correction now passes
 **137 focused checks, with no failures or skips**. The broader suite is being
-repeated at this final source; the register distinguishes its result from the
-earlier source snapshots and both rejected predecessor heads.
+recorded separately at this final source: **471 passed, zero failures and the
+same 14 existing raw-rule skips**. The register separates current receipts from
+the earlier source snapshots and both rejected predecessor heads.
 No Linux execution is claimed by these author receipts.
 
 ShellCheck passed at warning severity for the two changed test files and runner.
