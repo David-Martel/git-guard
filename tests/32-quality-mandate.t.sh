@@ -205,6 +205,153 @@ _QM_SWALLOW='def probe():\n    try:\n        connect()\n    except Exception:\n 
 _QM_NARROW='def probe():\n    try:\n        connect()\n    except OSError:\n        pass\n'
 _QM_CLEAN='\n\ndef added(value: int) -> int:\n    return value + 1\n'
 
+# Protects: proven Pydantic receivers still block, plain APIs clear, unknowns warn.
+# Detects: treating every parse_file name as Pydantic, or disabling true positives.
+# Needs: real ast-grep and ruff; owned staged Git fixtures, no imported code execution.
+# Breadcrumb: hooks/common/mandate_scan.py; mandate/python/mandate-pydantic-v1*.yml.
+_qm_receiver_case() {
+  _qmr_label="$1"; _qmr_code="$2"; _qmr_rc="$3"; _qmr_kind="$4"
+  _qmr_repo="$(_qm_repo)"; _qmr_log="$GG_T_TMPROOT/receiver.log"
+  _qm_put "$_qmr_repo" src/model.py "$_qmr_code"
+  [ "$#" -lt 5 ] || _qm_conf "$_qmr_repo" "$5"
+  _qm_scan "$_qmr_repo" "$_qmr_log" --staged; _qmr_actual=$?
+  t_expect_rc "$_qmr_rc" "$_qmr_actual" "receiver: $_qmr_label"
+  case "$_qmr_kind" in
+    model) _qm_has "$_qmr_log" '[pydantic_v1]' "$_qmr_label names proven model rule" ;;
+    unknown)
+      _qm_has "$_qmr_log" '[pydantic_v1_ambiguous]' "$_qmr_label reports unresolved receiver"
+      _qm_lacks "$_qmr_log" '[pydantic_v1]' "$_qmr_label never claims a proven model" ;;
+    plain)
+      _qm_lacks "$_qmr_log" '[pydantic_v1]' "$_qmr_label is not a model"
+      _qm_lacks "$_qmr_log" '[pydantic_v1_ambiguous]' "$_qmr_label is proven plain" ;;
+  esac
+  gg_rmrepo "$_qmr_repo"
+}
+
+_qm_receiver_models() {
+  _qmr_model='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\n'
+  _qm_receiver_case 'model class' "${_qmr_model}Model.parse_file('m.json')\n" 1 model
+  for _qmr_method in parse_obj parse_raw from_orm; do
+    _qm_receiver_case "model $_qmr_method" "${_qmr_model}Model.${_qmr_method}('payload')\n" 1 model
+  done
+  _qm_receiver_case 'class and base aliases' \
+    'from pydantic import BaseModel as BM\nclass M(BM):\n    pass\nAlias = M\nAlias.parse_file("m.json")\n' 1 model
+  _qm_receiver_case 'module alias and constructed instance' \
+    'import pydantic as pd\nclass M(pd.BaseModel):\n    pass\nm = M()\nm.parse_file("m.json")\n' 1 model
+  _qm_receiver_case 'model parameter annotation' \
+    "${_qmr_model}def probe(model: Model):\n    return model.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'BaseSettings import and subclass' \
+    'from pydantic_settings import BaseSettings\nclass Settings(BaseSettings):\n    pass\nSettings.parse_file("m.json")\n' 1 model
+  _qm_receiver_case 'ambiguous off retains proven block' \
+    "${_qmr_model}Model.parse_file('m.json')\n" 1 model 'mandate.pydantic_v1_ambiguous=off\n'
+  _qm_receiver_case 'v1 namespace unchanged' 'from pydantic.v1 import BaseModel\n' 1 model
+  _qm_receiver_case 'v1 decorator unchanged' \
+    'from pydantic import validator\n@validator("value")\ndef clean(value):\n    return value\n' 1 model
+  _qm_receiver_case 'v1 Config unchanged' \
+    'from pydantic import BaseModel\nclass M(BaseModel):\n    class Config:\n        extra = "forbid"\n' 1 model
+  _qm_receiver_case 'Config remains strong with unresolved method inside' \
+    'from pydantic import BaseModel\nclass M(BaseModel):\n    class Config:\n        setting = external.parse_file("m.json")\n' 1 model
+}
+
+_qm_receiver_plain_and_unknown() {
+  _qmr_plain='class MarkdownParser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'plain Markdown parser' \
+    "${_qmr_plain}parser = MarkdownParser()\nparser.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'model name rebound to plain class' \
+    "from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\n${_qmr_plain}Model = MarkdownParser\nModel.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'unannotated parameter shadows class' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\ndef probe(Model):\n    return Model.parse_file("notes.md")\n' 0 unknown
+  _qm_receiver_case 'plain annotation shadows model name' \
+    "from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\n${_qmr_plain}def probe(Model: MarkdownParser):\n    return Model.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'cross-file receiver unresolved' \
+    'from external_models import Model\nModel.parse_file("notes.md")\n' 0 unknown
+  _qm_receiver_case 'relative pydantic-named module is unresolved' \
+    'from .pydantic import BaseModel\nBaseModel.parse_file("notes.md")\n' 0 unknown
+  _qm_receiver_case 'unknown factory receiver' 'factory().parse_file("notes.md")\n' 0 unknown
+  _qm_receiver_case 'conditional receiver merge unresolved' \
+    "from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\n${_qmr_plain}parser = Model()\nif choice:\n    parser = MarkdownParser()\nparser.parse_file('notes.md')\n" 0 unknown
+  _qm_receiver_case 'function globals rebound later are unresolved' \
+    "from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\n${_qmr_plain}def probe():\n    return Model.parse_file('notes.md')\nModel = MarkdownParser\n" 0 unknown
+  _qm_receiver_case 'comprehension receiver shadows global class' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nresults = [Model.parse_file("m.json") for Model in parsers]\n' 0 unknown
+  _qm_receiver_case 'dynamic method decorator is unresolved' \
+    'class MarkdownParser:\n    @decorate\n    def parse_file(self, path):\n        return path\nparser = MarkdownParser()\nparser.parse_file("m.json")\n' 0 unknown
+  _qm_receiver_case 'decorated custom constructor is unresolved' \
+    'class Parser:\n    @decorate\n    def __new__(cls):\n        return factory()\n    def parse_file(self, path):\n        return path\nParser().parse_file("m.json")\n' 0 unknown
+  _qm_receiver_case 'custom attribute dispatch is unresolved' \
+    'class Parser:\n    def __getattribute__(self, name):\n        return factory()\n    def parse_file(self, path):\n        return path\nParser().parse_file("m.json")\n' 0 unknown
+}
+
+_qm_receiver_modes() {
+  _qmr_repo="$(_qm_repo)"; _qmr_log="$GG_T_TMPROOT/receiver-modes.log"
+  _qm_put "$_qmr_repo" src/model.py 'marker = 1\n'
+  _qm_commit "$_qmr_repo" 'receiver baseline'
+  _qmr_base="$(git -C "$_qmr_repo" rev-parse HEAD)"
+  _qm_put "$_qmr_repo" src/model.py 'from external_models import Model\nModel.parse_file("m.json")\n'
+  _qm_scan "$_qmr_repo" "$_qmr_log" --staged; _qmr_rc=$?
+  t_expect_rc 0 "$_qmr_rc" 'unresolved staged receiver warns without blocking'
+  _qm_has "$_qmr_log" '[pydantic_v1_ambiguous]' 'staged receiver ambiguity is explicit'
+  _qm_commit "$_qmr_repo" 'unresolved receiver'
+  _qm_scan "$_qmr_repo" "$_qmr_log" --range "$_qmr_base..HEAD"; _qmr_rc=$?
+  t_expect_rc 0 "$_qmr_rc" 'range classification matches staged result'
+  _qm_has "$_qmr_log" '[pydantic_v1_ambiguous]' 'range receiver ambiguity is explicit'
+  ( cd "$_qmr_repo" && sh "$_QM_SCAN" --all ) >"$GG_T_TMPROOT/receiver-census.json" 2>"$_qmr_log"
+  t_expect_rc 0 "$?" 'receiver census executes successfully'
+  _qm_has "$GG_T_TMPROOT/receiver-census.json" '"pydantic_v1": 0' 'census has no false proven-model count'
+  _qm_has "$GG_T_TMPROOT/receiver-census.json" '"pydantic_v1_ambiguous": 1' 'census retains unresolved count'
+  gg_rmrepo "$_qmr_repo"
+}
+
+# Protects: receiver evidence follows the selected Git snapshot, not unstaged bytes.
+# Detects: model/plain divergence being classified from the wrong source tree.
+# Needs: real staged Git blobs, commits and scanner; no imported fixture execution.
+# Breadcrumb: hooks/common/mandate_scan.py export_index/export_rev/census.
+_qm_receiver_snapshot_case() {
+  _qms_repo="$(_qm_repo)"; _qms_log="$GG_T_TMPROOT/receiver-snapshot.log"
+  _qms_model='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nModel.parse_file("m.json")\n'
+  _qms_plain='class Parser:\n    def parse_file(self, path):\n        return path\nParser().parse_file("notes.md")\n'
+  case "$1" in
+    model) _qms_chosen="$_qms_model"; _qms_other="$_qms_plain"; _qms_rc=1; _qms_count=1 ;;
+    plain) _qms_chosen="$_qms_plain"; _qms_other="$_qms_model"; _qms_rc=0; _qms_count=0 ;;
+  esac
+  _qm_put "$_qms_repo" src/model.py 'marker = 1\n'
+  _qm_commit "$_qms_repo" 'snapshot base'
+  _qms_base="$(git -C "$_qms_repo" rev-parse HEAD)"
+  _qm_put "$_qms_repo" src/model.py "$_qms_chosen"
+  printf '%b' "$_qms_other" >"$_qms_repo/src/model.py"
+  _qm_scan "$_qms_repo" "$_qms_log" --staged; _qms_actual=$?
+  t_expect_rc "$_qms_rc" "$_qms_actual" "$1 staged receiver ignores opposite worktree"
+  ( cd "$_qms_repo" && sh "$_QM_SCAN" --all ) >"$GG_T_TMPROOT/snapshot-census.json" 2>"$_qms_log"
+  t_expect_rc 0 "$?" "$1 index census runs with opposite worktree"
+  _qm_has "$GG_T_TMPROOT/snapshot-census.json" "\"pydantic_v1\": $_qms_count" "$1 index census follows staged source"
+  _qm_put "$_qms_repo" src/model.py "$_qms_chosen"
+  _qm_commit "$_qms_repo" 'selected snapshot'
+  printf '%b' "$_qms_other" >"$_qms_repo/src/model.py"
+  _qm_scan "$_qms_repo" "$_qms_log" --range "$_qms_base..HEAD"; _qms_actual=$?
+  t_expect_rc "$_qms_rc" "$_qms_actual" "$1 range receiver ignores opposite worktree"
+  ( cd "$_qms_repo" && sh "$_QM_SCAN" --all --rev HEAD ) >"$GG_T_TMPROOT/snapshot-revision.json" 2>"$_qms_log"
+  t_expect_rc 0 "$?" "$1 selected-revision census runs"
+  _qm_has "$GG_T_TMPROOT/snapshot-revision.json" "\"pydantic_v1\": $_qms_count" "$1 revision census follows committed source"
+  gg_rmrepo "$_qms_repo"
+}
+
+# Protects: proven model enforcement and the exact Git source selected by each mode.
+# Detects: false parser rejection, lost model blocks and unstaged-source leakage.
+# Needs: real ast-grep/ruff and owned temporary Git repositories; no fixture imports.
+# Breadcrumb: hooks/common/mandate_scan.py and the two mandate/python/pydantic rules.
+t_case_pydantic_receiver_classification() {
+  t_begin '32 receiver-aware Pydantic classification (staged, range, census)'
+  if ! gg_has_astgrep || ! command -v ruff >/dev/null 2>&1; then
+    t_skip 'receiver classification needs actual ast-grep and ruff'
+    return 0
+  fi
+  _qm_receiver_models
+  _qm_receiver_plain_and_unknown
+  _qm_receiver_modes
+  _qm_receiver_snapshot_case model
+  _qm_receiver_snapshot_case plain
+}
+
 t_case_quality_mandate() {
   t_begin "32 quality mandate: changed lines, rules, suppressions, debt register"
   log="$(gg_tmp_log)"

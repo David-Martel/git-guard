@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "source_commit": "e8f636b2a47a772c4bfe61088303a38bf52c1af6 + proposed working-tree diff",
+  "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
+  "source_hashes": {
+    "hooks/common/mandate_scan.py": "1e65e67cac82c45652e576b9ef15438284bf79e0c22f0199251be02681646d0c",
+    "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+    "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+    "tests/32-quality-mandate.t.sh": "5bc1ce37bd51359c92a9a952d50c98314456198dea8b2f33bd053146baa07502",
+    "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+    "tests/run.sh": "a22ed361c90cfde6b358ec5c39ae701edd11d9a2e99b50018264f71ee6a5beb7",
+    "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+    "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+    "docs/PYDANTIC_RECEIVER_REVIEW.md": "22beaa0c106b06c80f25ca96eb20740e0f15662ec29ea3a4d69ee3b6ff498906"
+  },
+  "author_evidence": {
+    "platform": "Windows dtm-p1gen9 / Git Bash / CPython3.15.2",
+    "red": "20 passed, 24 failed, 0 skipped",
+    "focused": "84 passed, 0 failed, 0 skipped",
+    "regression": "418 passed, 0 failed, 14 existing raw-rule skips; new receiver selector did not skip",
+    "global_precommit": "PASS, no mutation; nonblocking basedpyright and walrus-style warnings",
+    "static_checks": "Ruff format unchanged, E/F/I check PASS, mypy PASS, ShellCheck warning-severity PASS",
+    "linux": "UNVERIFIED pending actual Linux execution or exact-head CI",
+    "logs": {
+      "red": {
+        "receipt": "git-guard-receiver-red.log",
+        "sha256": "cc3ac5ee115286525c5964819db84c934bfa374471d5eb8feca5501680b4cdfe"
+      },
+      "focused": {
+        "receipt": "git-guard-receiver-focused.log",
+        "sha256": "1f07e04f1e1847f263822351d190960fedc45d6ac7b834d6e07fdb3b1030025d"
+      },
+      "regression-final-windows": {
+        "receipt": "git-guard-receiver-regression-final-windows.log",
+        "sha256": "39d815e22f6d4a8b2e91f95acd4603407be4ed1d6ecaaa87e18abfd86fd1db94"
+      },
+      "global-precommit": {
+        "receipt": "git-guard-receiver-global-precommit.log",
+        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b"
+      },
+      "shellcheck": {
+        "receipt": "git-guard-receiver-shellcheck.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "mypy-final": {
+        "receipt": "git-guard-receiver-mypy-final.log",
+        "sha256": "80b84f16e9324ebe5cbd43806dc159edadf2198b77d16ef746308bdab4017868"
+      }
+    }
+  },
+  "rows": [
+    {
+      "selector": "t_case_pydantic_receiver_classification",
+      "source": "tests/32-quality-mandate.t.sh",
+      "selector_sha256": "799a6cee0183ed845aa762952034cf42426f630cc209220bc41c7f538e588d41",
+      "disposition": "UNREVIEWED",
+      "reviewer": null,
+      "scope": "84 real scanner assertions including model/plain/unknown and divergent Git snapshots; full test-file hash binds helper dependencies"
+    },
+    {
+      "selector": "t_case_rule_behaviour",
+      "source": "tests/27-rule-behaviour.t.sh",
+      "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
+      "disposition": "UNREVIEWED",
+      "reviewer": null,
+      "scope": "Existing raw-rule matrix plus method-name candidate and v2 negative control; no receiver type claim"
+    }
+  ],
+  "rule_reviews": [
+    {
+      "selector": "mandate-pydantic-v1",
+      "disposition": "UNREVIEWED",
+      "reviewer": null,
+      "scope": "Strong syntax constructs retained; legacy call candidates classified by receiver evidence, ambiguity opt-out cannot remove known-model enforcement"
+    },
+    {
+      "selector": "mandate-pydantic-v1-ambiguous",
+      "disposition": "UNREVIEWED",
+      "reviewer": null,
+      "scope": "Existing dictionary/copy candidates and unresolved legacy model-method receivers; default WARN unchanged"
+    }
+  ],
+  "integration": {
+    "installed_release_unchanged": true,
+    "merge_route": "merge autopilot; high-risk two independent approvals including outside Codex family",
+    "deployment": "Supported installer only after reviewed integration and installer-plan review"
+  }
+}

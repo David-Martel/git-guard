@@ -6,18 +6,21 @@
 # v2 only ... Do not add pydantic.v1, deprecated v1 validators"); vigil-ai-tpm
 # CLAUDE.md ("pydantic>=2,<3 only").
 #
-# Detects the unambiguous v1 surface only: the pydantic.v1 compatibility
+# Detects the unambiguous v1 surface and method-name candidates: the pydantic.v1 compatibility
 # namespace, the v1 validator decorators, a nested `class Config:` inside a
 # class that names BaseModel/BaseSettings/RootModel as a base, and the
-# v1-only classmethods (parse_obj, parse_raw, parse_file, from_orm). `.dict()`
+# legacy classmethods (parse_obj, parse_raw, parse_file, from_orm). The maintained
+# mandate_scan.py receiver analysis keeps proven model calls BLOCK, clears
+# proven plain APIs and routes unresolved receivers to pydantic_v1_ambiguous.
+# A method name alone is not proof of Pydantic ownership. `.dict()`
 # and `.copy(update=...)` are ambiguous with non-pydantic objects and live in
 # mandate-pydantic-v1-ambiguous.yml at warn. A model whose base is a project
-# base class (e.g. ControlPlaneModel) is not resolved: the Config check cannot
-# see through inheritance.
+# base class (e.g. ControlPlaneModel) is unresolved unless its local inheritance
+# is known. The Config matcher itself still cannot see through inheritance.
 id: mandate-pydantic-v1
 language: python
 severity: warning
-message: "Pydantic v1 API — this fleet is pydantic v2 only"
+message: "Pydantic v1 construct or legacy-method candidate — receiver analysis required for method calls"
 rule:
   any:
     - kind: import_from_statement

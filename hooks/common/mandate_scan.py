@@ -40,6 +40,7 @@ it left unevaluated, matching qa_gate.sh's anti-brick policy.
 from __future__ import annotations
 
 import argparse
+import ast
 import io
 import json
 import os
@@ -53,7 +54,18 @@ import tokenize
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import (
+    Dict,
+    FrozenSet,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 POLICY_REVISION = "git-guard-mandate-1"
 CANONICAL_POLICY = "vigil-ai-tpm templates/strict-python-module/RULES.md @ ecbedf353d4a"
@@ -184,10 +196,12 @@ RULES: Tuple[Rule, ...] = (
         Severity.WARN,
         sg=("mandate-pydantic-v1-ambiguous",),
         source="vigil-spark AGENTS.md:188-190",
-        why="`.dict()` and `.copy(update=...)` are pydantic v1 model methods; the "
-        "names also exist elsewhere, so this only warns.",
-        fix="On a pydantic model use model.model_dump() / "
-        "model.model_copy(update=...).",
+        why="Legacy model method names also occur on unrelated APIs. Unresolved "
+        "receivers, `.dict()` and `.copy(update=...)` only warn; proven model "
+        "classmethods retain the strong rule.",
+        fix="On a proven model use the corresponding v2 model_validate, "
+        "model_validate_json, model_dump or model_copy API. Otherwise establish "
+        "the receiver's type before changing its API.",
     ),
     _rule(
         "bare_except",
@@ -1136,6 +1150,379 @@ def rule_inventory() -> Dict[str, Path]:
     return ids
 
 
+@dataclass(frozen=True)
+class ReceiverBinding:
+    """Local static receiver evidence; unknown never means a proven model."""
+
+    kind: str
+    methods: FrozenSet[str] = frozenset()
+
+
+UNKNOWN_RECEIVER = ReceiverBinding("unknown")
+MODEL_RECEIVER = ReceiverBinding("model")
+PYDANTIC_MODULE = ReceiverBinding("module")
+LEGACY_MODEL_METHODS = frozenset({"parse_obj", "parse_raw", "parse_file", "from_orm"})
+MODEL_BASES = frozenset({"BaseModel", "BaseSettings", "RootModel"})
+
+
+def receiver_bound_names(node: ast.AST) -> Set[str]:
+    """Find bindings in this scope without borrowing nested function locals."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return {node.name}
+    names: Set[str] = set()
+    if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+        names.add(node.id)
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        names.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+    if isinstance(node, ast.ExceptHandler) and node.name:
+        names.add(node.name)
+    if type(node).__name__ in {"MatchAs", "MatchStar"}:
+        name = getattr(node, "name", None)
+        if isinstance(name, str):
+            names.add(name)
+    for child in ast.iter_child_nodes(node):
+        names.update(receiver_bound_names(child))
+    return names
+
+
+def receiver_rebound_names(nodes: Iterable[ast.AST]) -> Set[str]:
+    """Globals rebound in a scope are not stable proof inside deferred functions."""
+    counts: Dict[str, int] = {}
+    for node in nodes:
+        for name in receiver_bound_names(node):
+            counts[name] = counts.get(name, 0) + 1
+    return {name for name, count in counts.items() if count > 1}
+
+
+class PydanticReceivers(ast.NodeVisitor):
+    """Track local class/constructor/annotation evidence without executing imports."""
+
+    def __init__(self, source: str) -> None:
+        self.source = source
+        self.env: Dict[str, ReceiverBinding] = {}
+        self.class_binding: Optional[ReceiverBinding] = None
+        self.class_outer: Optional[Dict[str, ReceiverBinding]] = None
+        self.rebound: Set[str] = set()
+        self.calls: Dict[Tuple[int, int, str], Set[str]] = {}
+
+    def visit_Module(self, node: ast.Module) -> None:
+        self.rebound = receiver_rebound_names(node.body)
+        self.generic_visit(node)
+
+    def value(self, node: Optional[ast.AST]) -> ReceiverBinding:
+        if isinstance(node, ast.Name):
+            if node.id == "object" and node.id not in self.env:
+                return ReceiverBinding("plain")
+            return self.env.get(node.id, UNKNOWN_RECEIVER)
+        if (
+            isinstance(node, ast.Attribute)
+            and self.value(node.value) == PYDANTIC_MODULE
+        ):
+            if node.attr in MODEL_BASES:
+                return MODEL_RECEIVER
+            if node.attr in {"v1", "main"}:
+                return PYDANTIC_MODULE
+        if isinstance(node, ast.Call):
+            binding = self.value(node.func)
+            return binding if binding.kind in {"model", "plain"} else UNKNOWN_RECEIVER
+        if isinstance(node, ast.Subscript):
+            binding = self.value(node.value)
+            return binding if binding.kind == "model" else UNKNOWN_RECEIVER
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            try:
+                return self.value(ast.parse(node.value, mode="eval").body)
+            except SyntaxError:
+                return UNKNOWN_RECEIVER
+        return UNKNOWN_RECEIVER
+
+    def scoped(
+        self, nodes: Iterable[ast.AST], env: Dict[str, ReceiverBinding]
+    ) -> Dict[str, ReceiverBinding]:
+        previous = self.env
+        self.env = env
+        for node in nodes:
+            self.visit(node)
+        result = self.env
+        self.env = previous
+        return result
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            name = alias.asname or alias.name.split(".")[0]
+            self.env[name] = (
+                PYDANTIC_MODULE
+                if alias.name.split(".")[0] == "pydantic"
+                else UNKNOWN_RECEIVER
+            )
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        module = node.module or ""
+        pydantic = node.level == 0 and (
+            module == "pydantic_settings" or module.split(".")[0] == "pydantic"
+        )
+        for alias in node.names:
+            self.env[alias.asname or alias.name] = (
+                MODEL_RECEIVER
+                if pydantic and alias.name in MODEL_BASES
+                else UNKNOWN_RECEIVER
+            )
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
+        binding = self.value(node.value)
+        for target in node.targets:
+            for name in receiver_bound_names(target):
+                self.env[name] = (
+                    binding if isinstance(target, ast.Name) else UNKNOWN_RECEIVER
+                )
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None:
+            self.visit(node.value)
+        binding = self.value(node.value)
+        if binding == UNKNOWN_RECEIVER:
+            binding = self.value(node.annotation)
+        for name in receiver_bound_names(node.target):
+            self.env[name] = binding
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
+        for name in receiver_bound_names(node.target):
+            self.env[name] = self.value(node.value)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        bases = [self.value(base) for base in node.bases]
+        dynamic = any(
+            isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and child.name in {"__new__", "__getattr__", "__getattribute__"}
+            for child in node.body
+        )
+        methods = frozenset(
+            child.name
+            for child in node.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and all(
+                isinstance(decorator, ast.Name)
+                and decorator.id in {"classmethod", "staticmethod"}
+                for decorator in child.decorator_list
+            )
+        )
+        if node.decorator_list or node.keywords or dynamic:
+            binding = UNKNOWN_RECEIVER
+        elif any(base.kind == "model" for base in bases):
+            binding = MODEL_RECEIVER
+        elif all(base.kind == "plain" for base in bases):
+            inherited = frozenset().union(*(base.methods for base in bases))
+            binding = ReceiverBinding("plain", methods | inherited)
+        else:
+            binding = UNKNOWN_RECEIVER
+        self.env[node.name] = binding
+        previous = self.class_binding
+        previous_outer = self.class_outer
+        self.class_binding = binding
+        self.class_outer = dict(self.env)
+        self.scoped(node.body, dict(self.env))
+        self.class_binding = previous
+        self.class_outer = previous_outer
+
+    def visit_FunctionDef(
+        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> None:
+        for expression in [
+            *node.decorator_list,
+            *node.args.defaults,
+            *node.args.kw_defaults,
+        ]:
+            if expression is not None:
+                self.visit(expression)
+        outer = (
+            self.class_outer
+            if self.class_binding and self.class_outer is not None
+            else self.env
+        )
+        local = dict(outer)
+        for name in self.rebound:
+            local[name] = UNKNOWN_RECEIVER
+        for statement in node.body:
+            for name in receiver_bound_names(statement):
+                local[name] = UNKNOWN_RECEIVER
+        args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        if node.args.vararg:
+            args.append(node.args.vararg)
+        if node.args.kwarg:
+            args.append(node.args.kwarg)
+        for argument in args:
+            local[argument.arg] = self.value(argument.annotation)
+            if (
+                isinstance(argument.annotation, ast.Name)
+                and argument.annotation.id in self.rebound
+            ):
+                local[argument.arg] = UNKNOWN_RECEIVER
+        static = any(
+            isinstance(d, ast.Name) and d.id == "staticmethod"
+            for d in node.decorator_list
+        )
+        if self.class_binding and args and not static and args[0].annotation is None:
+            local[args[0].arg] = self.class_binding
+        previous = self.class_binding
+        previous_rebound = self.rebound
+        self.class_binding = None
+        self.rebound = self.rebound | receiver_rebound_names(node.body)
+        self.scoped(node.body, local)
+        self.class_binding = previous
+        self.rebound = previous_rebound
+        self.env[node.name] = UNKNOWN_RECEIVER
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        local = dict(self.env)
+        args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        if node.args.vararg:
+            args.append(node.args.vararg)
+        if node.args.kwarg:
+            args.append(node.args.kwarg)
+        for argument in args:
+            local[argument.arg] = UNKNOWN_RECEIVER
+        self.scoped([node.body], local)
+
+    def comprehension(self, node: ast.AST) -> None:
+        previous = self.env
+        local = dict(previous)
+        for generator in getattr(node, "generators", ()):
+            self.visit(generator.iter)
+            for name in receiver_bound_names(generator.target):
+                local[name] = UNKNOWN_RECEIVER
+            self.env = local
+            for condition in generator.ifs:
+                self.visit(condition)
+        if isinstance(node, ast.DictComp):
+            if node.key is not None:
+                self.visit(node.key)
+            if node.value is not None:
+                self.visit(node.value)
+        else:
+            self.visit(getattr(node, "elt"))
+        self.env = previous
+
+    visit_ListComp = comprehension
+    visit_SetComp = comprehension
+    visit_DictComp = comprehension
+    visit_GeneratorExp = comprehension
+
+    def visit_Delete(self, node: ast.Delete) -> None:
+        for name in receiver_bound_names(node):
+            self.env[name] = UNKNOWN_RECEIVER
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self.visit(node.value)
+        for name in receiver_bound_names(node.target):
+            self.env[name] = UNKNOWN_RECEIVER
+
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        left = self.scoped(node.body, dict(self.env))
+        right = self.scoped(node.orelse, dict(self.env))
+        for name in set(left) | set(right):
+            one = left.get(name, UNKNOWN_RECEIVER)
+            two = right.get(name, UNKNOWN_RECEIVER)
+            self.env[name] = one if one == two else UNKNOWN_RECEIVER
+
+    def conservative_control(self, node: ast.AST) -> None:
+        base = dict(self.env)
+        assigned = receiver_bound_names(node)
+        for name in assigned:
+            base[name] = UNKNOWN_RECEIVER
+        for _, item in ast.iter_fields(node):
+            if isinstance(item, list):
+                nodes = [child for child in item if isinstance(child, ast.AST)]
+                self.scoped(nodes, dict(base))
+            elif isinstance(item, ast.AST):
+                self.scoped([item], dict(base))
+        for name in assigned:
+            self.env[name] = UNKNOWN_RECEIVER
+
+    visit_For = conservative_control
+    visit_AsyncFor = conservative_control
+    visit_While = conservative_control
+    visit_With = conservative_control
+    visit_AsyncWith = conservative_control
+    visit_Try = conservative_control
+    visit_TryStar = conservative_control
+    visit_Match = conservative_control
+
+    def visit_Call(self, node: ast.Call) -> None:
+        function = node.func
+        if (
+            isinstance(function, ast.Attribute)
+            and function.attr in LEGACY_MODEL_METHODS
+        ):
+            binding = self.value(function.value)
+            kind = binding.kind
+            if kind == "plain" and function.attr not in binding.methods:
+                kind = "unknown"
+            segment = ast.get_source_segment(self.source, node)
+            if segment is not None:
+                key = (node.lineno, getattr(node, "end_lineno", node.lineno), segment)
+                self.calls.setdefault(key, set()).add(kind)
+        self.generic_visit(node)
+
+
+class PydanticReceiverCache:
+    """Bind method candidates to the exact exported source being scanned."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.files: Dict[str, Dict[Tuple[int, int, str], Set[str]]] = {}
+        self.issues: Dict[str, str] = {}
+
+    def classify(self, finding: Finding, text: object) -> List[Finding]:
+        if isinstance(text, str) and text.lstrip().startswith(
+            ("class ", "from ", "import ", "@")
+        ):
+            return [finding]
+        if finding.path not in self.files:
+            source = (self.root / finding.path).read_text(encoding="utf-8")
+            resolver = PydanticReceivers(source)
+            try:
+                resolver.visit(ast.parse(source))
+            except SyntaxError as error:
+                # Ruff owns syntax validity; this records missing type evidence.
+                self.issues[finding.path] = (
+                    f"receiver analysis unavailable at line {error.lineno}"
+                )
+            self.files[finding.path] = resolver.calls
+        if not isinstance(text, str):
+            return [finding]
+        normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+        key = (finding.line, finding.end_line, normalized)
+        kinds = self.files[finding.path].get(key)
+        # Non-method namespace/decorator/Config findings retain their strong rule.
+        if kinds is None and not re.search(
+            r"\.(parse_obj|parse_raw|parse_file|from_orm)\s*\(", normalized
+        ):
+            return [finding]
+        result = [finding] if kinds and "model" in kinds else []
+        if not kinds or "unknown" in kinds or "module" in kinds:
+            result.append(
+                Finding(
+                    "pydantic_v1_ambiguous",
+                    finding.path,
+                    finding.line,
+                    finding.end_line,
+                    finding.origin,
+                    "Possible legacy model method: receiver is unresolved, "
+                    "not proven Pydantic"
+                    + (
+                        "; " + self.issues[finding.path]
+                        if finding.path in self.issues
+                        else ""
+                    ),
+                )
+            )
+        return result
+
+
 def run_astgrep(
     sg: str, root: Path, scratch: Path, files: Sequence[str], sg_ids: Sequence[str]
 ) -> List[Finding]:
@@ -1149,6 +1536,7 @@ def run_astgrep(
     )
     pattern = "^(" + "|".join(re.escape(i) for i in sorted(sg_ids)) + ")$"
     found: List[Finding] = []
+    receivers = PydanticReceiverCache(root)
     for batch in chunks(files):
         command = [
             sg,
@@ -1172,11 +1560,16 @@ def run_astgrep(
             done.stdout.decode("utf-8", "replace").splitlines(), 1
         ):
             if raw.strip():
-                found.extend(astgrep_item(raw, number, command))
+                found.extend(astgrep_item(raw, number, command, receivers))
     return found
 
 
-def astgrep_item(raw: str, number: int, command: Sequence[str]) -> List[Finding]:
+def astgrep_item(
+    raw: str,
+    number: int,
+    command: Sequence[str],
+    receivers: Optional[PydanticReceiverCache] = None,
+) -> List[Finding]:
     try:
         item = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -1208,18 +1601,17 @@ def astgrep_item(raw: str, number: int, command: Sequence[str]) -> List[Finding]
             return []
         raise ToolFailure("ast-grep", command, f"unknown mandate rule id {rule_id!r}")
     # ast-grep ranges are 0-based; everything else here is 1-based.
-    return [
-        Finding(
-            SG_TO_KEY[rule_id],
-            PurePosixPath(
-                path.replace("\\", "/") if os.name == "nt" else path
-            ).as_posix(),
-            line + 1,
-            end_line + 1,
-            f"ast-grep:{rule_id}",
-            message if isinstance(message, str) else rule_id,
-        )
-    ]
+    finding = Finding(
+        SG_TO_KEY[rule_id],
+        PurePosixPath(path.replace("\\", "/") if os.name == "nt" else path).as_posix(),
+        line + 1,
+        end_line + 1,
+        f"ast-grep:{rule_id}",
+        message if isinstance(message, str) else rule_id,
+    )
+    if rule_id == "mandate-pydantic-v1" and receivers is not None:
+        return receivers.classify(finding, item.get("text"))
+    return [finding]
 
 
 def suppression_codes(enabled: Mapping[str, Severity]) -> Set[str]:
@@ -1407,6 +1799,10 @@ def scan_tree(
         result.skipped["ast-grep"] = [r.key for r in sg_rules]
     elif sg_rules and tools.astgrep is not None:
         sg_ids = [i for r in sg_rules for i in r.sg_ids]
+        if py_files and enabled["pydantic_v1_ambiguous"] is not Severity.OFF:
+            # Strong rule supplies method-name candidates even when its own
+            # policy is off; receiver classification selects the actual rule.
+            sg_ids = sorted(set(sg_ids) | {"mandate-pydantic-v1"})
         targets = sorted({f for r in sg_rules for f in by_lang[r.language]})
         result.findings.extend(
             run_astgrep(tools.astgrep, root, scratch, targets, sg_ids)
@@ -1415,7 +1811,11 @@ def scan_tree(
     if files and any(r.text_check for r in active):
         result.findings.extend(text_findings(root, py_files + rs_files, enabled))
 
-    result.findings = postprocess(root, result.findings, policy.vendored)
+    result.findings = postprocess(
+        root,
+        [f for f in result.findings if enabled[f.key] is not Severity.OFF],
+        policy.vendored,
+    )
     return result
 
 
