@@ -310,6 +310,39 @@ _qm_receiver_attribute_mutations() {
     "${_qmr_classes}    @classmethod\n    def probe(cls):\n        return cls.parse_file('m.json')\nParser.parse_file = Model.parse_file\n" 0 unknown
 }
 
+# Protects: ordinary configuration/data writes cannot weaken model enforcement.
+# Detects: conflating stable model type, plain method proof and type replacement.
+# Needs: real scanner on staged source; no execution of fixture model constructors.
+# Breadcrumb: hooks/common/mandate_scan.py receiver mutation classification.
+_qm_receiver_data_members() {
+  _qmr_model='from pydantic import BaseModel\nclass Model(BaseModel):\n    count: int = 0\n'
+  _qm_receiver_case 'model config write retains model block' \
+    "${_qmr_model}Model.model_config = {}\nModel.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'model class data write retains model block' \
+    "${_qmr_model}Model.label = 'ready'\nModel.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'model instance data write retains model block' \
+    "${_qmr_model}model = Model()\nmodel.count = 1\nmodel.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'model initialization retains self type' \
+    "${_qmr_model}    def __init__(self):\n        super().__init__()\n        self.count = 1\n        self.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'plain field write retains declared method proof' \
+    'class Parser:\n    def parse_file(self, path):\n        return path\n    def probe(self, path):\n        self.path = path\n        return self.parse_file(path)\n' 0 plain
+  _qm_receiver_case 'explicit model base change remains unresolved' \
+    "${_qmr_model}Model.__bases__ = external_bases\nModel.parse_file('m.json')\n" 0 unknown
+}
+
+# Protects: the trusted settings namespace retains known BaseSettings enforcement.
+# Detects: module aliases losing type evidence or modules becoming plain receivers.
+# Needs: real staged scanner; no import or execution of fixture framework code.
+# Breadcrumb: hooks/common/mandate_scan.py import/value namespace handling.
+_qm_receiver_settings_namespace() {
+  _qm_receiver_case 'settings module alias retains model block' \
+    'import pydantic_settings as settings\nclass Settings(settings.BaseSettings):\n    pass\nSettings.parse_file("m.json")\n' 1 model
+  _qm_receiver_case 'settings module constructor retains model block' \
+    'import pydantic_settings\nclass Settings(pydantic_settings.BaseSettings):\n    pass\nSettings().parse_file("m.json")\n' 1 model
+  _qm_receiver_case 'settings module itself remains unresolved' \
+    'import pydantic_settings as settings\nsettings.parse_file("m.json")\n' 0 unknown
+}
+
 _qm_receiver_modes() {
   _qmr_repo="$(_qm_repo)"; _qmr_log="$GG_T_TMPROOT/receiver-modes.log"
   _qm_put "$_qmr_repo" src/model.py 'marker = 1\n'
@@ -376,6 +409,8 @@ t_case_pydantic_receiver_classification() {
   _qm_receiver_models
   _qm_receiver_plain_and_unknown
   _qm_receiver_attribute_mutations
+  _qm_receiver_data_members
+  _qm_receiver_settings_namespace
   _qm_receiver_modes
   _qm_receiver_snapshot_case model
   _qm_receiver_snapshot_case plain

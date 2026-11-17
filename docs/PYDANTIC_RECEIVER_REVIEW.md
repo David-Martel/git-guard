@@ -25,11 +25,17 @@ dispatch remain under the
 [ambiguous rule](../rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml).
 Its default remains WARN. This analysis is deliberately local; it does not claim
 whole-program type inference or resolve arbitrary imported project classes.
-Explicit attribute changes invalidate the receiver and its local aliases,
-instances and derived classes. Deferred functions account for later mutations
-in their enclosing scope. Shadowed `classmethod` and `staticmethod` names do
+Changes to a plain receiver's legacy-method namespace invalidate its local
+aliases, instances and derived plain classes. Ordinary configuration and data
+writes preserve known model type and plain method proof; actual type/base or
+dynamic-dispatch changes invalidate type certainty. Deferred functions account
+for relevant later mutations in their enclosing scope. Shadowed
+`classmethod` and `staticmethod` names do
 not establish plain-method proof. This is bounded static analysis, rather than
 a guarantee about arbitrary cross-module runtime monkey-patching.
+The public `pydantic_settings.BaseSettings` namespace works both directly and
+through a module alias. A method call on the settings module itself remains
+unresolved; the namespace is not treated as a model instance.
 
 Namespace imports, deprecated validator decorators and the existing nested
 Config matcher retain their strong classification. Existing `.dict()` and
@@ -68,10 +74,18 @@ replacing a parser's method with `Model.parse_file` still cleared its finding.
 Seven new real scanner controls reproduced the defect with **98 passed and
 seven failed assertions**. A further deferred-classmethod control failed after
 the first correction (**115 passed, one failed**). Both red receipts are kept.
-The corrected receiver checks now report **116 passed, zero failures and zero
-skips**, including genuine builtin decorator positives and an unrelated model
-that must still block. The broader suite is being repeated at this corrected
-source; the register distinguishes its result from the previous source head.
+That correction passed **116 focused checks** and **450 broader checks** with
+the same 14 existing raw-rule skips. Independent review rejected it as well:
+ordinary `Model.model_config = {}` incorrectly weakened a still-known model to
+an ambiguous receiver. Configuration, data-member, initialization and type-change
+counterparts reproduced nine failed assertions (**121 passed, nine failed**).
+The narrower correction now passes **130 focused checks, with no failures or
+skips**, and **464 broader checks** with the same 14 existing raw-rule skips.
+Two public settings-module import forms then reproduced four failed assertions
+(**133 passed, four failed**). Their bounded namespace correction now passes
+**137 focused checks, with no failures or skips**. The broader suite is being
+repeated at this final source; the register distinguishes its result from the
+earlier source snapshots and both rejected predecessor heads.
 No Linux execution is claimed by these author receipts.
 
 ShellCheck passed at warning severity for the two changed test files and runner.
