@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "7ac5c1b55cdf5d329195842f1104256b0aece01f + proposed frozen subscript/control-flow successor",
+  "source_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
     "hooks/common/mandate_scan.py": "4d8d95ee9f2166251d68bed37be8cdae16f32c5a3abe8c52baabb0eea780201c",
@@ -20,7 +20,7 @@
     "global_precommit": "The actual current configured global pre-commit hook passes. Existing nonblocking type/style advisories remain disclosed.",
     "static_checks": "Current isolated Ruff E/F and format, default mypy and ShellCheck all exit 0.",
     "linux": "Unverified for this proposed successor; exact new-head CI is required.",
-    "current_source_commit": "7ac5c1b55cdf5d329195842f1104256b0aece01f + proposed frozen subscript/control-flow successor",
+    "current_source_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
     "current_source_sha256": "4d8d95ee9f2166251d68bed37be8cdae16f32c5a3abe8c52baabb0eea780201c",
     "current_test_sha256": "74ffff312d10b4e590163a937b11b2c0231f8256bdd8c19d7659f8d92d7da89f",
     "qualification": {
@@ -88,46 +88,68 @@
   },
   "rows": [
     {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "scope": "137 real scanner assertions protecting model/config/data and plain API distinctions and selected Git snapshots; the full test file binds helpers.",
-      "disposition": "UNREVIEWED",
-      "reviewer": null
+      "scope": "137 real scanner assertions protecting model/config/data and plain API distinctions and selected Git snapshots; the full test file binds helpers.; actual selector normalization/full target hashes verified. Root directly ran42ASTcontrols/8stdlib witnesses;872category assertions are author/controller executions with loghashes checked, not root runs."
     },
     {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "da126957f7ea2576d8fe3e04f326c78b7728a322ec617f61f1a0c3af883c98c6",
-      "scope": "401 real staged scanner assertions protecting expression, closure and class scope; local effects; executable Store targets; evaluation order; unresolved instance returns; captured constructor callees; initial and possible future while headers; sequential context targets; and instance annotations. Model, data, plain and no-call counterparts remain covered. The full test file binds helpers. No general runtime, return, alias or callgraph inference.",
-      "disposition": "UNREVIEWED",
-      "reviewer": null
+      "scope": "401 real staged scanner assertions protecting expression, closure and class scope; local effects; executable Store targets; evaluation order; unresolved instance returns; captured constructor callees; initial and possible future while headers; sequential context targets; and instance annotations. Model, data, plain and no-call counterparts remain covered. The full test file binds helpers. No general runtime, return, alias or callgraph inference.; actual selector normalization/full target hashes verified. Root directly ran42ASTcontrols/8stdlib witnesses;872category assertions are author/controller executions with loghashes checked, not root runs."
     },
     {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "scope": "112 raw rule assertions, including candidate positives and v2 negatives. Fourteen existing documented skipped controls remain unqualified.",
-      "disposition": "UNREVIEWED",
-      "reviewer": null
+      "scope": "112 raw rule assertions, including candidate positives and v2 negatives. Fourteen existing documented skipped controls remain unqualified.; actual selector normalization/full target hashes verified. Root directly ran42ASTcontrols/8stdlib witnesses;872category assertions are author/controller executions with loghashes checked, not root runs."
     }
   ],
   "rule_reviews": [
     {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
       "selector": "mandate-pydantic-v1",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "scope": "Existing syntax retained; current classifier dependency context requires fresh review.",
-      "disposition": "UNREVIEWED",
-      "reviewer": null
+      "scope": "Existing syntax retained; current classifier dependency context requires fresh review.; current classifier dependencies match targetmanifest;14rawskips remain unqualified."
     },
     {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
       "selector": "mandate-pydantic-v1-ambiguous",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+      "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "scope": "Existing syntax retained; current classifier dependency context requires fresh review.",
-      "disposition": "UNREVIEWED",
-      "reviewer": null
+      "scope": "Existing syntax retained; current classifier dependency context requires fresh review.; current classifier dependencies match targetmanifest;14rawskips remain unqualified."
     }
   ],
   "integration": {
@@ -229,8 +251,19 @@
     "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   },
   "independent_review": {
-    "disposition": "UNREVIEWED",
-    "scope": "Fresh review of the actual published nine-source, three-selector and two-rule bindings and exact final head is required. Earlier holds and dispositions retain their original scope."
+    "disposition": "ROOT_SOURCE_KEEP_ONLY_NOT_FINAL_ADMISSION",
+    "reviewer": "codex-python-closeout",
+    "reviewer_type": "independent-agent",
+    "date": "2026-11-18T05:04:25.801386+00:00",
+    "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+    "receipt": "git-guard-control-final-root-source-review.json",
+    "sha256": "b43e77dc63b5444f631767874d8d3a6cd594f117390e910b9a8dccdbdb352555",
+    "scope": "Actual nine-source, three-selector and two-rule source review. Actual final-head outside review, current automated reviews, CI and autopilot admission remain pending. All earlier holds retain their original scope. No installed change.",
+    "limits": [
+      "Bounded local evidence only, no full runtime/type/callgraph/alias/return solver guarantee.",
+      "No whole-repository suite or line-coverage claim.",
+      "Metadata successor, actual outside-family/current automated reviews/exact-headCI/autopilot remain required. No installed changes."
+    ]
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -1813,5 +1846,167 @@
   "control_successor_mapping": {
     "receipt": "git-guard-receiver-control-final-binding-map.json",
     "sha256": "def2c40059511c672ca194d0478b9f6d5244fa8d09d9a377d618f9c031d76e42"
+  },
+  "source_reviews": [
+    {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
+      "selector": "source:hooks/common/mandate_scan.py",
+      "source": "hooks/common/mandate_scan.py",
+      "selector_sha256": "4d8d95ee9f2166251d68bed37be8cdae16f32c5a3abe8c52baabb0eea780201c",
+      "scope": "Actual committed nine-source bytes verified; model-instance lookup, callee snapshot/argument effects, initial+future While evidence, sequential with-item targets and annotated-instance fallback inspected. All previous corrections retained. Source-only, not final admission."
+    },
+    {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
+      "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "scope": "Actual committed nine-source bytes verified; model-instance lookup, callee snapshot/argument effects, initial+future While evidence, sequential with-item targets and annotated-instance fallback inspected. All previous corrections retained. Source-only, not final admission."
+    },
+    {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
+      "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+      "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+      "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "scope": "Actual committed nine-source bytes verified; model-instance lookup, callee snapshot/argument effects, initial+future While evidence, sequential with-item targets and annotated-instance fallback inspected. All previous corrections retained. Source-only, not final admission."
+    },
+    {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
+      "selector": "source:tests/32-quality-mandate.t.sh",
+      "source": "tests/32-quality-mandate.t.sh",
+      "selector_sha256": "74ffff312d10b4e590163a937b11b2c0231f8256bdd8c19d7659f8d92d7da89f",
+      "scope": "Actual committed nine-source bytes verified; model-instance lookup, callee snapshot/argument effects, initial+future While evidence, sequential with-item targets and annotated-instance fallback inspected. All previous corrections retained. Source-only, not final admission."
+    },
+    {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
+      "selector": "source:tests/27-rule-behaviour.t.sh",
+      "source": "tests/27-rule-behaviour.t.sh",
+      "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "scope": "Actual committed nine-source bytes verified; model-instance lookup, callee snapshot/argument effects, initial+future While evidence, sequential with-item targets and annotated-instance fallback inspected. All previous corrections retained. Source-only, not final admission."
+    },
+    {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
+      "selector": "source:tests/run.sh",
+      "source": "tests/run.sh",
+      "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+      "scope": "Actual committed nine-source bytes verified; model-instance lookup, callee snapshot/argument effects, initial+future While evidence, sequential with-item targets and annotated-instance fallback inspected. All previous corrections retained. Source-only, not final admission."
+    },
+    {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
+      "selector": "source:docs/QA_TOOLING.md",
+      "source": "docs/QA_TOOLING.md",
+      "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "scope": "Actual committed nine-source bytes verified; model-instance lookup, callee snapshot/argument effects, initial+future While evidence, sequential with-item targets and annotated-instance fallback inspected. All previous corrections retained. Source-only, not final admission."
+    },
+    {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
+      "selector": "source:docs/RULES.md",
+      "source": "docs/RULES.md",
+      "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+      "scope": "Actual committed nine-source bytes verified; model-instance lookup, callee snapshot/argument effects, initial+future While evidence, sequential with-item targets and annotated-instance fallback inspected. All previous corrections retained. Source-only, not final admission."
+    },
+    {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T05:04:25.801386+00:00",
+      "reviewed_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+      "disposition": "KEEP",
+      "target_manifest_sha256": "acb4d248f2643c2c9636a7c49695617bf4006e2f3af0462b4bd12eaeb6d7ecc2",
+      "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
+      "source": "docs/PYDANTIC_RECEIVER_REVIEW.md",
+      "selector_sha256": "56a680a387675c1e2bedef3620bca1122001a01e10a9047f1ec822159f7f0085",
+      "scope": "Actual committed nine-source bytes verified; model-instance lookup, callee snapshot/argument effects, initial+future While evidence, sequential with-item targets and annotated-instance fallback inspected. All previous corrections retained. Source-only, not final admission."
+    }
+  ],
+  "metadata_successor_binding": {
+    "reviewed_source_commit": "e1d519382440605ce31041d3ca36fed166ab1b2c",
+    "scope": "Sole review-JSON metadata successor; all nine reviewed source files remain byte-identical. Actual outside follow-up stays external/public without another in-source metadata cycle.",
+    "source_map": {
+      "hooks/common/mandate_scan.py": {
+        "reviewed_git_blob_sha256": "4d8d95ee9f2166251d68bed37be8cdae16f32c5a3abe8c52baabb0eea780201c",
+        "successor_source_sha256": "4d8d95ee9f2166251d68bed37be8cdae16f32c5a3abe8c52baabb0eea780201c",
+        "unchanged": true
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": {
+        "reviewed_git_blob_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "successor_source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "unchanged": true
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": {
+        "reviewed_git_blob_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "successor_source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "unchanged": true
+      },
+      "tests/32-quality-mandate.t.sh": {
+        "reviewed_git_blob_sha256": "74ffff312d10b4e590163a937b11b2c0231f8256bdd8c19d7659f8d92d7da89f",
+        "successor_source_sha256": "74ffff312d10b4e590163a937b11b2c0231f8256bdd8c19d7659f8d92d7da89f",
+        "unchanged": true
+      },
+      "tests/27-rule-behaviour.t.sh": {
+        "reviewed_git_blob_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "successor_source_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "unchanged": true
+      },
+      "tests/run.sh": {
+        "reviewed_git_blob_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "successor_source_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "unchanged": true
+      },
+      "docs/QA_TOOLING.md": {
+        "reviewed_git_blob_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "successor_source_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "unchanged": true
+      },
+      "docs/RULES.md": {
+        "reviewed_git_blob_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "successor_source_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "unchanged": true
+      },
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": {
+        "reviewed_git_blob_sha256": "56a680a387675c1e2bedef3620bca1122001a01e10a9047f1ec822159f7f0085",
+        "successor_source_sha256": "56a680a387675c1e2bedef3620bca1122001a01e10a9047f1ec822159f7f0085",
+        "unchanged": true
+      }
+    },
+    "root_review_receipt_sha256": "b43e77dc63b5444f631767874d8d3a6cd594f117390e910b9a8dccdbdb352555"
   }
 }
