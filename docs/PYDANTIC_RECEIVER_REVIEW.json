@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "Pending signed local SOURCE commit; no standalone source push.",
+  "source_commit": "94407c2daed676ac87d435818c70a566e579cafc",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
     "hooks/common/mandate_scan.py": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
@@ -20,7 +20,7 @@
     "global_precommit": "Actual normal global hook exit0; existing basedpyright/use-walrus advisories disclosed.",
     "static_checks": "Current isolated Ruff E,F/format,mypy,ShellCheck exit0 with source guards.",
     "linux": "Successor unqualified; final metadata-head native/Docker CI required.",
-    "current_source_commit": "Pending signed localSourceA",
+    "current_source_commit": "94407c2daed676ac87d435818c70a566e579cafc",
     "current_source_sha256": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
     "current_test_sha256": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
     "qualification": {
@@ -175,36 +175,36 @@
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "9435e17335af92e3dedad28bf2e253a6315518327fe22ecf8598d957d4e5e483",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     }
   ],
   "rule_reviews": [
@@ -212,27 +212,27 @@
       "selector": "mandate-pydantic-v1",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc"
     },
     {
       "selector": "mandate-pydantic-v1-ambiguous",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc"
     }
   ],
   "integration": {
@@ -334,8 +334,15 @@
     "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   },
   "independent_review": {
-    "disposition": "UNREVIEWED",
-    "scope": "Actual signed localSourceA required before independent9/3/2 binding; final-head outside/currentCI/autopilot pending."
+    "disposition": "KEEP_SOURCE_ONLY",
+    "reviewer": "codex-python-closeout",
+    "reviewer_type": "independent-agent",
+    "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+    "root_source_review": {
+      "receipt": "git-guard-descriptor-hash-root-source-review.json",
+      "sha256": "3be6c5a6c3541627ffdf8a44b315672023df3afd7f9331eaf602b2995a37266c"
+    },
+    "scope": "Actual signedSourceA9/3/2rootKEEP; native1506/profile1506 andwholePythonmodule91.91line85.59branch accepted. Finalmetadatahead/currentCI/outsidefamily/autopilot admission pending. No release/deployment approval."
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -2264,100 +2271,100 @@
       "selector": "source:hooks/common/mandate_scan.py",
       "selector_sha256": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "source:tests/32-quality-mandate.t.sh",
       "selector_sha256": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "source:tests/27-rule-behaviour.t.sh",
       "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "source:tests/run.sh",
       "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "source:docs/QA_TOOLING.md",
       "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "source:docs/RULES.md",
       "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     },
     {
       "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
       "selector_sha256": "c150bfa29f3ec4b65d2b239c1f168331fe55a97bec77b0573de708422fa1a83a",
       "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh actual source-bound independent review required; original held bindings retained in descriptor_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T15:03:39.862072+00:00",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "disposition": "KEEP",
+      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
     }
   ],
   "lambda_decorator_predecessor": {
@@ -5581,5 +5588,30 @@
       "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
     },
     "held_unsigned_predecessor": "423e430b56c13ac186386a7efc723181ec7026c08540d0d6277225829714b644"
+  },
+  "metadata_successor_binding": {
+    "reviewed_source_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+    "source_signature": "G",
+    "root_source_review": {
+      "receipt": "git-guard-descriptor-hash-root-source-review.json",
+      "sha256": "3be6c5a6c3541627ffdf8a44b315672023df3afd7f9331eaf602b2995a37266c"
+    },
+    "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+    "source_files_unchanged": {
+      "hooks/common/mandate_scan.py": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "tests/32-quality-mandate.t.sh": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
+      "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+      "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": "c150bfa29f3ec4b65d2b239c1f168331fe55a97bec77b0573de708422fa1a83a"
+    },
+    "stable_rule_id_to_source": {
+      "mandate-pydantic-v1": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "mandate-pydantic-v1-ambiguous": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    },
+    "scope": "SoleJSON metadata successor; production9sourcebytes/selectors/rulehashes unchanged from reviewed signedSourceA. No regenerated review digests or self-referential metadata commit."
   }
 }
