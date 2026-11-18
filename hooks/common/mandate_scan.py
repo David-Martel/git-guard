@@ -1171,6 +1171,7 @@ PYDANTIC_MODULE = ReceiverBinding("module")
 PYDANTIC_SETTINGS_MODULE = ReceiverBinding("module", identity="pydantic-settings")
 LEGACY_MODEL_METHODS = frozenset({"parse_obj", "parse_raw", "parse_file", "from_orm"})
 MODEL_BASES = frozenset({"BaseModel", "BaseSettings", "RootModel"})
+RECEIVER_HOOK_MEMBERS = frozenset({"__init__", "__init_subclass__"})
 RECEIVER_TYPE_MEMBERS = frozenset(
     {
         "__class__",
@@ -1288,9 +1289,11 @@ def receiver_binding_events(node: ast.AST) -> Iterable[str]:
             yield from receiver_binding_events(child)
 
 
-def receiver_rebound_names(nodes: Iterable[ast.AST]) -> Set[str]:
+def receiver_rebound_names(
+    nodes: Iterable[ast.AST], initial_names: Iterable[str] = ()
+) -> Set[str]:
     """Rebound captures cannot retain their earlier plain receiver proof."""
-    counts: Dict[str, int] = {}
+    counts: Dict[str, int] = {name: 1 for name in initial_names}
     for node in nodes:
         for name in receiver_binding_events(node):
             counts[name] = counts.get(name, 0) + 1
@@ -1415,7 +1418,9 @@ def receiver_target_mutation(node: ast.AST) -> Optional[Tuple[str, bool]]:
         )
     else:
         return None
-    if member not in LEGACY_MODEL_METHODS | RECEIVER_TYPE_MEMBERS:
+    if member not in (
+        LEGACY_MODEL_METHODS | RECEIVER_TYPE_MEMBERS | RECEIVER_HOOK_MEMBERS
+    ):
         return None
     name = receiver_target_name(node)
     return (name or "<unresolved-mutation>", member in RECEIVER_TYPE_MEMBERS)
@@ -1992,7 +1997,10 @@ class PydanticReceivers(ast.NodeVisitor):
         previous_rebound = self.rebound
         previous_mutated = self.mutated
         self.class_binding = None
-        self.rebound = self.rebound | receiver_rebound_names(node.body)
+        formal_names = {arg.arg for arg in args}
+        self.rebound = (self.rebound - formal_names) | receiver_rebound_names(
+            node.body, formal_names
+        )
         self.mutated = dict(self.mutated)
         for name, changes_type in receiver_mutated_names(node.body).items():
             self.mutated[name] = self.mutated.get(name, False) or changes_type
@@ -2060,7 +2068,10 @@ class PydanticReceivers(ast.NodeVisitor):
         previous_rebound = self.rebound
         previous_mutated = self.mutated
         self.class_binding = None
-        self.rebound = self.rebound | receiver_rebound_names([node.body])
+        formal_names = {arg.arg for arg in args}
+        self.rebound = (self.rebound - formal_names) | receiver_rebound_names(
+            [node.body], formal_names
+        )
         self.mutated = dict(self.mutated)
         for name, changes_type in receiver_mutated_names([node.body]).items():
             self.mutated[name] = self.mutated.get(name, False) or changes_type

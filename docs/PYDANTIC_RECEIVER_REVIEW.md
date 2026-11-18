@@ -56,6 +56,10 @@ Python 3.14+ compilation and the current staged Ruff syntax gate reject them.
 The classifier defect therefore does not demonstrate a default-pipeline bypass.
 
 Binding events are counted individually even within one compound statement.
+Formal arguments, including implicit self/cls, start with a binding at scope
+entry and shadow inherited outer-name rebound state. Later local reassignment
+expires deferred capture proof; unchanged formals and ordinary data writes retain
+their existing method/type evidence.
 Comprehension iteration targets remain local to their implicit scope; enclosing
 binding inventories retain iterator, condition and body assignment expressions.
 Executable target expressions are still inspected for independent call findings.
@@ -76,6 +80,10 @@ simple data-only initialization and known model configuration retain precision.
 Aliased or decorated plain initializers remain unsupported. Plain bases with
 `__init_subclass__` hooks cannot establish inherited method ownership; an already
 known model base retains its model evidence.
+Explicit later `__init__` and `__init_subclass__` namespace writes also revoke
+plain construction/subclass proof. They preserve direct known-model ancestry;
+the existing `__new__` allocation/type barrier remains separate and unchanged.
+This does not infer arbitrary initializer, factory or MRO effects.
 
 Annotations without assigned values preserve existing runtime bindings and
 method declarations, including the mutation and capture-event summaries.
@@ -225,6 +233,9 @@ Source 5eab494a / metadata 416c6fcd and its 1,145 checks, including both success
 CI jobs, remain source-specific history after the legacy annotation inventory
 defect was confirmed. The outside read-only review's stated unread limits are
 retained with its result; it did not execute the finding or grant admission.
+Source 23bca8f6 / metadata fa630dd7 and its 1,191 checks remain source-specific
+history after formal-binding capture and later initializer-hook findings.
+Their source/metadata KEEP receipts do not admit this corrected successor.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted

@@ -565,6 +565,7 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_header_subscript_contexts
   _qm_receiver_legacy_annotation_inventory
   _qm_receiver_comprehension_scope_contexts
+  _qm_receiver_parameter_hook_contexts
 }
 
 # Protects: A base subscript captures its owner before evaluating its index.
@@ -2191,4 +2192,37 @@ _qm_receiver_comprehension_scope_contexts() {
     'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\nreceiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    [(receiver:=Model) for item in [0]]\n    return load()\n' 0 unknown
   _qm_receiver_case 'ordinary target preserves enclosing model' \
     'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\ndef run():\n    [None for item in []]\n    return Model.parse_file('"'"'x'"'"')\n' 1 model
+}
+
+# Protects: formal bindings shadow outer names and later reassignment expires captures.
+# Detects: stale parameter/self proof and explicit initializer-hook namespace changes.
+# Needs: actual staged scanner; ordinary data/plain and strong-model counterparts.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_rebound_names/target_mutation.
+_qm_receiver_parameter_hook_contexts() {
+  _qm_receiver_case 'typed parameter lambda observes later reassignment' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef outer(receiver:Parser):\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    receiver=Model\n    return load()\n' 0 unknown
+  _qm_receiver_case 'typed parameter nested function observes later reassignment' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef outer(receiver:Parser):\n    def load():return receiver.parse_file('"'"'x'"'"')\n    receiver=Model\n    return load()\n' 0 unknown
+  _qm_receiver_case 'implicit self lambda observes later reassignment' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\nclass LocalParser:\n    def parse_file(self,path):return path\n    def run(self):\n        load=lambda:self.parse_file('"'"'x'"'"')\n        self=Model\n        return load()\n' 0 unknown
+  _qm_receiver_case 'strict ambiguity cannot clear reassigned parameter' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef outer(receiver:Parser):\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    receiver=Model\n    return load()\n' 1 unknown 'mandate.pydantic_v1_ambiguous=block\n'
+  _qm_receiver_case 'replaced initializer loses class plain proof' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef install(self):\n    self.parse_file=Model.parse_file\nParser.__init__=install\nParser().parse_file('"'"'x'"'"')\n' 0 unknown
+  _qm_receiver_case 'replaced subclass hook loses child plain proof' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef install(cls):\n    cls.parse_file=Model.parse_file\nParser.__init_subclass__=classmethod(install)\nclass Child(Parser):pass\nChild().parse_file('"'"'x'"'"')\n' 0 unknown
+  _qm_receiver_case 'unchanged typed parameter closure remains plain' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef outer(receiver:Parser):\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    return load()\n' 0 plain
+  _qm_receiver_case 'ordinary self data write preserves plain closure' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\nclass LocalParser:\n    def parse_file(self,path):return path\n    def run(self):\n        load=lambda:self.parse_file('"'"'x'"'"')\n        self.path='"'"'notes'"'"'\n        return load()\n' 0 plain
+  _qm_receiver_case 'unchanged model parameter remains strong' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef outer(receiver:Model):\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    return load()\n' 1 model
+  _qm_receiver_case 'model initializer write preserves model ancestry' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef install(self):self.path='"'"'notes'"'"'\nModel.__init__=install\nModel.parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'parameter shadow ignores rebound global for strong model' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\nreceiver=Parser()\nreceiver=Model\ndef outer(receiver:Model):\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    return load()\n' 1 model
+  _qm_receiver_case 'parameter shadow ignores rebound global for plain parser' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\nreceiver=Parser()\nreceiver=Model\ndef outer(receiver:Parser):\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    return load()\n' 0 plain
+  _qm_receiver_case 'model subclass hook write preserves direct model ancestry' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef install(cls):cls.path='"'"'notes'"'"'\nModel.__init_subclass__=classmethod(install)\nModel.parse_file('"'"'x'"'"')\n' 1 model
 }
