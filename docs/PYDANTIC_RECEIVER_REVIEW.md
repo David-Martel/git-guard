@@ -94,6 +94,12 @@ also checked with conservative later-iteration bindings; a known-model finding
 from its initial evaluation stays strong. Context-manager targets take effect
 before the next item, with unresolved returned ownership. Variable annotation
 fallbacks represent instances consistently with parameter annotations.
+Potential outer-name writes in repeated comprehension expressions forfeit plain
+proof, while initial model evidence remains available. Per-iteration summaries
+include executable targets and keep the first iterator separate. Captured
+assignment values are rechecked after each target's method/type effects before
+later names receive their evidence; ordinary data and name-only rebinding do
+not mutate the captured object. Constructor arguments share that same guard.
 
 Conditional expressions and short-circuit operations merge binding evidence;
 comprehension assignment expressions account for their outer bindings. Lambdas
@@ -148,6 +154,8 @@ Source 8e76e12c / metadata 7ac5c1b5 and its 827 selected checks are held after
 the model-instance subscript false block. Its source KEEP remains historical.
 The intermediate FAE4F0F6 source's 843 checks are also held after constructor,
 loop-header, sequential context-target and annotation-instance findings.
+Source e1d51938 / metadata cf3f8080 and its 872 checks remain held after repeated
+comprehension and captured-assignment-target findings.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted

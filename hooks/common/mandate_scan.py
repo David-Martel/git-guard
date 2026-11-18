@@ -1322,6 +1322,7 @@ def receiver_comprehension_body(node: ast.AST) -> List[ast.AST]:
     """Separate per-iteration expressions from the eager first iterator."""
     generators = getattr(node, "generators", ())
     body: List[ast.AST] = [item.iter for item in generators[1:]]
+    body.extend(item.target for item in generators)
     body.extend(condition for item in generators for condition in item.ifs)
     values = (
         [node.key, node.value]
@@ -1591,11 +1592,37 @@ class PydanticReceivers(ast.NodeVisitor):
                 else UNKNOWN_RECEIVER
             )
 
+    def revalidate_binding(
+        self,
+        binding: ReceiverBinding,
+        nodes: Iterable[ast.AST],
+        target: Optional[ast.AST] = None,
+    ) -> ReceiverBinding:
+        """Recheck captured object proof after later expression or target effects."""
+        nodes = list(nodes)
+        mutations = receiver_mutated_names(nodes)
+        if target is not None:
+            for leaf in receiver_target_leaves(target):
+                mutation = receiver_target_mutation(leaf)
+                if mutation:
+                    name, target_changes_type = mutation
+                    mutations[name] = mutations.get(name, False) or target_changes_type
+        _, call_changes_type = self.call_effects(nodes)
+        if (
+            binding.kind == "plain" and (mutations or call_changes_type is not None)
+        ) or (
+            binding.kind == "model"
+            and (any(mutations.values()) or call_changes_type is True)
+        ):
+            return UNKNOWN_RECEIVER
+        return binding
+
     def visit_Assign(self, node: ast.Assign) -> None:
         self.visit(node.value)
         binding = self.value(node.value)
         for target in node.targets:
             self.visit(target)
+            binding = self.revalidate_binding(binding, [target], target=target)
             self.invalidate_target(target)
             for name in receiver_bound_names(target):
                 self.env[name] = (
@@ -1614,6 +1641,7 @@ class PydanticReceivers(ast.NodeVisitor):
             binding = self.value(node.annotation)
             if binding.kind in {"model", "plain"}:
                 binding = replace(binding, is_instance=True)
+        binding = self.revalidate_binding(binding, [node.target], target=node.target)
         self.invalidate_target(node.target)
         for name in receiver_bound_names(node.target):
             self.env[name] = binding
@@ -1931,6 +1959,10 @@ class PydanticReceivers(ast.NodeVisitor):
             self.apply_call_effects(local, written, changes_type)
             for name, mutates_type in mutations.items():
                 self.invalidate_binding(local, name, mutates_type)
+            for part in body:
+                for name in receiver_walrus_names(part):
+                    if local.get(name, UNKNOWN_RECEIVER).kind == "plain":
+                        local[name] = UNKNOWN_RECEIVER
             self.env = local
             for index, generator in enumerate(generators):
                 if index:
@@ -2103,17 +2135,7 @@ class PydanticReceivers(ast.NodeVisitor):
         arguments = [*node.args, *node.keywords]
         for argument in arguments:
             self.visit(argument)
-        argument_mutations = receiver_mutated_names(arguments)
-        _, argument_changes_type = self.call_effects(arguments)
-        if (
-            callee.kind == "plain"
-            and (argument_mutations or argument_changes_type is not None)
-        ) or (
-            callee.kind == "model"
-            and (any(argument_mutations.values()) or argument_changes_type is True)
-        ):
-            callee = UNKNOWN_RECEIVER
-        self.call_callees[node] = callee
+        self.call_callees[node] = self.revalidate_binding(callee, arguments)
         written, changes_type = self.call_effects([node])
         self.apply_call_effects(self.env, written, changes_type)
 

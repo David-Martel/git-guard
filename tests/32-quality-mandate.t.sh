@@ -547,6 +547,7 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_container_evaluation_contexts
   _qm_receiver_subscript_return_contexts
   _qm_receiver_control_flow_contexts
+  _qm_receiver_iteration_target_contexts
 }
 
 # Protects: annotations and class/import namespaces cannot invent plain proof.
@@ -892,6 +893,37 @@ _qm_receiver_control_flow_contexts() {
     "${_qmr_types}${_qmr_factory}factory: Factory = make_factory()\nfactory.parse_file('notes.md')\n" 0 plain
   _qm_receiver_case 'annotated model direct method remains model' \
     "${_qmr_types}model: Model = make_model()\nmodel.parse_file('m.json')\n" 1 model
+}
+
+# Protects: repeated comprehension bindings and captured RHS ownership.
+# Detects: later iteration effects or assignment targets restoring stale proof.
+# Needs: staged scanner; initial-model, eager/data/name-rebind/no-call controls.
+# Breadcrumb: hooks/common/mandate_scan.py comprehension/visit_Assign.
+_qm_receiver_iteration_target_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qmr_install='cache = {}\ndef install():\n    Parser.parse_file = Model.parse_file\n    return 0\n'
+  _qm_receiver_case 'comprehension later iteration cannot retain plain receiver' \
+    "${_qmr_types}receiver = Parser()\n[(receiver.parse_file('m.json'), (receiver := Model)) for item in range(2)]\n" 0 unknown
+  _qm_receiver_case 'comprehension first model retains known violation' \
+    "${_qmr_types}receiver = Model\n[(receiver.parse_file('m.json'), (receiver := Parser())) for item in range(2)]\n" 1 model
+  _qm_receiver_case 'stable plain comprehension remains plain' \
+    "${_qmr_types}receiver = Parser()\n[receiver.parse_file('notes.md') for item in range(2)]\n" 0 plain
+  _qm_receiver_case 'eager plain-method iterator retains ownership' \
+    "${_qmr_types}receiver = Parser()\n[receiver.parse_file('notes.md') for item in Parser().parse_file('items')]\n" 0 plain
+  _qm_receiver_case 'per-iteration target call effects forfeit plain proof' \
+    "${_qmr_types}receiver = Parser()\ndef update():\n    global receiver\n    receiver = Model\n    return 0\n[None for table[(receiver.parse_file('m.json'), update())] in range(2)]\n" 0 unknown
+  _qm_receiver_case 'target mutation cannot restore captured RHS proof' \
+    "${_qmr_types}${_qmr_install}cache[install()] = receiver = Parser()\nreceiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'ordinary target data write preserves captured RHS' \
+    "${_qmr_types}cache = {}\ndef store():\n    Parser.label = 'notes'\n    return 0\ncache[store()] = receiver = Parser()\nreceiver.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'target name rebinding preserves captured object' \
+    "${_qmr_types}cache = {}\ndef rename():\n    global Parser\n    Parser = Model\n    return 0\ncache[rename()] = receiver = Parser()\nreceiver.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'plain target mutation preserves captured model type' \
+    "${_qmr_types}${_qmr_install}cache[install()] = receiver = Model()\nreceiver.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'uncalled target mutator preserves captured RHS' \
+    "${_qmr_types}${_qmr_install}cache[0] = receiver = Parser()\nreceiver.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'later target mutation invalidates already assigned receiver' \
+    "${_qmr_types}${_qmr_install}receiver = cache[install()] = Parser()\nreceiver.parse_file('m.json')\n" 0 unknown
 }
 
 t_case_quality_mandate() {
