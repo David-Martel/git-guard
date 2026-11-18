@@ -563,6 +563,8 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_inner_base_owner_controls
   _qm_receiver_inner_base_effect_controls
   _qm_receiver_header_subscript_contexts
+  _qm_receiver_legacy_annotation_inventory
+  _qm_receiver_comprehension_scope_contexts
 }
 
 # Protects: A base subscript captures its owner before evaluating its index.
@@ -2101,4 +2103,92 @@ _qm_receiver_header_subscript_contexts() {
     'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\ndef change():\n    Model.parse_file=external\nModel[change()].parse_file('"'"'x'"'"')\n' 1 model
   _qm_receiver_case 'index direct model call stays independently enforced' \
     'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nParser[Model.parse_obj({})].parse_file('"'"'x'"'"')\n' 1 model
+}
+
+# Protects: legacy eager annotations declare locals without borrowing nested bodies.
+# Detects: stale plain/model closure evidence for all argument kinds and returns.
+# Needs: actual receiver AST resolver; legacy syntax is rejected by modern Ruff.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_binding_events/bound_names.
+_qm_receiver_legacy_annotation_inventory() {
+  _qmr_rows="$GG_T_TMPROOT/legacy-annotation-rows"
+  if ! "$(gg_python)" -I - "$GG_ROOT" >"$_qmr_rows" <<'PY'
+import ast
+import importlib.util
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("legacy_inventory_scanner", root / "hooks/common/mandate_scan.py")
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+prefix = "from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):\n        return 'Parser'\n"
+headers = {
+    "positional": "def configure(marker:{annotation}):pass",
+    "posonly": "def configure(marker:{annotation},/):pass",
+    "keyword": "def configure(*,marker:{annotation}):pass",
+    "varargs": "def configure(*markers:{annotation}):pass",
+    "kwargs": "def configure(**markers:{annotation}):pass",
+    "return": "def configure()->{annotation}:pass",
+}
+cases = []
+for kind, template in headers.items():
+    for scope in ("nested", "module"):
+        header = template.format(annotation="(receiver:=Model)")
+        tail = ("receiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('x')\n    " + header + "\n    return load()\nanswer=run()\n") if scope == "nested" else ("receiver=Parser()\nload=lambda:receiver.parse_file('x')\n" + header + "\nanswer=load()\n")
+        cases.append((scope + " " + kind + " legacy write", tail, "unknown", "Model"))
+    header = template.format(annotation="(receiver:=Parser())")
+    cases.append(("nested " + kind + " inverse", "receiver=Model\ndef run():\n    load=lambda:receiver.parse_file('x')\n    " + header + "\n    return load()\nanswer=run()\n", "unknown", "Parser"))
+    header = template.format(annotation="Model")
+    cases.append(("stable " + kind, "receiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('x')\n    " + header + "\n    return load()\nanswer=run()\n", "plain", "Parser"))
+cases.extend([
+    ("unrelated annotation binding preserves model", "receiver=Model\ndef run():\n    load=lambda:receiver.parse_file('x')\n    def configure(marker:(other:=Parser)):pass\n    return load()\nanswer=run()\n", "model", "Model"),
+    ("deferred nested annotation local stays separate", "receiver=Model\ndef run():\n    load=lambda:receiver.parse_file('x')\n    def configure():\n        def inner(marker:(receiver:=Parser())):pass\n    return load()\nanswer=run()\n", "model", "Model"),
+    ("class body annotation local stays separate", "receiver=Model\ndef run():\n    load=lambda:receiver.parse_file('x')\n    class Configure:\n        def inner(marker:(receiver:=Parser())):pass\n    return load()\nanswer=run()\n", "model", "Model"),
+    ("quoted annotation is no enclosing write", "receiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('x')\n    def configure(marker:'(receiver:=Model)'):pass\n    return load()\nanswer=run()\n", "plain", "Parser"),
+])
+for label, tail, expected, runtime_expected in cases:
+    source = prefix + tail
+    resolver = module.PydanticReceivers(source)
+    resolver.visit(ast.parse(source))
+    kinds = set().union(*resolver.calls.values()) if resolver.calls else set()
+    passed = kinds == {expected}
+    print(("PASS" if passed else "FAIL") + "|" + label + "|" + ",".join(sorted(kinds)))
+PY
+  then
+    t_fail 'legacy annotation resolver setup failed'
+    cat "$_qmr_rows" >&2
+    return 0
+  fi
+  while IFS='|' read -r _qmr_state _qmr_label _qmr_kinds; do
+    if [ "$_qmr_state" = PASS ]; then t_ok "legacy AST: $_qmr_label"; else
+      t_fail "legacy AST: $_qmr_label (actual $_qmr_kinds)"
+    fi
+  done <"$_qmr_rows"
+  _qmr_repo="$(_qm_repo)"; _qmr_log="$GG_T_TMPROOT/legacy-annotation-syntax.log"
+  _qm_put "$_qmr_repo" src/model.py 'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\nreceiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file("x")\n    def configure(marker:(receiver:=Model)):pass\n    return load()\n'
+  _qm_scan "$_qmr_repo" "$_qmr_log" --staged; _qmr_rc=$?
+  t_expect_rc 1 "$_qmr_rc" 'current staged pipeline rejects legacy annotation syntax'
+  _qm_has "$_qmr_log" '[python_syntax]' 'current Ruff syntax barrier stays visible'
+  gg_rmrepo "$_qmr_repo"
+}
+
+# Protects: comprehension targets stay local and outer walrus bindings remain visible.
+# Detects: unrelated loop names weakening a later known-model block.
+# Needs: actual staged scanner and seven compile-valid modern fixtures.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_bound_names/binding_events.
+_qm_receiver_comprehension_scope_contexts() {
+  _qm_receiver_case 'list target is not enclosing local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef run():\n    [None for Model in []]\n    return Model.parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'set target is not enclosing local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef run():\n    {None for Model in []}\n    return Model.parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'dict target is not enclosing local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef run():\n    {None:None for Model in []}\n    return Model.parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'generator target is not enclosing local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef run():\n    (None for Model in [])\n    return Model.parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'target-local body remains unresolved' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\ndef run():\n    return [Model.parse_file('"'"'x'"'"') for Model in items]\n' 0 unknown
+  _qm_receiver_case 'comprehension walrus still binds enclosing local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self,path):return path\nreceiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    [(receiver:=Model) for item in [0]]\n    return load()\n' 0 unknown
+  _qm_receiver_case 'ordinary target preserves enclosing model' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\ndef run():\n    [None for item in []]\n    return Model.parse_file('"'"'x'"'"')\n' 1 model
 }

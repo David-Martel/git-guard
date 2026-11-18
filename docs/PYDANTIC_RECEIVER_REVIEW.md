@@ -49,8 +49,16 @@ merge cached subscription evidence rather than retaining the last visited branch
 Nested definition defaults and decorators, and nested class bases and keywords,
 contribute their eager bindings to the enclosing scope's local-name inventory.
 Deferred nested bodies and class-local assignments remain separate scopes.
+The inventory also includes legacy eager parameter annotations of every argument
+kind and return annotations. Quoted annotation strings introduce no such writes.
+Annotation walrus fixtures are direct AST controls with Python 3.10 witnesses;
+Python 3.14+ compilation and the current staged Ruff syntax gate reject them.
+The classifier defect therefore does not demonstrate a default-pipeline bypass.
 
 Binding events are counted individually even within one compound statement.
+Comprehension iteration targets remain local to their implicit scope; enclosing
+binding inventories retain iterator, condition and body assignment expressions.
+Executable target expressions are still inspected for independent call findings.
 Deferred generator bodies use capture safeguards; their first iterator remains
 eager. Chained comparisons merge conditional bindings. A class name is published
 after its immediate suite, separately from the future self/cls view in methods.
@@ -213,6 +221,10 @@ Source ea055bf2 / metadata 045190e5 and its 1,089 checks remain held after misse
 nested-header local bindings and ordinary subscription-owner rereading findings.
 Its source and metadata KEEP receipts retain only their original review scope;
 the green CI at that head does not qualify this corrected successor.
+Source 5eab494a / metadata 416c6fcd and its 1,145 checks, including both successful
+CI jobs, remain source-specific history after the legacy annotation inventory
+defect was confirmed. The outside read-only review's stated unread limits are
+retained with its result; it did not execute the finding or grant admission.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted

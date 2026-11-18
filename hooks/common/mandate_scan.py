@@ -1200,7 +1200,18 @@ def receiver_annotation_root(annotation: Optional[ast.AST]) -> Optional[str]:
 
 def receiver_bound_names(node: ast.AST) -> Set[str]:
     """Find bindings in this scope without borrowing nested function locals."""
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    if isinstance(
+        node,
+        (
+            ast.FunctionDef,
+            ast.AsyncFunctionDef,
+            ast.ClassDef,
+            ast.ListComp,
+            ast.SetComp,
+            ast.DictComp,
+            ast.GeneratorExp,
+        ),
+    ):
         return set(receiver_binding_events(node))
     names: Set[str] = set()
     if isinstance(node, ast.Lambda):
@@ -1234,6 +1245,13 @@ def receiver_binding_events(node: ast.AST) -> Iterable[str]:
         else:
             children = [*node.decorator_list, *node.args.defaults]
             children.extend(d for d in node.args.kw_defaults if d is not None)
+            arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+            arguments.extend(
+                arg for arg in (node.args.vararg, node.args.kwarg) if arg is not None
+            )
+            children.extend(arg.annotation for arg in arguments if arg.annotation)
+            if node.returns is not None:
+                children.append(node.returns)
     elif isinstance(node, ast.Lambda):
         children = [*node.args.defaults]
         children.extend(d for d in node.args.kw_defaults if d is not None)

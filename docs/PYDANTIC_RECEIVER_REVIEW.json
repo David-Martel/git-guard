@@ -1,31 +1,31 @@
 {
   "schema_version": 1,
-  "source_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+  "source_commit": "Pending signed local SOURCE commit; no standalone source push.",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
-    "hooks/common/mandate_scan.py": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c",
+    "hooks/common/mandate_scan.py": "13cdf42fd8dd4de78dde609e417367b3014958ace0cb23d461ae415561664410",
     "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
     "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-    "tests/32-quality-mandate.t.sh": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a",
+    "tests/32-quality-mandate.t.sh": "932baddd33af03f7c3a25f8b36b12275ba4ae9013214f60c6fe85c9d3aed3350",
     "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
     "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
     "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
     "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-    "docs/PYDANTIC_RECEIVER_REVIEW.md": "75e6ba593d092879d2fb680a96affbf5e86363e3644b44414045e80f768b5495"
+    "docs/PYDANTIC_RECEIVER_REVIEW.md": "d27893f53a27f451b57c0004d012240d761fc3eeca6327ecb3c9c52bd2d14be8"
   },
   "author_evidence": {
     "platform": "Windows dtm-p1gen9 / Git Bash / CPython 3.15.2",
-    "focused": "811 receiver assertions (137 core + 674 contexts), 0 failures/skips; separate 56 new focused assertions pass.",
-    "regression": "1145 PASS / 0 FAIL / 14 existing raw skips; four documented categories, actual exits0; not whole-repository/line coverage.",
+    "focused": "857 receiver assertions (137 core + 720 contexts), 0 failures/skips; separate 46 current focus assertions pass.",
+    "regression": "1191 PASS / 0 FAIL / 14 existing raw skips; four documented categories, actual exits0; not whole-repository/line coverage.",
     "global_precommit": "Actual current global hook exit0; existing nonblocking advisories disclosed.",
     "static_checks": "Current isolated Ruff E,F/format, default mypy, ShellCheck exit0.",
     "linux": "Current successor unqualified; final metadata head native/Docker CI required.",
-    "current_source_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-    "current_source_sha256": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c",
-    "current_test_sha256": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a",
+    "current_source_commit": "Pending signed local SourceA",
+    "current_source_sha256": "13cdf42fd8dd4de78dde609e417367b3014958ace0cb23d461ae415561664410",
+    "current_test_sha256": "932baddd33af03f7c3a25f8b36b12275ba4ae9013214f60c6fe85c9d3aed3350",
     "qualification": {
-      "receipt": "git-guard-receiver-header-subscript-final-qualification.json",
-      "sha256": "2b3862365102569b07879543019adff1f8094db17daff9305cd0175b986fb916"
+      "receipt": "git-guard-receiver-legacy-scope-final-qualification.json",
+      "sha256": "86c7710aa7f2c31db9d70ea0365c57aa59557749d8a37817b8cf2e647c70b553"
     },
     "logs": {
       "rules": {
@@ -34,7 +34,7 @@
         "passed": 112,
         "failed": 0,
         "skipped": 14,
-        "receipt": "git-guard-receiver-header-subscript-final-rules.log",
+        "receipt": "git-guard-receiver-legacy-scope-final-rules.log",
         "sha256": "2fc2499bbff9961a5ca234dc07e4261e9952e9fa255dd9a0c9fa9201ff519e0a"
       },
       "core": {
@@ -43,7 +43,7 @@
         "passed": 137,
         "failed": 0,
         "skipped": 0,
-        "receipt": "git-guard-receiver-header-subscript-final-core.log",
+        "receipt": "git-guard-receiver-legacy-scope-final-core.log",
         "sha256": "78b348105c0c30505ccc3d1c90e77eaabeee5ac33457207f57a5653a8326ba09"
       },
       "quality": {
@@ -52,44 +52,44 @@
         "passed": 222,
         "failed": 0,
         "skipped": 0,
-        "receipt": "git-guard-receiver-header-subscript-final-quality.log",
+        "receipt": "git-guard-receiver-legacy-scope-final-quality.log",
         "sha256": "c993ddfbb570bc6d4be37679553aa4fc05f27e49f040009760a2ed2efb6148a4"
       },
       "contexts": {
         "category": "contexts",
         "process_exit": 0,
-        "passed": 674,
+        "passed": 720,
         "failed": 0,
         "skipped": 0,
-        "receipt": "git-guard-receiver-header-subscript-final-contexts.log",
-        "sha256": "c6d0ce5258d19beaba7bab70928d888df6c54f4fdc7672f5602e6672335a60f6"
+        "receipt": "git-guard-receiver-legacy-scope-final-contexts.log",
+        "sha256": "dbc762b86b74bb1a16963c3eb5869a2ea7ebc4c63f0a6da30d7f85cec7de9f1f"
       }
     },
     "static": {
       "ruff-format": {
         "exit": 0,
-        "receipt": "git-guard-receiver-header-subscript-final-ruff-format.log",
+        "receipt": "git-guard-receiver-legacy-scope-final-ruff-format.log",
         "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3"
       },
       "ruff-check": {
         "exit": 0,
-        "receipt": "git-guard-receiver-header-subscript-final-ruff-check.log",
+        "receipt": "git-guard-receiver-legacy-scope-final-ruff-check.log",
         "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
       },
       "mypy": {
         "exit": 0,
-        "receipt": "git-guard-receiver-header-subscript-final-mypy.log",
+        "receipt": "git-guard-receiver-legacy-scope-final-mypy.log",
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       "shellcheck": {
         "exit": 0,
-        "receipt": "git-guard-receiver-header-subscript-final-shellcheck.log",
+        "receipt": "git-guard-receiver-legacy-scope-final-shellcheck.log",
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       }
     },
     "normal_global_precommit": {
       "exit": 0,
-      "receipt": "git-guard-receiver-header-subscript-final-global-precommit.log",
+      "receipt": "git-guard-receiver-legacy-scope-final-global-precommit.log",
       "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
       "limits": "Existing basedpyright/use-walrus nonblocking advisories disclosed; no blanket warning-free claim."
     }
@@ -99,37 +99,37 @@
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "scope": "Actual full selector through first column-zero brace excluding newline; nine-file context includes helpers. Author1145fourcategories/811receiver/56newfamilyfocus logs and root73/5 checked. No coverage claim.",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
+      "disposition": "UNREVIEWED",
+      "reviewer": "unassigned",
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": ""
     },
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
-      "selector_sha256": "eb9137d4f3337eb677b39f7776da08e665a664eadae1e7ea9751afd4515d9329",
-      "scope": "Actual full selector through first column-zero brace excluding newline; nine-file context includes helpers. Author1145fourcategories/811receiver/56newfamilyfocus logs and root73/5 checked. No coverage claim.",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      "selector_sha256": "3cd1337f20cfcbb82412a21365be05683ace7de94a25c2c298698b617847cd89",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
+      "disposition": "UNREVIEWED",
+      "reviewer": "unassigned",
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": ""
     },
     {
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "scope": "Actual full selector through first column-zero brace excluding newline; nine-file context includes helpers. Author1145fourcategories/811receiver/56newfamilyfocus logs and root73/5 checked. No coverage claim.",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
+      "disposition": "UNREVIEWED",
+      "reviewer": "unassigned",
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": ""
     }
   ],
   "rule_reviews": [
@@ -137,27 +137,27 @@
       "selector": "mandate-pydantic-v1",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "scope": "Exact unchanged previously read rulebytes: knownModelstrong/provenplainclear/unresolvedwarn; namespace/decorator/Config strong. Raw14skip explicit.",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
+      "disposition": "UNREVIEWED",
+      "reviewer": "unassigned",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": ""
     },
     {
       "selector": "mandate-pydantic-v1-ambiguous",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "scope": "Exact unchanged previously read rulebytes: knownModelstrong/provenplainclear/unresolvedwarn; namespace/decorator/Config strong. Raw14skip explicit.",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
+      "disposition": "UNREVIEWED",
+      "reviewer": "unassigned",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": ""
     }
   ],
   "integration": {
@@ -259,20 +259,8 @@
     "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   },
   "independent_review": {
-    "reviewer": "codex-python-closeout",
-    "reviewer_type": "independent-agent",
-    "date": "2026-11-18T08:39:41.152584+00:00",
-    "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-    "disposition": "KEEP",
-    "receipt": "git-guard-header-subscript-root-source-review.json",
-    "sha256": "3ef148883d5d09865bef59ccbb244a9ba7e5560cac2a45ebb1347bc8a7459ff3",
-    "scope": "ROOT_LOCAL_SOURCE_KEEP_ONLY_NOT_FINAL_ADMISSION; actual signed nine source blobs, three complete selector bodies and two unchanged rules, cumulative045 production/test/doc delta, 1145/811/56 author evidence and root73/5 controls independently verified.",
-    "limits": [
-      "Author1145/56 logs/terminals/recordedexits independently checked; no root rerun or linecoverage claim.",
-      "Root73resolver/5stdlibFakeBase witnesses; aborted label controller disclosed.",
-      "Prior045/0C176/B3EC remain held historical; outside/currentCI/autopilot required.",
-      "Installed7136/VERSION/globalconfig/foreignWIP unchanged; existing2nonblockingadvisories disclosed."
-    ]
+    "disposition": "UNREVIEWED",
+    "scope": "Actual local SourceA required before independent 9/3/2 binding; outside/current-head CI/autopilot admission still pending."
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -2199,102 +2187,102 @@
   "source_reviews": [
     {
       "selector": "source:hooks/common/mandate_scan.py",
-      "selector_sha256": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-      "disposition": "KEEP",
-      "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      "selector_sha256": "13cdf42fd8dd4de78dde609e417367b3014958ace0cb23d461ae415561664410",
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-      "disposition": "KEEP",
-      "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-      "disposition": "KEEP",
-      "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
     },
     {
       "selector": "source:tests/32-quality-mandate.t.sh",
-      "selector_sha256": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-      "disposition": "KEEP",
-      "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      "selector_sha256": "932baddd33af03f7c3a25f8b36b12275ba4ae9013214f60c6fe85c9d3aed3350",
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
     },
     {
       "selector": "source:tests/27-rule-behaviour.t.sh",
       "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-      "disposition": "KEEP",
-      "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
     },
     {
       "selector": "source:tests/run.sh",
       "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-      "disposition": "KEEP",
-      "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
     },
     {
       "selector": "source:docs/QA_TOOLING.md",
       "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-      "disposition": "KEEP",
-      "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
     },
     {
       "selector": "source:docs/RULES.md",
       "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-      "disposition": "KEEP",
-      "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
     },
     {
       "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
-      "selector_sha256": "75e6ba593d092879d2fb680a96affbf5e86363e3644b44414045e80f768b5495",
-      "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T08:39:41.152584+00:00",
-      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-      "disposition": "KEEP",
-      "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      "selector_sha256": "d27893f53a27f451b57c0004d012240d761fc3eeca6327ecb3c9c52bd2d14be8",
+      "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
     }
   ],
   "lambda_decorator_predecessor": {
@@ -3903,50 +3891,403 @@
       "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
     }
   },
-  "metadata_successor_binding": {
-    "reviewed_source_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
-    "scope": "Sole JSON metadata B; nine source files byte-identical to actual reviewed local SourceA. One complete B publish, then fresh full discussion, outside review/current CI/autopilot. Source KEEP alone does not admit integration.",
-    "rule_selector_map": {
-      "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
-      "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+  "legacy_scope_predecessor": {
+    "source_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+    "source_hashes": {
+      "hooks/common/mandate_scan.py": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c",
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "tests/32-quality-mandate.t.sh": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a",
+      "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+      "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": "75e6ba593d092879d2fb680a96affbf5e86363e3644b44414045e80f768b5495"
     },
-    "source_map": {
+    "author_evidence": {
+      "platform": "Windows dtm-p1gen9 / Git Bash / CPython 3.15.2",
+      "focused": "811 receiver assertions (137 core + 674 contexts), 0 failures/skips; separate 56 new focused assertions pass.",
+      "regression": "1145 PASS / 0 FAIL / 14 existing raw skips; four documented categories, actual exits0; not whole-repository/line coverage.",
+      "global_precommit": "Actual current global hook exit0; existing nonblocking advisories disclosed.",
+      "static_checks": "Current isolated Ruff E,F/format, default mypy, ShellCheck exit0.",
+      "linux": "Current successor unqualified; final metadata head native/Docker CI required.",
+      "current_source_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+      "current_source_sha256": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c",
+      "current_test_sha256": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a",
+      "qualification": {
+        "receipt": "git-guard-receiver-header-subscript-final-qualification.json",
+        "sha256": "2b3862365102569b07879543019adff1f8094db17daff9305cd0175b986fb916"
+      },
+      "logs": {
+        "rules": {
+          "category": "rules",
+          "process_exit": 0,
+          "passed": 112,
+          "failed": 0,
+          "skipped": 14,
+          "receipt": "git-guard-receiver-header-subscript-final-rules.log",
+          "sha256": "2fc2499bbff9961a5ca234dc07e4261e9952e9fa255dd9a0c9fa9201ff519e0a"
+        },
+        "core": {
+          "category": "core",
+          "process_exit": 0,
+          "passed": 137,
+          "failed": 0,
+          "skipped": 0,
+          "receipt": "git-guard-receiver-header-subscript-final-core.log",
+          "sha256": "78b348105c0c30505ccc3d1c90e77eaabeee5ac33457207f57a5653a8326ba09"
+        },
+        "quality": {
+          "category": "quality",
+          "process_exit": 0,
+          "passed": 222,
+          "failed": 0,
+          "skipped": 0,
+          "receipt": "git-guard-receiver-header-subscript-final-quality.log",
+          "sha256": "c993ddfbb570bc6d4be37679553aa4fc05f27e49f040009760a2ed2efb6148a4"
+        },
+        "contexts": {
+          "category": "contexts",
+          "process_exit": 0,
+          "passed": 674,
+          "failed": 0,
+          "skipped": 0,
+          "receipt": "git-guard-receiver-header-subscript-final-contexts.log",
+          "sha256": "c6d0ce5258d19beaba7bab70928d888df6c54f4fdc7672f5602e6672335a60f6"
+        }
+      },
+      "static": {
+        "ruff-format": {
+          "exit": 0,
+          "receipt": "git-guard-receiver-header-subscript-final-ruff-format.log",
+          "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3"
+        },
+        "ruff-check": {
+          "exit": 0,
+          "receipt": "git-guard-receiver-header-subscript-final-ruff-check.log",
+          "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
+        },
+        "mypy": {
+          "exit": 0,
+          "receipt": "git-guard-receiver-header-subscript-final-mypy.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "shellcheck": {
+          "exit": 0,
+          "receipt": "git-guard-receiver-header-subscript-final-shellcheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "normal_global_precommit": {
+        "exit": 0,
+        "receipt": "git-guard-receiver-header-subscript-final-global-precommit.log",
+        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+        "limits": "Existing basedpyright/use-walrus nonblocking advisories disclosed; no blanket warning-free claim."
+      }
+    },
+    "source_reviews": [
+      {
+        "selector": "source:hooks/common/mandate_scan.py",
+        "selector_sha256": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+        "disposition": "KEEP",
+        "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      },
+      {
+        "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+        "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+        "disposition": "KEEP",
+        "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      },
+      {
+        "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+        "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+        "disposition": "KEEP",
+        "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      },
+      {
+        "selector": "source:tests/32-quality-mandate.t.sh",
+        "selector_sha256": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+        "disposition": "KEEP",
+        "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      },
+      {
+        "selector": "source:tests/27-rule-behaviour.t.sh",
+        "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+        "disposition": "KEEP",
+        "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      },
+      {
+        "selector": "source:tests/run.sh",
+        "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+        "disposition": "KEEP",
+        "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      },
+      {
+        "selector": "source:docs/QA_TOOLING.md",
+        "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+        "disposition": "KEEP",
+        "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      },
+      {
+        "selector": "source:docs/RULES.md",
+        "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+        "disposition": "KEEP",
+        "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      },
+      {
+        "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
+        "selector_sha256": "75e6ba593d092879d2fb680a96affbf5e86363e3644b44414045e80f768b5495",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+        "disposition": "KEEP",
+        "scope": "Root read complete045 deltaF28DE: enclosing local discovery reuses eager-header events without nested-body leaks; subscript captures supported class owner before index and revalidates effects; class bases share visitor; annotation alternatives merge cached evidence conservatively. Plain/instance returns unresolved, model name-only writes retain ancestry, actual type effects lose proof. No MRO/return/version/permutation solver. Actual signed9/3/2 and root73/5 plus boundauthor1145/811/56; SOURCEONLY."
+      }
+    ],
+    "rows": [
+      {
+        "selector": "t_case_pydantic_receiver_classification",
+        "source": "tests/32-quality-mandate.t.sh",
+        "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
+        "scope": "Actual full selector through first column-zero brace excluding newline; nine-file context includes helpers. Author1145fourcategories/811receiver/56newfamilyfocus logs and root73/5 checked. No coverage claim.",
+        "disposition": "KEEP",
+        "reviewer": "codex-python-closeout",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      },
+      {
+        "selector": "t_case_pydantic_receiver_contexts",
+        "source": "tests/32-quality-mandate.t.sh",
+        "selector_sha256": "eb9137d4f3337eb677b39f7776da08e665a664eadae1e7ea9751afd4515d9329",
+        "scope": "Actual full selector through first column-zero brace excluding newline; nine-file context includes helpers. Author1145fourcategories/811receiver/56newfamilyfocus logs and root73/5 checked. No coverage claim.",
+        "disposition": "KEEP",
+        "reviewer": "codex-python-closeout",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      },
+      {
+        "selector": "t_case_rule_behaviour",
+        "source": "tests/27-rule-behaviour.t.sh",
+        "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
+        "scope": "Actual full selector through first column-zero brace excluding newline; nine-file context includes helpers. Author1145fourcategories/811receiver/56newfamilyfocus logs and root73/5 checked. No coverage claim.",
+        "disposition": "KEEP",
+        "reviewer": "codex-python-closeout",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      }
+    ],
+    "rule_reviews": [
+      {
+        "selector": "mandate-pydantic-v1",
+        "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
+        "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "scope": "Exact unchanged previously read rulebytes: knownModelstrong/provenplainclear/unresolvedwarn; namespace/decorator/Config strong. Raw14skip explicit.",
+        "disposition": "KEEP",
+        "reviewer": "codex-python-closeout",
+        "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      },
+      {
+        "selector": "mandate-pydantic-v1-ambiguous",
+        "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+        "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "scope": "Exact unchanged previously read rulebytes: knownModelstrong/provenplainclear/unresolvedwarn; namespace/decorator/Config strong. Raw14skip explicit.",
+        "disposition": "KEEP",
+        "reviewer": "codex-python-closeout",
+        "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "target_manifest_sha256": "204e2b33b5fd8bbe0160075e3c82581611c3b60db5eb6904d64bfd0c175f97dd",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T08:39:41.152584+00:00",
+        "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746"
+      }
+    ],
+    "independent_review": {
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:39:41.152584+00:00",
+      "reviewed_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+      "disposition": "KEEP",
+      "receipt": "git-guard-header-subscript-root-source-review.json",
+      "sha256": "3ef148883d5d09865bef59ccbb244a9ba7e5560cac2a45ebb1347bc8a7459ff3",
+      "scope": "ROOT_LOCAL_SOURCE_KEEP_ONLY_NOT_FINAL_ADMISSION; actual signed nine source blobs, three complete selector bodies and two unchanged rules, cumulative045 production/test/doc delta, 1145/811/56 author evidence and root73/5 controls independently verified.",
+      "limits": [
+        "Author1145/56 logs/terminals/recordedexits independently checked; no root rerun or linecoverage claim.",
+        "Root73resolver/5stdlibFakeBase witnesses; aborted label controller disclosed.",
+        "Prior045/0C176/B3EC remain held historical; outside/currentCI/autopilot required.",
+        "Installed7136/VERSION/globalconfig/foreignWIP unchanged; existing2nonblockingadvisories disclosed."
+      ]
+    },
+    "metadata_successor_binding": {
+      "reviewed_source_commit": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+      "scope": "Sole JSON metadata B; nine source files byte-identical to actual reviewed local SourceA. One complete B publish, then fresh full discussion, outside review/current CI/autopilot. Source KEEP alone does not admit integration.",
+      "rule_selector_map": {
+        "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+        "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+      },
+      "source_map": {
+        "hooks/common/mandate_scan.py": {
+          "reviewed_source": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c",
+          "metadata_successor": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c"
+        },
+        "rules-examples/mandate/python/mandate-pydantic-v1.yml": {
+          "reviewed_source": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+          "metadata_successor": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
+        },
+        "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": {
+          "reviewed_source": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+          "metadata_successor": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
+        },
+        "tests/32-quality-mandate.t.sh": {
+          "reviewed_source": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a",
+          "metadata_successor": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a"
+        },
+        "tests/27-rule-behaviour.t.sh": {
+          "reviewed_source": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+          "metadata_successor": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374"
+        },
+        "tests/run.sh": {
+          "reviewed_source": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+          "metadata_successor": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d"
+        },
+        "docs/QA_TOOLING.md": {
+          "reviewed_source": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+          "metadata_successor": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873"
+        },
+        "docs/RULES.md": {
+          "reviewed_source": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+          "metadata_successor": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b"
+        },
+        "docs/PYDANTIC_RECEIVER_REVIEW.md": {
+          "reviewed_source": "75e6ba593d092879d2fb680a96affbf5e86363e3644b44414045e80f768b5495",
+          "metadata_successor": "75e6ba593d092879d2fb680a96affbf5e86363e3644b44414045e80f768b5495"
+        }
+      }
+    },
+    "metadata_commit": "416c6fcdc6f2e7e8529fb38cdd11d6007e1e9751",
+    "disposition": "HELD after actual legacy annotation inventory defect and comprehension target scope leak. Current Ruff rejects legacy syntax; default-pipeline bypass is not demonstrated. Prior CI/KEEP remain source-specific history.",
+    "root_hold": {
+      "receipt": "git-guard-legacy-annotation-root-probe.json",
+      "sha256": "00dad9e9b466f0c94152ed3242c0dffa4e62b40bd86c2ed1843f7f455db3fb43"
+    },
+    "finding_comment": 6973713597
+  },
+  "legacy_scope_successor_mapping": {
+    "predecessor_source": "5eab494ab38e6ddf2ca4224b4f16327e2883f746",
+    "predecessor_metadata": "416c6fcdc6f2e7e8529fb38cdd11d6007e1e9751",
+    "normalization": "Nine CRLF-to-LF source hashes; selector declaration through first column-zero closing brace without trailing newline; sorted compact UTF8 path-to-hash target JSON without trailing newline.",
+    "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
+    "sources": {
       "hooks/common/mandate_scan.py": {
-        "reviewed_source": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c",
-        "metadata_successor": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c"
+        "previous": "7e0571fefe37801b8f67cc18a6c0296158f0cb434aba57f7c421aecde317dc2c",
+        "current": "13cdf42fd8dd4de78dde609e417367b3014958ace0cb23d461ae415561664410"
       },
       "rules-examples/mandate/python/mandate-pydantic-v1.yml": {
-        "reviewed_source": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-        "metadata_successor": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
+        "previous": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "current": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
       },
       "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": {
-        "reviewed_source": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-        "metadata_successor": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
+        "previous": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "current": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
       },
       "tests/32-quality-mandate.t.sh": {
-        "reviewed_source": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a",
-        "metadata_successor": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a"
+        "previous": "2b1c41b09e6a9c688c2bdc3cdf5d2d310b4ab90e7c29850ce07960a78fb31b4a",
+        "current": "932baddd33af03f7c3a25f8b36b12275ba4ae9013214f60c6fe85c9d3aed3350"
       },
       "tests/27-rule-behaviour.t.sh": {
-        "reviewed_source": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
-        "metadata_successor": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374"
+        "previous": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "current": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374"
       },
       "tests/run.sh": {
-        "reviewed_source": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
-        "metadata_successor": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d"
+        "previous": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "current": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d"
       },
       "docs/QA_TOOLING.md": {
-        "reviewed_source": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
-        "metadata_successor": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873"
+        "previous": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "current": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873"
       },
       "docs/RULES.md": {
-        "reviewed_source": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-        "metadata_successor": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b"
+        "previous": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "current": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b"
       },
       "docs/PYDANTIC_RECEIVER_REVIEW.md": {
-        "reviewed_source": "75e6ba593d092879d2fb680a96affbf5e86363e3644b44414045e80f768b5495",
-        "metadata_successor": "75e6ba593d092879d2fb680a96affbf5e86363e3644b44414045e80f768b5495"
+        "previous": "75e6ba593d092879d2fb680a96affbf5e86363e3644b44414045e80f768b5495",
+        "current": "d27893f53a27f451b57c0004d012240d761fc3eeca6327ecb3c9c52bd2d14be8"
       }
+    },
+    "selectors": [
+      {
+        "selector": "t_case_pydantic_receiver_classification",
+        "source": "tests/32-quality-mandate.t.sh",
+        "previous": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
+        "current": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9"
+      },
+      {
+        "selector": "t_case_pydantic_receiver_contexts",
+        "source": "tests/32-quality-mandate.t.sh",
+        "previous": "eb9137d4f3337eb677b39f7776da08e665a664eadae1e7ea9751afd4515d9329",
+        "current": "3cd1337f20cfcbb82412a21365be05683ace7de94a25c2c298698b617847cd89"
+      },
+      {
+        "selector": "t_case_rule_behaviour",
+        "source": "tests/27-rule-behaviour.t.sh",
+        "previous": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
+        "current": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a"
+      }
+    ],
+    "rules": {
+      "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
     }
   }
 }
