@@ -541,6 +541,10 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_class_declared_write_contexts
   _qm_receiver_callable_result_contexts
   _qm_receiver_store_boundary_contexts
+  _qm_receiver_evaluation_order_contexts
+  _qm_receiver_opaque_target_contexts
+  _qm_receiver_initializer_boundary_contexts
+  _qm_receiver_container_evaluation_contexts
 }
 
 # Protects: annotations and class/import namespaces cannot invent plain proof.
@@ -763,6 +767,78 @@ _qm_receiver_store_boundary_contexts() {
     "${_qmr_types}Alias, unused = Parser, None\nAlias.label = 'notes'\nload = lambda: Parser().parse_file('notes.md')\nload()\n" 0 plain
   _qm_receiver_case 'unknown method mutation preserves unrelated known model' \
     "${_qmr_types}Alias, unused = Parser, None\nAlias.parse_file = Model.parse_file\nModel.parse_file('m.json')\n" 1 model
+}
+
+# Protects: receiver evaluation effects apply before method ownership is read.
+# Detects: constructor argument mutation cleared before the argument is visited.
+# Needs: real staged scanner, data-only and method-lookup-before-args controls.
+# Breadcrumb: hooks/common/mandate_scan.py PydanticReceivers.visit_Call.
+_qm_receiver_evaluation_order_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def __init__(self, marker=None):\n        self.marker = marker\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'constructor argument mutation precedes method ownership' \
+    "${_qmr_types}def install():\n    Parser.parse_file = Model.parse_file\nParser(install()).parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'constructor keyword mutation precedes method ownership' \
+    "${_qmr_types}def install():\n    Parser.parse_file = Model.parse_file\nParser(marker=install()).parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'constructor data-only argument preserves plain ownership' \
+    "${_qmr_types}def store():\n    Parser.label = 'notes'\nParser(store()).parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'method lookup precedes mutation in call argument' \
+    "${_qmr_types}def install():\n    Parser.parse_file = Model.parse_file\nParser().parse_file(install())\n" 0 plain
+}
+
+# Protects: unsupported mutation roots cannot silently preserve plain proof.
+# Detects: type/call/container roots ignored by the same mutation prepass.
+# Needs: actual staged scanner; ordinary-data, capture and known-model controls.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_target_mutation.
+_qm_receiver_opaque_target_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'type-call mutation root forfeits plain instance proof' \
+    "${_qmr_types}parser = Parser()\ntype(parser).parse_file = Model.parse_file\nparser.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'container mutation root forfeits plain proof' \
+    "${_qmr_types}[Parser][0].parse_file = Model.parse_file\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'opaque mutation root invalidates deferred capture' \
+    "${_qmr_types}parser = Parser()\nload = lambda: parser.parse_file('m.json')\ntype(parser).parse_file = Model.parse_file\nload()\n" 0 unknown
+  _qm_receiver_case 'type-call ordinary data target preserves plain method' \
+    "${_qmr_types}parser = Parser()\ntype(parser).label = 'notes'\nparser.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'opaque method mutation preserves unrelated known model' \
+    "${_qmr_types}parser = Parser()\ntype(parser).parse_file = Model.parse_file\nModel.parse_file('m.json')\n" 1 model
+}
+
+# Protects: unsupported constructor and class-creation hooks cannot prove plain.
+# Detects: alias/decorated initializers or inherited hooks replacing methods.
+# Needs: staged scanner; supported data-only constructor/inheritance controls.
+# Breadcrumb: hooks/common/mandate_scan.py plain_initializer_supported/ClassDef.
+_qm_receiver_initializer_boundary_contexts() {
+  _qmr_model='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\n'
+  _qm_receiver_case 'aliased initializer cannot retain plain proof' \
+    "${_qmr_model}def install(self):\n    Parser.parse_file = Model.parse_file\nclass Parser:\n    __init__ = install\n    def parse_file(self, path):\n        return path\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'decorated initializer cannot retain plain proof' \
+    "${_qmr_model}def install(self):\n    Parser.parse_file = Model.parse_file\ndef wrap(method):\n    return install\nclass Parser:\n    @wrap\n    def __init__(self):\n        pass\n    def parse_file(self, path):\n        return path\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'inherited class-creation hook cannot retain plain proof' \
+    "${_qmr_model}class Base:\n    def __init_subclass__(cls):\n        cls.parse_file = Model.parse_file\nclass Parser(Base):\n    def parse_file(self, path):\n        return path\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'data-only initializer and ordinary base remain plain' \
+    "${_qmr_model}class Base:\n    def __init__(self):\n        self.label = 'notes'\nclass Parser(Base):\n    def parse_file(self, path):\n        return path\nParser().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'annotation-only initializer retains plain proof' \
+    "${_qmr_model}class Parser:\n    __init__: object\n    def parse_file(self, path):\n        return path\nParser().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'model class-creation hook preserves known ancestry' \
+    "${_qmr_model}class Child(Model):\n    def __init_subclass__(cls):\n        cls.label = 'model'\nChild.parse_file('m.json')\n" 1 model
+}
+
+# Protects: executable comprehension targets and dictionary pair order.
+# Detects: target calls omitted, or all keys evaluated before preceding values.
+# Needs: real staged scanner; model/plain order reversals and unpacking controls.
+# Breadcrumb: hooks/common/mandate_scan.py comprehension/visit_Dict.
+_qm_receiver_container_evaluation_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'comprehension target executes known model' \
+    "${_qmr_types}[None for results[Model.parse_obj(data).id] in values]\n" 1 model
+  _qm_receiver_case 'comprehension target executes plain parser' \
+    "${_qmr_types}[None for results[Parser().parse_file('notes.md')] in values]\n" 0 plain
+  _qm_receiver_case 'dictionary value rebinding precedes later key' \
+    "${_qmr_types}receiver = Parser()\nresult = {0: (receiver := Model), receiver.parse_file('m.json'): 1}\n" 1 model
+  _qm_receiver_case 'dictionary value parser precedes later key' \
+    "${_qmr_types}receiver = Model\nresult = {0: (receiver := Parser()), receiver.parse_file('notes.md'): 1}\n" 0 plain
+  _qm_receiver_case 'dictionary unpacking precedes later key' \
+    "${_qmr_types}receiver = Parser()\nresult = {**{0: (receiver := Model)}, receiver.parse_file('m.json'): 1}\n" 1 model
 }
 
 t_case_quality_mandate() {

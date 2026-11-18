@@ -40,6 +40,9 @@ Sensitive immediate class-suite mutations, including nested suites, invalidate
 enclosing plain proofs without copying class-local bindings back. Unsupported
 plain initializers with sensitive writes or opaque calls forfeit plain proof;
 simple data-only initialization and known model configuration retain precision.
+Aliased or decorated plain initializers remain unsupported. Plain bases with
+`__init_subclass__` hooks cannot establish inherited method ownership; an already
+known model base retains its model evidence.
 
 Annotations without assigned values preserve existing runtime bindings and
 method declarations, including the mutation and capture-event summaries.
@@ -72,12 +75,16 @@ Loop, comprehension and context-manager Store targets use that same traversal.
 An unresolved method mutation root forfeits plain proof rather than guessing
 aliases; type-changing writes also forfeit uncertain model proof. Ordinary data
 writes keep method ownership, and method replacement alone preserves model type.
+This includes non-name roots such as `type(parser)` and container expressions.
 
 Class and instance evidence are distinct. Calling a supported class constructs
 an instance; calling that instance has an unresolved return type. Parameters and
 implicit `self` represent instances, while trusted builtin classmethods retain
 class evidence for `cls`. Ownership joins preserve known model membership when
 only the class/instance distinction differs. No callable return body is inferred.
+The callee expression is visited once before recording method ownership, so
+effects in constructor arguments apply before the outer method lookup. Outer
+call arguments are visited afterwards, preserving lookup-before-argument order.
 
 Conditional expressions and short-circuit operations merge binding evidence;
 comprehension assignment expressions account for their outer bindings. Lambdas
@@ -88,7 +95,9 @@ Nested class bodies and method free names also skip enclosing class-local
 namespaces. Their base expressions remain eager in the immediate outer class;
 a nested class name is not inserted into the module's future bindings.
 Executable assignment, annotated-assignment, augmented-assignment and deletion
-targets are inspected. Class headers and source annotations are inspected too;
+targets are inspected, including comprehension target expressions. Dictionaries
+visit each key followed by its value, including unpacking before later keys.
+Class headers and source annotations are inspected too;
 annotation expressions are never evaluated by the scanner. Mutation uncertainty
 survives loops and context managers. UTF-8 decoding accepts an optional BOM
 without rewriting the source bytes.
@@ -120,6 +129,12 @@ findings. Its recorded root KEEP is historical and does not admit this successor
 Source 445b7af7 and its 666 selected checks are also held after the later target,
 capture, control, declared-write and callable-instance findings. Those passes
 retain their recorded scope and do not approve the current successor.
+Source f9ffbf60 / metadata 6b94f5e8 and its 772 selected checks are held after
+the actual outside review and staged receiver-evaluation, opaque-root,
+initializer and subclass-hook failures. Its source KEEP retains only its
+original review scope and does not admit this corrected successor.
+The intermediate 562709 source's 815 selected checks also remain held after
+the staged comprehension-target and dictionary-order failures.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted

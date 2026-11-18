@@ -1379,7 +1379,7 @@ def receiver_target_mutation(node: ast.AST) -> Optional[Tuple[str, bool]]:
     if member not in LEGACY_MODEL_METHODS | RECEIVER_TYPE_MEMBERS:
         return None
     name = receiver_target_name(node)
-    return (name, member in RECEIVER_TYPE_MEMBERS) if name else None
+    return (name or "<unresolved-mutation>", member in RECEIVER_TYPE_MEMBERS)
 
 
 def receiver_target_leaves(target: ast.AST) -> Iterable[ast.AST]:
@@ -1695,10 +1695,14 @@ class PydanticReceivers(ast.NodeVisitor):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
                 child.name == "__init__"
             ):
-                if receiver_mutated_names(child.body) or any(
-                    isinstance(part, ast.Call) for part in ast.walk(child)
+                if (
+                    child.decorator_list
+                    or receiver_mutated_names(child.body)
+                    or any(isinstance(part, ast.Call) for part in ast.walk(child))
                 ):
                     return False
+            elif "__init__" in receiver_binding_events(child):
+                return False
         return True
 
     @staticmethod
@@ -1739,6 +1743,9 @@ class PydanticReceivers(ast.NodeVisitor):
         model_base = any(
             base.kind == "model" and not base.is_instance for base in bases
         )
+        unsupported_hook = not model_base and any(
+            "__init_subclass__" in receiver_bound_names(child) for child in node.body
+        )
         uncertain_keywords = bool(node.keywords) and (
             not model_base
             or any(keyword.arg in {None, "metaclass"} for keyword in node.keywords)
@@ -1747,6 +1754,7 @@ class PydanticReceivers(ast.NodeVisitor):
             node.decorator_list
             or uncertain_keywords
             or dynamic
+            or unsupported_hook
             or (not model_base and len(bases) > 1)
             or (not model_base and not self.plain_initializer_supported(node))
         ):
@@ -1918,6 +1926,7 @@ class PydanticReceivers(ast.NodeVisitor):
             for index, generator in enumerate(generators):
                 if index:
                     self.visit(generator.iter)
+                self.visit(generator.target)
                 for name in receiver_bound_names(generator.target):
                     local[name] = UNKNOWN_RECEIVER
                 for condition in generator.ifs:
@@ -1982,6 +1991,12 @@ class PydanticReceivers(ast.NodeVisitor):
         right = self.scoped(node.orelse, dict(self.env))
         self.merge_bindings(left, right)
 
+    def visit_Dict(self, node: ast.Dict) -> None:
+        for key, value in zip(node.keys, node.values):
+            if key is not None:
+                self.visit(key)
+            self.visit(value)
+
     def visit_IfExp(self, node: ast.IfExp) -> None:
         self.visit(node.test)
         left = self.scoped([node.body], dict(self.env))
@@ -2045,6 +2060,7 @@ class PydanticReceivers(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         function = node.func
+        self.visit(function)
         if (
             isinstance(function, ast.Attribute)
             and function.attr in LEGACY_MODEL_METHODS
@@ -2057,7 +2073,8 @@ class PydanticReceivers(ast.NodeVisitor):
             if segment is not None:
                 key = (node.lineno, getattr(node, "end_lineno", node.lineno), segment)
                 self.calls.setdefault(key, set()).add(kind)
-        self.generic_visit(node)
+        for argument in [*node.args, *node.keywords]:
+            self.visit(argument)
         written, changes_type = self.call_effects([node])
         self.apply_call_effects(self.env, written, changes_type)
 
