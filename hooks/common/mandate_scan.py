@@ -1295,6 +1295,12 @@ def receiver_immediate_call_names(nodes: Iterable[ast.AST]) -> Set[str]:
                 names.add(node.func.id)
             elif isinstance(node.func, ast.Attribute):
                 names.add(node.func.attr)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Name):
+                    names.add(decorator.id)
+                elif isinstance(decorator, ast.Attribute):
+                    names.add(decorator.attr)
         children: List[Optional[ast.AST]]
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
@@ -1539,6 +1545,23 @@ class PydanticReceivers(ast.NodeVisitor):
             if name in self.sensitive_call_names:
                 changes_type = bool(changes_type) or self.sensitive_call_names[name]
         return written, changes_type
+
+    def apply_decorator_effects(self, decorators: Sequence[ast.expr]) -> None:
+        """Apply known bare decorator calls after eager definition evaluation."""
+        for decorator in reversed(decorators):
+            name = (
+                decorator.id
+                if isinstance(decorator, ast.Name)
+                else decorator.attr
+                if isinstance(decorator, ast.Attribute)
+                else None
+            )
+            if name is not None:
+                self.apply_call_effects(
+                    self.env,
+                    self.binding_call_names.get(name, set()),
+                    self.sensitive_call_names.get(name),
+                )
 
     @contextmanager
     def call_effect_scope(self, nodes: Iterable[ast.AST]) -> Iterator[None]:
@@ -1831,6 +1854,7 @@ class PydanticReceivers(ast.NodeVisitor):
         self.apply_call_effects(self.env, written, changes_type)
         if (mutations or changes_type is not None) and binding.kind == "plain":
             binding = UNKNOWN_RECEIVER
+        self.apply_decorator_effects(node.decorator_list)
         self.env[node.name] = binding
 
     def deferred_bindings(
@@ -1915,6 +1939,7 @@ class PydanticReceivers(ast.NodeVisitor):
         self.class_binding = previous
         self.rebound = previous_rebound
         self.mutated = previous_mutated
+        self.apply_decorator_effects(node.decorator_list)
         self.env[node.name] = UNKNOWN_RECEIVER
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -1924,6 +1949,8 @@ class PydanticReceivers(ast.NodeVisitor):
             if default is not None:
                 self.visit(default)
         _, local = self.deferred_bindings()
+        for name in receiver_bound_names(node.body):
+            local[name] = UNKNOWN_RECEIVER
         args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
         if node.args.vararg:
             args.append(node.args.vararg)
@@ -1932,9 +1959,17 @@ class PydanticReceivers(ast.NodeVisitor):
         for argument in args:
             local[argument.arg] = UNKNOWN_RECEIVER
         previous_class = self.class_binding
+        previous_rebound = self.rebound
+        previous_mutated = self.mutated
         self.class_binding = None
+        self.rebound = self.rebound | receiver_rebound_names([node.body])
+        self.mutated = dict(self.mutated)
+        for name, changes_type in receiver_mutated_names([node.body]).items():
+            self.mutated[name] = self.mutated.get(name, False) or changes_type
         self.scoped([node.body], local)
         self.class_binding = previous_class
+        self.rebound = previous_rebound
+        self.mutated = previous_mutated
 
     def comprehension(self, node: ast.AST, deferred: bool = False) -> None:
         previous = self.env

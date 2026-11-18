@@ -548,6 +548,61 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_subscript_return_contexts
   _qm_receiver_control_flow_contexts
   _qm_receiver_iteration_target_contexts
+  _qm_receiver_lambda_local_contexts
+  _qm_receiver_bare_decorator_contexts
+  _qm_receiver_decorator_order_contexts
+}
+
+# Protects: nested lambda captures account for their enclosing lambda's writes.
+# Detects: stale plain exemptions and stale model blocks across local rebinding.
+# Needs: actual staged scanner and syntax-valid fixtures; no fixture execution.
+# Breadcrumb: hooks/common/mandate_scan.py visit_Lambda/deferred_bindings.
+_qm_receiver_lambda_local_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'lambda local later model invalidates nested capture' \
+    "${_qmr_types}run = lambda: ((receiver := Parser()), (load := lambda: receiver.parse_file('notes.md')), (receiver := Model), load())\n" 0 unknown
+  _qm_receiver_case 'lambda local later parser cannot retain initial model capture' \
+    "${_qmr_types}run = lambda: ((receiver := Model), (load := lambda: receiver.parse_file('notes.md')), (receiver := Parser()), load())\n" 0 unknown
+  _qm_receiver_case 'lambda stable plain local remains plain' \
+    "${_qmr_types}run = lambda: ((receiver := Parser()), (load := lambda: receiver.parse_file('notes.md')), load())\n" 0 plain
+  _qm_receiver_case 'lambda stable model local remains strong' \
+    "${_qmr_types}run = lambda: ((receiver := Model), (load := lambda: receiver.parse_file('m.json')), load())\n" 1 model
+}
+
+# Protects: executing known bare decorators invalidates affected receiver proof.
+# Detects: omitted implicit calls and future effects missing from captures.
+# Needs: actual staged scanner and owned fixtures; decorators are never executed.
+# Breadcrumb: hooks/common/mandate_scan.py immediate_call_names/decorator effects.
+_qm_receiver_bare_decorator_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qmr_install='def install(fn):\n    Parser.parse_file = Model.parse_file\n    return fn\n'
+  _qm_receiver_case 'bare function decorator applies known mutation' \
+    "${_qmr_types}${_qmr_install}@install\ndef decorated():\n    pass\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'bare class decorator applies known mutation' \
+    "${_qmr_types}${_qmr_install}@install\nclass Decorated:\n    pass\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'earlier lambda capture sees later bare decorator' \
+    "${_qmr_types}${_qmr_install}load = lambda: Parser().parse_file('m.json')\n@install\ndef decorated():\n    pass\nload()\n" 0 unknown
+  _qm_receiver_case 'earlier function capture sees later bare decorator' \
+    "${_qmr_types}${_qmr_install}def load():\n    return Parser().parse_file('m.json')\n@install\ndef decorated():\n    pass\nload()\n" 0 unknown
+  _qm_receiver_case 'data-only decorator preserves plain parser' \
+    "${_qmr_types}def install(fn):\n    Parser.label = 'notes'\n    return fn\n@install\ndef decorated():\n    pass\nParser().parse_file('notes.md')\n" 0 plain
+}
+
+# Protects: decorator application follows eager expressions and class suites.
+# Detects: effects applied too early or to uncalled/data-only/model consumers.
+# Needs: real staged scanner; fixtures describe evaluation without running it.
+# Breadcrumb: hooks/common/mandate_scan.py FunctionDef/ClassDef effect ordering.
+_qm_receiver_decorator_order_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qmr_install='def install(fn):\n    Parser.parse_file = Model.parse_file\n    return fn\n'
+  _qm_receiver_case 'uncalled decorator preserves plain parser' \
+    "${_qmr_types}${_qmr_install}Parser().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'function decorator effects follow all eager expressions' \
+    "${_qmr_types}${_qmr_install}def wrap(value):\n    return lambda fn: fn\n@install\n@wrap(Parser().parse_file('notes.md'))\ndef decorated():\n    pass\n" 0 plain
+  _qm_receiver_case 'class decorator effects follow immediate class suite' \
+    "${_qmr_types}${_qmr_install}@install\nclass Decorated:\n    value = Parser().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'bare method mutation preserves unrelated model type' \
+    "${_qmr_types}${_qmr_install}@install\ndef decorated():\n    pass\nModel.parse_file('m.json')\n" 1 model
 }
 
 # Protects: annotations and class/import namespaces cannot invent plain proof.

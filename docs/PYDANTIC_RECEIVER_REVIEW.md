@@ -36,6 +36,13 @@ Binding events are counted individually even within one compound statement.
 Deferred generator bodies use capture safeguards; their first iterator remains
 eager. Chained comparisons merge conditional bindings. A class name is published
 after its immediate suite, separately from the future self/cls view in methods.
+Lambdas summarize their own local rebinding and mutation events before analyzing
+nested captures, using the same safeguards as deferred function bodies.
+Known bare decorator calls feed the existing local-effect summary and are applied
+in reverse order after eager definition expressions and the immediate class suite.
+Merely declaring a mutating decorator does not apply it; ordinary field writes
+and known model type retain their existing treatment. Decorator return values
+and arbitrary decorator dispatch remain outside this local analysis.
 Sensitive immediate class-suite mutations, including nested suites, invalidate
 enclosing plain proofs without copying class-local bindings back. Unsupported
 plain initializers with sensitive writes or opaque calls forfeit plain proof;
@@ -156,6 +163,9 @@ The intermediate FAE4F0F6 source's 843 checks are also held after constructor,
 loop-header, sequential context-target and annotation-instance findings.
 Source e1d51938 / metadata cf3f8080 and its 872 checks remain held after repeated
 comprehension and captured-assignment-target findings.
+Source b038e161 / metadata 28b1cb0b and its 903 checks remain held after
+lambda-local capture and implicit bare-decorator effect findings. Its source
+KEEP is historical and does not admit the current successor.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted
