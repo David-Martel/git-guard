@@ -1201,7 +1201,7 @@ def receiver_annotation_root(annotation: Optional[ast.AST]) -> Optional[str]:
 def receiver_bound_names(node: ast.AST) -> Set[str]:
     """Find bindings in this scope without borrowing nested function locals."""
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        return {node.name}
+        return set(receiver_binding_events(node))
     names: Set[str] = set()
     if isinstance(node, ast.Lambda):
         for default in [*node.args.defaults, *node.args.kw_defaults]:
@@ -1476,6 +1476,7 @@ class PydanticReceivers(ast.NodeVisitor):
         self.mutated: Dict[str, bool] = {}
         self.calls: Dict[Tuple[int, int, str], Set[str]] = {}
         self.call_callees: Dict[ast.Call, ReceiverBinding] = {}
+        self.subscript_bindings: Dict[ast.Subscript, ReceiverBinding] = {}
 
     def visit_Module(self, node: ast.Module) -> None:
         for child in ast.walk(node):
@@ -1523,6 +1524,8 @@ class PydanticReceivers(ast.NodeVisitor):
                 return replace(binding, is_instance=True)
             return UNKNOWN_RECEIVER
         if isinstance(node, ast.Subscript):
+            if node in self.subscript_bindings:
+                return self.subscript_bindings[node]
             binding = self.value(node.value)
             return (
                 binding
@@ -1796,17 +1799,20 @@ class PydanticReceivers(ast.NodeVisitor):
 
     def capture_class_base(self, base: ast.AST) -> ReceiverBinding:
         """Capture a supported base before its own index changes owner bindings."""
-        if isinstance(base, ast.Subscript):
-            owner = self.capture_class_base(base.value)
-            self.visit(base.slice)
-            owner = self.revalidate_binding(owner, [base.slice])
-            return (
-                owner
-                if owner.kind == "model" and not owner.is_instance
-                else UNKNOWN_RECEIVER
-            )
         self.visit(base)
         return self.value(base)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        """Capture a supported class owner before its index evaluates effects."""
+        self.visit(node.value)
+        owner = self.value(node.value)
+        self.visit(node.slice)
+        owner = self.revalidate_binding(owner, [node.slice])
+        self.subscript_bindings[node] = (
+            owner
+            if owner.kind == "model" and not owner.is_instance
+            else UNKNOWN_RECEIVER
+        )
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         for expression in node.decorator_list:
@@ -1999,15 +2005,24 @@ class PydanticReceivers(ast.NodeVisitor):
             return
         base = dict(self.env)
         before_callees = dict(self.call_callees)
+        before_subscripts = dict(self.subscript_bindings)
         current = self.scoped([*positional, *normal, *tail], dict(base))
         current_callees = self.call_callees
+        current_subscripts = self.subscript_bindings
         self.call_callees = dict(before_callees)
+        self.subscript_bindings = dict(before_subscripts)
         legacy = self.scoped([*normal, *positional, *tail], dict(base))
         self.merge_bindings(current, legacy)
         for call in current_callees.keys() | self.call_callees.keys():
             left = current_callees.get(call, UNKNOWN_RECEIVER)
             right = self.call_callees.get(call, UNKNOWN_RECEIVER)
             self.call_callees[call] = left if left == right else UNKNOWN_RECEIVER
+        for subscript in current_subscripts.keys() | self.subscript_bindings.keys():
+            left = current_subscripts.get(subscript, UNKNOWN_RECEIVER)
+            right = self.subscript_bindings.get(subscript, UNKNOWN_RECEIVER)
+            self.subscript_bindings[subscript] = (
+                left if left == right else UNKNOWN_RECEIVER
+            )
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         for default in [*node.args.defaults, *node.args.kw_defaults]:

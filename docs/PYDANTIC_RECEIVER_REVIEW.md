@@ -39,10 +39,16 @@ its expression is visited, then revalidated against later base and keyword
 effects. A later name-only write does not change the captured object; relevant
 method or type mutations retain the existing conservative proof loss. This does
 not infer arbitrary factory returns, MRO proxies or multiple-inheritance order.
-Within a subscript base, its owner is captured before its index, including nested
+For supported subscriptions, the owner is captured before its index, including nested
 subscriptions. Supported model-class ownership survives name-only index writes;
 actual type effects still invalidate it. Plain generic return values remain
 unresolved, and index expressions retain their independent call findings.
+Class bases use that same evaluation-time evidence. Annotation-order alternatives
+merge cached subscription evidence rather than retaining the last visited branch.
+
+Nested definition defaults and decorators, and nested class bases and keywords,
+contribute their eager bindings to the enclosing scope's local-name inventory.
+Deferred nested bodies and class-local assignments remain separate scopes.
 
 Binding events are counted individually even within one compound statement.
 Deferred generator bodies use capture safeguards; their first iterator remains
@@ -203,6 +209,10 @@ root source KEEP6DE508 retains only its recorded scope.
 Local source aa3d4452 and its 1,060 checks remained unreviewed after the same
 capture issue was found inside a single subscript base. That local snapshot is
 preserved as source-specific evidence, not independent approval.
+Source ea055bf2 / metadata 045190e5 and its 1,089 checks remain held after missed
+nested-header local bindings and ordinary subscription-owner rereading findings.
+Its source and metadata KEEP receipts retain only their original review scope;
+the green CI at that head does not qualify this corrected successor.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted

@@ -562,6 +562,7 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_base_revalidation_controls
   _qm_receiver_inner_base_owner_controls
   _qm_receiver_inner_base_effect_controls
+  _qm_receiver_header_subscript_contexts
 }
 
 # Protects: A base subscript captures its owner before evaluating its index.
@@ -2049,4 +2050,55 @@ t_case_quality_mandate() {
 
   rm -f "$log"
   return 0
+}
+
+# Protects: eager nested headers declare enclosing locals; subscriptions capture owners.
+# Detects: stale closure exemptions and post-index false model evidence.
+# Needs: actual staged scanner and compile-valid owned fixtures, not fixture imports.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_bound_names/visit_Subscript.
+_qm_receiver_header_subscript_contexts() {
+  _qm_receiver_case 'nested default binds enclosing closure local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    def configure(marker=(receiver:=Model)):\n        pass\n    return load()\nrun()\n' 0 unknown
+  _qm_receiver_case 'nested keyword default binds enclosing closure local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    def configure(*,marker=(receiver:=Model)):\n        pass\n    return load()\nrun()\n' 0 unknown
+  _qm_receiver_case 'nested decorator binds enclosing closure local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    @((receiver:=Model) and (lambda f:f))\n    def configure():\n        pass\n    return load()\nrun()\n' 0 unknown
+  _qm_receiver_case 'nested class base binds enclosing closure local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    class Configure((receiver:=Model)):\n        pass\n    return load()\nrun()\n' 0 unknown
+  _qm_receiver_case 'nested class keyword binds enclosing closure local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    class Configure(Model, extra=(receiver:=Model) and "allow"):\n        pass\n    return load()\nrun()\n' 0 unknown
+  _qm_receiver_case 'nested deferred body does not bind enclosing local' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Model\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    def configure():\n        receiver=Parser()\n    return load()\nrun()\n' 1 model
+  _qm_receiver_case 'nested class body locals do not bind enclosing function' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Model\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    class Configure:\n        receiver=Parser()\n    return load()\nrun()\n' 1 model
+  _qm_receiver_case 'nested header unrelated write preserves model' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Model\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    def configure(marker=(other:=Parser)):\n        pass\n    return load()\nrun()\n' 1 model
+  _qm_receiver_case 'nested stable default preserves plain global' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Parser()\ndef run():\n    load=lambda:receiver.parse_file('"'"'x'"'"')\n    def configure(marker=Model):\n        pass\n    return load()\nrun()\n' 0 plain
+  _qm_receiver_case 'Model subscription captures owner before index rebind' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Model\nreceiver[(receiver:=Parser)].parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'Model nested subscription captures initial owner' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Model\nreceiver[(receiver:=Parser)][int].parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'Parser subscription captures owner before index rebind' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Parser\nreceiver[(receiver:=Model)].parse_file('"'"'x'"'"')\n' 0 unknown
+  _qm_receiver_case 'Parser nested subscription captures initial owner' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nreceiver=Parser\nreceiver[(receiver:=Model)][int].parse_file('"'"'x'"'"')\n' 0 unknown
+  _qm_receiver_case 'stable generic model class retains model' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nModel[int].parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'stable plain generic return remains unresolved' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nParser[int].parse_file('"'"'x'"'"')\n' 0 unknown
+  _qm_receiver_case 'model instance subscription remains unresolved' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nModel()[int].parse_file('"'"'x'"'"')\n' 0 unknown
+  _qm_receiver_case 'plain instance subscription remains unresolved' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nParser()[int].parse_file('"'"'x'"'"')\n' 0 unknown
+  _qm_receiver_case 'index model data mutation retains model' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nModel[setattr(Model,'"'"'model_config'"'"',{})].parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'index called type mutation forfeits model' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\ndef change():\n    Model.__bases__=external\nModel[change()].parse_file('"'"'x'"'"')\n' 0 unknown
+  _qm_receiver_case 'index uncalled type mutator preserves model' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\ndef change():\n    Model.__bases__=external\nModel[change].parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'index called method mutation preserves model ancestry' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\ndef change():\n    Model.parse_file=external\nModel[change()].parse_file('"'"'x'"'"')\n' 1 model
+  _qm_receiver_case 'index direct model call stays independently enforced' \
+    'from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return path\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nParser[Model.parse_obj({})].parse_file('"'"'x'"'"')\n' 1 model
 }
