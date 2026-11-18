@@ -1184,6 +1184,7 @@ class ReceiverBinding:
     dependencies: FrozenSet[str] = frozenset()
     is_instance: bool = False
     opaque: ReceiverOperation = ReceiverOperation.NONE
+    has_set_name: bool = False
 
 
 UNKNOWN_RECEIVER = ReceiverBinding("unknown")
@@ -1193,7 +1194,7 @@ MODEL_RECEIVER = ReceiverBinding(
 PYDANTIC_MODULE = ReceiverBinding("module")
 PYDANTIC_SETTINGS_MODULE = ReceiverBinding("module", identity="pydantic-settings")
 LEGACY_MODEL_METHODS = frozenset({"parse_obj", "parse_raw", "parse_file", "from_orm"})
-RECEIVER_NAMESPACE_MEMBERS = frozenset({"__code__"})
+RECEIVER_NAMESPACE_MEMBERS = frozenset({"__code__", "__set_name__"})
 MODEL_BASES = frozenset({"BaseModel", "BaseSettings", "RootModel"})
 RECEIVER_TYPE_MEMBERS = frozenset(
     {
@@ -1223,7 +1224,7 @@ def receiver_effect(
     binding: ReceiverBinding, effect: ReceiverEffect
 ) -> ReceiverBinding:
     """Invalidate type/namespace proof or retain ancestry with opaque projections."""
-    if binding.kind == "data-hook":
+    if binding.kind in {"data-hook", "function"}:
         return UNKNOWN_RECEIVER if effect else binding
     if binding.kind not in {"plain", "model"}:
         return binding
@@ -1251,13 +1252,16 @@ def receiver_join(one: ReceiverBinding, two: ReceiverBinding) -> ReceiverBinding
     if one == two:
         return one
     if one.kind in {"model", "plain"} and replace(
-        one, is_instance=False, opaque=ReceiverOperation.NONE
-    ) == replace(two, is_instance=False, opaque=ReceiverOperation.NONE):
+        one, is_instance=False, opaque=ReceiverOperation.NONE, has_set_name=False
+    ) == replace(
+        two, is_instance=False, opaque=ReceiverOperation.NONE, has_set_name=False
+    ):
         return receiver_effect(
             replace(
                 one,
                 is_instance=one.is_instance or two.is_instance,
                 opaque=one.opaque | two.opaque,
+                has_set_name=one.has_set_name or two.has_set_name,
             ),
             ReceiverEffect.NONE,
         )
@@ -1631,6 +1635,7 @@ class PydanticReceivers(ast.NodeVisitor):
         self.class_binding: Optional[ReceiverBinding] = None
         self.class_outer: Optional[Dict[str, ReceiverBinding]] = None
         self.class_comprehension_outer: Optional[Dict[str, ReceiverBinding]] = None
+        self.class_eager_envs: List[Dict[str, ReceiverBinding]] = []
         self.has_star_import = False
         self.sensitive_call_effects: Dict[str, ReceiverEffect] = {}
         self.binding_call_names: Dict[str, Set[str]] = {}
@@ -1681,6 +1686,9 @@ class PydanticReceivers(ast.NodeVisitor):
                     return PYDANTIC_MODULE
             elif namespace == PYDANTIC_SETTINGS_MODULE and node.attr == "BaseSettings":
                 return MODEL_RECEIVER
+            key = self.stored_class_key(namespace, node.attr)
+            if key is not None:
+                return self.env.get(key, UNKNOWN_RECEIVER)
         if isinstance(node, ast.Call):
             binding = self.call_callees.get(node)
             if binding is None:
@@ -1711,16 +1719,25 @@ class PydanticReceivers(ast.NodeVisitor):
         return UNKNOWN_RECEIVER
 
     def scoped(
-        self, nodes: Iterable[ast.AST], env: Dict[str, ReceiverBinding]
+        self,
+        nodes: Iterable[ast.AST],
+        env: Dict[str, ReceiverBinding],
+        *,
+        deferred: bool = False,
     ) -> Dict[str, ReceiverBinding]:
         nodes = list(nodes)
         previous = self.env
+        eager = not deferred and any(previous is view for view in self.class_eager_envs)
+        if eager:
+            self.class_eager_envs.append(env)
         self.env = env
         with self.call_effect_scope(nodes):
             for node in nodes:
                 self.visit(node)
         result = self.env
         self.env = previous
+        if eager:
+            self.class_eager_envs.pop()
         return result
 
     def call_effects(self, nodes: Iterable[ast.AST]) -> Tuple[Set[str], ReceiverEffect]:
@@ -1835,6 +1852,7 @@ class PydanticReceivers(ast.NodeVisitor):
                 self.visit(leaf)
                 binding = self.revalidate_binding(binding, [leaf], target=leaf)
                 self.invalidate_target(leaf, node.value)
+                self.record_class_store(leaf, binding)
                 if isinstance(leaf, ast.Name):
                     self.env[leaf.id] = (
                         binding if isinstance(target, ast.Name) else UNKNOWN_RECEIVER
@@ -1856,6 +1874,7 @@ class PydanticReceivers(ast.NodeVisitor):
                 )
         binding = self.revalidate_binding(binding, [node.target], target=node.target)
         self.invalidate_target(node.target, node.value)
+        self.record_class_store(node.target, binding)
         if isinstance(node.target, ast.Name):
             self.env[node.target.id] = binding
         self.visit(node.annotation)
@@ -1878,7 +1897,7 @@ class PydanticReceivers(ast.NodeVisitor):
                 or (binding.identity and binding.identity in value.dependencies)
                 or (
                     binding.kind == "unknown"
-                    and value.kind in {"plain", "model", "data-hook"}
+                    and value.kind in {"plain", "model", "data-hook", "function"}
                 )
             ):
                 env[candidate] = (
@@ -1891,6 +1910,10 @@ class PydanticReceivers(ast.NodeVisitor):
         self, target: ast.AST, assigned: Optional[ast.AST] = None
     ) -> None:
         for leaf in receiver_target_leaves(target):
+            if isinstance(leaf, ast.Attribute):
+                key = self.stored_class_key(self.value(leaf.value), leaf.attr)
+                if key is not None:
+                    self.env[key] = UNKNOWN_RECEIVER
             mutation = receiver_target_mutation(leaf)
             if mutation:
                 if (
@@ -1906,6 +1929,47 @@ class PydanticReceivers(ast.NodeVisitor):
                 ):
                     mutation = (mutation[0], ReceiverEffect.NAMESPACE)
                 self.invalidate_binding(self.env, *mutation)
+
+    @staticmethod
+    def stored_class_key(owner: ReceiverBinding, member: str) -> Optional[str]:
+        """Index only explicit ordinary fields on a proved closed plain class."""
+        if (
+            owner.kind == "plain"
+            and not owner.is_instance
+            and owner.identity
+            and not owner.opaque
+            and not member.startswith("__")
+            and member not in LEGACY_MODEL_METHODS
+        ):
+            return f"<stored-class>:{owner.identity}:{member}"
+        return None
+
+    def record_class_store(self, target: ast.AST, value: ReceiverBinding) -> None:
+        """Carry direct class-to-class facts through existing environment effects."""
+        if not isinstance(target, ast.Attribute):
+            return
+        owner = self.value(target.value)
+        key = self.stored_class_key(owner, target.attr)
+        if key is not None:
+            self.env[key] = (
+                replace(value, dependencies=value.dependencies | owner.dependencies)
+                if value.kind in {"plain", "model"} and not value.is_instance
+                else UNKNOWN_RECEIVER
+            )
+
+    def stored_class_value(
+        self, node: ast.AST, bindings: Mapping[str, ReceiverBinding]
+    ) -> ReceiverBinding:
+        """Resolve names or recorded class fields, never getters or returns."""
+        if isinstance(node, ast.Name):
+            return bindings.get(node.id, UNKNOWN_RECEIVER)
+        if isinstance(node, ast.Attribute):
+            key = self.stored_class_key(
+                self.stored_class_value(node.value, bindings), node.attr
+            )
+            if key is not None:
+                return bindings.get(key, UNKNOWN_RECEIVER)
+        return UNKNOWN_RECEIVER
 
     def stable_binding(
         self, binding: ReceiverBinding, outer: Mapping[str, ReceiverBinding]
@@ -1959,9 +2023,225 @@ class PydanticReceivers(ast.NodeVisitor):
                     child.decorator_list
                     or receiver_mutated_names(child.body)
                     or any(isinstance(part, ast.Call) for part in ast.walk(child))
+                    or not receiver_literal_data_hook(child)
                 ):
                     return False
             elif "__init__" in receiver_binding_events(child):
+                return False
+        return True
+
+    @staticmethod
+    def descriptor_free_field(binding: ReceiverBinding) -> bool:
+        """Prove absence only for known functions and closed ordinary values."""
+        return binding.kind in {"data-hook", "function"} or (
+            binding.kind == "plain"
+            and (not binding.is_instance or not binding.has_set_name)
+        )
+
+    def plain_field_value(
+        self,
+        value: ast.AST,
+        bindings: Mapping[str, ReceiverBinding],
+        safe_names: Mapping[str, bool],
+    ) -> Tuple[ReceiverBinding, bool]:
+        """Check a finite value surface without invoking protocols or returns."""
+        if any(receiver_binding_events(value)):
+            return UNKNOWN_RECEIVER, False
+        if isinstance(
+            value, (ast.Constant, ast.Tuple, ast.List, ast.Set, ast.Dict, ast.Lambda)
+        ):
+            return UNKNOWN_RECEIVER, self.supported_eager_value(
+                value, bindings, safe_names
+            )
+        if isinstance(value, ast.Name):
+            return bindings.get(value.id, UNKNOWN_RECEIVER), safe_names.get(
+                value.id, False
+            )
+        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
+            name = value.func.id
+            if (
+                name == "object"
+                and name not in bindings
+                and not value.args
+                and not value.keywords
+            ):
+                return ReceiverBinding("plain", is_instance=True), True
+            if (
+                name in {"classmethod", "staticmethod"}
+                and name not in bindings
+                and len(value.args) == 1
+                and not value.keywords
+                and isinstance(value.args[0], (ast.Name, ast.Lambda))
+            ):
+                _, safe = self.plain_field_value(value.args[0], bindings, safe_names)
+                return UNKNOWN_RECEIVER, safe
+            arguments = [*value.args, *(keyword.value for keyword in value.keywords)]
+            if any(keyword.arg is None for keyword in value.keywords) or not all(
+                isinstance(argument, (ast.Constant, ast.Name)) for argument in arguments
+            ):
+                return UNKNOWN_RECEIVER, False
+            callee = bindings.get(name, UNKNOWN_RECEIVER)
+            if (
+                callee.kind == "plain"
+                and not callee.is_instance
+                and not callee.opaque
+                & (ReceiverOperation.CONSTRUCT | ReceiverOperation.INSTANCE_ACCESS)
+            ):
+                instance = replace(callee, is_instance=True)
+                return instance, not instance.has_set_name
+        return UNKNOWN_RECEIVER, False
+
+    @staticmethod
+    def literal_hash_input(value: ast.AST) -> bool:
+        """Accept only builtin literal hashes without user protocol dispatch."""
+        return isinstance(value, ast.Constant) or (
+            isinstance(value, ast.Tuple)
+            and all(PydanticReceivers.literal_hash_input(item) for item in value.elts)
+        )
+
+    def prescan_class_stores(
+        self,
+        targets: Sequence[ast.expr],
+        value: ast.AST,
+        bindings: Dict[str, ReceiverBinding],
+        safe_names: Mapping[str, bool],
+    ) -> bool:
+        """Advance only closed ordinary class-field assignments in the prescan."""
+        if not self.supported_eager_value(value, bindings, safe_names):
+            return False
+        assigned = self.stored_class_value(value, bindings)
+        for target in targets:
+            if not isinstance(target, ast.Attribute):
+                return False
+            owner = self.stored_class_value(target.value, bindings)
+            key = self.stored_class_key(owner, target.attr)
+            if key is None:
+                return False
+            bindings[key] = (
+                replace(
+                    assigned, dependencies=assigned.dependencies | owner.dependencies
+                )
+                if assigned.kind in {"plain", "model"} and not assigned.is_instance
+                else UNKNOWN_RECEIVER
+            )
+        return True
+
+    def supported_eager_value(
+        self,
+        value: ast.AST,
+        bindings: Mapping[str, ReceiverBinding],
+        safe_names: Mapping[str, bool],
+    ) -> bool:
+        """Inspect only evaluated value surfaces, never lambda or callback bodies."""
+        if isinstance(value, (ast.Constant, ast.Name)):
+            return True
+        if isinstance(value, (ast.Tuple, ast.List)):
+            return all(
+                self.supported_eager_value(item, bindings, safe_names)
+                for item in value.elts
+            )
+        if isinstance(value, ast.Set):
+            return all(self.literal_hash_input(item) for item in value.elts)
+        if isinstance(value, ast.Dict):
+            return all(
+                key is not None
+                and self.literal_hash_input(key)
+                and self.supported_eager_value(item, bindings, safe_names)
+                for key, item in zip(value.keys, value.values)
+            )
+        if isinstance(value, ast.Lambda):
+            return all(
+                self.supported_eager_value(item, bindings, safe_names)
+                for item in [*value.args.defaults, *value.args.kw_defaults]
+                if item is not None
+            )
+        if isinstance(value, ast.Call):
+            binding, descriptor_free = self.plain_field_value(
+                value, bindings, safe_names
+            )
+            return descriptor_free or (binding.kind == "plain" and binding.is_instance)
+        return False
+
+    def plain_namespace_supported(
+        self, node: ast.ClassDef, outer: Mapping[str, ReceiverBinding]
+    ) -> bool:
+        """Prescan closed namespaces before trusting any deferred method body."""
+        bindings = dict(outer)
+        safe_names = {
+            name: self.descriptor_free_field(value) for name, value in outer.items()
+        }
+        for child in node.body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if any(name != child.name for name in receiver_binding_events(child)):
+                    return False
+                if not all(
+                    isinstance(decorator, ast.Name)
+                    and decorator.id in {"classmethod", "staticmethod"}
+                    and decorator.id not in bindings
+                    for decorator in child.decorator_list
+                ):
+                    return False
+                arguments = [
+                    *child.args.posonlyargs,
+                    *child.args.args,
+                    *child.args.kwonlyargs,
+                ]
+                if child.args.vararg is not None:
+                    arguments.append(child.args.vararg)
+                if child.args.kwarg is not None:
+                    arguments.append(child.args.kwarg)
+                headers = [
+                    *child.args.defaults,
+                    *child.args.kw_defaults,
+                    *(argument.annotation for argument in arguments),
+                    child.returns,
+                ]
+                if not all(
+                    self.supported_eager_value(value, bindings, safe_names)
+                    for value in headers
+                    if value is not None
+                ):
+                    return False
+                bindings[child.name] = UNKNOWN_RECEIVER
+                safe_names[child.name] = True
+            elif isinstance(child, (ast.Assign, ast.AnnAssign)):
+                targets = (
+                    child.targets if isinstance(child, ast.Assign) else [child.target]
+                )
+                if isinstance(child, ast.Assign) and all(
+                    isinstance(target, ast.Attribute) for target in targets
+                ):
+                    if not self.prescan_class_stores(
+                        targets, child.value, bindings, safe_names
+                    ):
+                        return False
+                    continue
+                if not all(isinstance(target, ast.Name) for target in targets):
+                    return False
+                if isinstance(child, ast.AnnAssign):
+                    if any(
+                        receiver_binding_events(child.annotation)
+                    ) or not self.supported_eager_value(
+                        child.annotation, bindings, safe_names
+                    ):
+                        return False
+                    if child.value is None:
+                        continue
+                value = child.value
+                if value is None:
+                    return False
+                binding, safe = self.plain_field_value(value, bindings, safe_names)
+                if not safe:
+                    return False
+                for target in targets:
+                    assert isinstance(target, ast.Name)
+                    bindings[target.id] = binding
+                    safe_names[target.id] = safe
+            elif isinstance(child, (ast.Pass, ast.Global, ast.Nonlocal)) or (
+                isinstance(child, ast.Expr) and isinstance(child.value, ast.Constant)
+            ):
+                continue
+            else:
                 return False
         return True
 
@@ -1987,6 +2267,18 @@ class PydanticReceivers(ast.NodeVisitor):
         self.visit(base)
         return self.value(base)
 
+    def class_eager_protocol_barrier(self, node: ast.AST) -> None:
+        """Expire immediate class proofs after an unsupported operation executes."""
+        if not any(self.env is env for env in self.class_eager_envs):
+            return
+        safe_names = {
+            name: self.descriptor_free_field(value) for name, value in self.env.items()
+        }
+        if not self.supported_eager_value(node, self.env, safe_names):
+            self.class_mutation_barrier(
+                self.env, {"<class-eager-protocol>": ReceiverEffect.NAMESPACE}
+            )
+
     def visit_Subscript(self, node: ast.Subscript) -> None:
         """Capture a supported class owner before its index evaluates effects."""
         self.visit(node.value)
@@ -2000,6 +2292,7 @@ class PydanticReceivers(ast.NodeVisitor):
             and not owner.opaque & ReceiverOperation.CLASS_SUBSCRIPT
             else UNKNOWN_RECEIVER
         )
+        self.class_eager_protocol_barrier(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         for expression in node.decorator_list:
@@ -2038,6 +2331,9 @@ class PydanticReceivers(ast.NodeVisitor):
             not model_base
             or any(keyword.arg in {None, "metaclass"} for keyword in node.keywords)
         )
+        namespace_supported = model_base or self.plain_namespace_supported(
+            node, body_outer
+        )
         if (
             node.decorator_list
             or uncertain_keywords
@@ -2046,6 +2342,7 @@ class PydanticReceivers(ast.NodeVisitor):
             or any(base.opaque & ReceiverOperation.SUBCLASS for base in bases)
             or (not model_base and len(bases) > 1)
             or (not model_base and not self.plain_initializer_supported(node))
+            or not namespace_supported
         ):
             binding = UNKNOWN_RECEIVER
         elif model_base or all(
@@ -2060,6 +2357,12 @@ class PydanticReceivers(ast.NodeVisitor):
                 methods,
                 identity,
                 dependencies,
+                has_set_name=any(base.has_set_name for base in bases)
+                or any(
+                    not (isinstance(child, ast.AnnAssign) and child.value is None)
+                    and "__set_name__" in receiver_bound_names(child)
+                    for child in node.body
+                ),
             )
             opaque = ReceiverOperation.NONE
             for parent_binding in bases:
@@ -2087,15 +2390,24 @@ class PydanticReceivers(ast.NodeVisitor):
         previous_outer = self.class_outer
         previous_comprehension_outer = self.class_comprehension_outer
         mutations = receiver_mutated_names(node.body, include_class_bodies=True)
+        if not namespace_supported:
+            mutations["<unsupported-class-namespace>"] = ReceiverEffect.NAMESPACE
         written, effect = self.call_effects(node.body)
         self.class_binding = binding
         self.class_outer = dict(method_outer)
         self.class_comprehension_outer = dict(body_outer)
+        body_env = dict(body_outer)
+        if not namespace_supported:
+            self.class_mutation_barrier(self.class_outer, mutations)
         self.class_mutation_barrier(self.class_comprehension_outer, mutations)
         self.apply_call_effects(self.class_comprehension_outer, written, effect)
         if not nested:
             self.class_outer[node.name] = binding
-        self.scoped(node.body, dict(body_outer))
+        self.class_eager_envs.append(body_env)
+        try:
+            self.scoped(node.body, body_env)
+        finally:
+            self.class_eager_envs.pop()
         self.class_binding = previous
         self.class_outer = previous_outer
         self.class_comprehension_outer = previous_comprehension_outer
@@ -2129,6 +2441,12 @@ class PydanticReceivers(ast.NodeVisitor):
     def visit_FunctionDef(
         self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     ) -> None:
+        ordinary_function = all(
+            isinstance(decorator, ast.Name)
+            and decorator.id in {"classmethod", "staticmethod"}
+            and decorator.id not in self.env
+            for decorator in node.decorator_list
+        )
         args = [*node.args.posonlyargs, *node.args.args]
         if node.args.vararg:
             args.append(node.args.vararg)
@@ -2193,7 +2511,7 @@ class PydanticReceivers(ast.NodeVisitor):
         self.mutated = dict(self.mutated)
         for name, effect in receiver_mutated_names(node.body).items():
             self.mutated[name] = self.mutated.get(name, ReceiverEffect.NONE) | effect
-        self.scoped(node.body, local)
+        self.scoped(node.body, local, deferred=True)
         self.class_binding = previous
         self.rebound = previous_rebound
         self.mutated = previous_mutated
@@ -2204,6 +2522,10 @@ class PydanticReceivers(ast.NodeVisitor):
                 "data-hook", identity=identity, dependencies=frozenset({identity})
             )
             if receiver_literal_data_hook(node)
+            else ReceiverBinding(
+                "function", identity=identity, dependencies=frozenset({identity})
+            )
+            if ordinary_function
             else UNKNOWN_RECEIVER
         )
 
@@ -2269,7 +2591,7 @@ class PydanticReceivers(ast.NodeVisitor):
         self.mutated = dict(self.mutated)
         for name, effect in receiver_mutated_names([node.body]).items():
             self.mutated[name] = self.mutated.get(name, ReceiverEffect.NONE) | effect
-        self.scoped([node.body], local)
+        self.scoped([node.body], local, deferred=True)
         self.class_binding = previous_class
         self.rebound = previous_rebound
         self.mutated = previous_mutated
@@ -2362,10 +2684,19 @@ class PydanticReceivers(ast.NodeVisitor):
         self.merge_bindings(left, right)
 
     def visit_Dict(self, node: ast.Dict) -> None:
+        if any(key is None or not self.literal_hash_input(key) for key in node.keys):
+            # Hash insertion may interleave entries across supported interpreters.
+            # Forfeit uncertain class proofs before this unsupported container.
+            self.class_eager_protocol_barrier(node)
         for key, value in zip(node.keys, node.values):
             if key is not None:
                 self.visit(key)
             self.visit(value)
+
+    def visit_Set(self, node: ast.Set) -> None:
+        if not all(self.literal_hash_input(item) for item in node.elts):
+            self.class_eager_protocol_barrier(node)
+        self.generic_visit(node)
 
     def visit_IfExp(self, node: ast.IfExp) -> None:
         self.visit(node.test)
@@ -2467,6 +2798,7 @@ class PydanticReceivers(ast.NodeVisitor):
         self.call_callees[node] = self.revalidate_binding(callee, arguments)
         written, effect = self.call_effects([node])
         self.apply_call_effects(self.env, written, effect)
+        self.class_eager_protocol_barrier(node)
 
 
 class PydanticReceiverCache:

@@ -77,6 +77,51 @@ Sensitive immediate class-suite mutations, including nested suites, invalidate
 enclosing plain proofs without copying class-local bindings back. Unsupported
 plain initializers with sensitive writes or opaque calls forfeit plain proof;
 simple data-only initialization and known model configuration retain precision.
+Plain initializer proof is positive: literal or Name stores to the first
+argument's ordinary fields, with supported no-op statements. Existing decorator,
+header, explicit-call and sensitive-write exclusions still apply. A subscription,
+attribute protocol, overloaded expression or unsupported control flow cannot
+become data-only merely because its AST contains no explicit call.
+
+A closed namespace prescan runs before any deferred method body is trusted.
+Automatic `__set_name__` callbacks can replace methods after the suite finishes,
+including methods declared before the descriptor field. Local class bindings
+retain a small presence fact through inheritance, joins and aliases; explicit
+namespace replacement expires absence through the existing mutation effects.
+The prescan accepts literal data, proved descriptor-free Names, ordinary
+undecorated functions, unshadowed classmethod/staticmethod wrappers, and closed
+local ordinary-instance construction without the hook. Unknown/imported field
+values, arbitrary decorated functions and unsupported returned values remain
+uncertain. Constructor argument unpacking is not a closed proof; ordinary
+literal/Name arguments remain supported. Ordinary function-object evidence is
+separate from the stronger literal-data callback-body proof and remains an
+unknown API receiver. No descriptor body, arbitrary return, metaclass identity
+or global purity analysis is inferred. Literal containers are checked recursively
+through their evaluated elements and dictionary keys/values. Function eager
+headers and lambda defaults use the same supported-value boundary; lambda bodies
+remain deferred. A Name load in an eager default is inert, while a namespace
+field Name still needs positive descriptor absence. Unsupported namespace effects
+expire enclosing and captured plain proofs through the existing namespace barrier,
+including the inherited parent and method/comprehension views. Direct known-model
+ancestry and default severities retain their existing treatment.
+Immediate class lookups retain evidence until the unsupported subscription or
+call executes; a later lookup in the same container cannot reuse that proof.
+Deferred bodies and completed classes retain the conservative namespace barrier.
+Non-writing global/nonlocal declarations do not themselves execute a protocol.
+Dictionary keys and set members need builtin literal hash inputs: constants or
+recursive tuples of constants. Name loads in lists, tuples and dictionary values
+remain inert; inserting a Name as a hash key can invoke user code. Unsupported
+hash containers forfeit immediate proofs before their evaluation, without claiming
+a universal insertion position across interpreter bytecode implementations.
+Immediate branch copies retain that eager context; function and lambda bodies
+explicitly leave it until execution is otherwise supported by the existing analysis.
+
+Ordinary class-data writes preserve precision only through positively known class
+owners. Direct closed plain CLASS-to-CLASS stores retain facts in the same scoped
+environment, keyed by owner identity with both owner and value dependencies.
+Overwrites, namespace changes and unknown effects expire these facts through the
+existing join and invalidation machinery. Functions, instances, getters, imported
+values and arbitrary returns do not establish this stored-class proof.
 Aliased or decorated plain initializers remain unsupported. Plain bases with
 `__init_subclass__` hooks cannot establish inherited method ownership; an already
 known model class retains its direct API evidence. Unsupported subclass hooks
@@ -286,6 +331,13 @@ retained with its result; it did not execute the finding or grant admission.
 Source 23bca8f6 / metadata fa630dd7 and its 1,191 checks remain source-specific
 history after formal-binding capture and later initializer-hook findings.
 Their source/metadata KEEP receipts do not admit this corrected successor.
+The unsigned53A9 descriptor snapshot and its 1,422 checks remain held after
+container/default protocols retained stale parent/outer proofs; raw receipts
+and root holds are preserved without claiming a reviewed source commit.
+Source 22fbf2c0 / metadata f4b4b83e and its 1,359 checks, including both green
+CI jobs, remain held after initializer-protocol and descriptor-completion
+findings at6978689569. Source/metadata review receipts retain their original
+scopes and do not admit the corrected successor.
 Source 2a857b53 / metadata c437d6cc and its 1,226 checks remain held after
 implicit write/delete hooks and custom subscription ownership findings. Their
 source-only KEEP receipts do not admit the operation-projection successor.
