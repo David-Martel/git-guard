@@ -59,6 +59,25 @@ activate it. No general runtime or alias-safety guarantee is claimed.
 Matching local calls also invalidate names actually written through declared
 `global` or `nonlocal` bindings. A declaration without a write is not an effect;
 name rebinding does not invalidate the previous object's unrelated aliases.
+The same one-level eager-call summary feeds captures and outward class, loop and
+comprehension effects. Deferred bodies are not executed by that prepass; generator
+bodies conservatively merge potential outer writes even when consumption is not
+established, with their first iterator handled eagerly. Class suites propagate
+only actually written declared global or nonlocal names, never unrelated
+class-local assignments or declarations alone.
+Tuple, list and starred mutation targets share the same leaf traversal in
+immediate invalidation and capture summaries. Those summaries include immediately
+executed class suites while continuing to exclude uncalled function bodies.
+Loop, comprehension and context-manager Store targets use that same traversal.
+An unresolved method mutation root forfeits plain proof rather than guessing
+aliases; type-changing writes also forfeit uncertain model proof. Ordinary data
+writes keep method ownership, and method replacement alone preserves model type.
+
+Class and instance evidence are distinct. Calling a supported class constructs
+an instance; calling that instance has an unresolved return type. Parameters and
+implicit `self` represent instances, while trusted builtin classmethods retain
+class evidence for `cls`. Ownership joins preserve known model membership when
+only the class/instance distinction differs. No callable return body is inferred.
 
 Conditional expressions and short-circuit operations merge binding evidence;
 comprehension assignment expressions account for their outer bindings. Lambdas
@@ -98,6 +117,9 @@ further scope/effect findings; its 207/541 results remain source-specific
 historical evidence. The e0d88 / 081be79 source and its 243/577 results are also
 held after annotation, inheritance, comprehension, import and called-effect
 findings. Its recorded root KEEP is historical and does not admit this successor.
+Source 445b7af7 and its 666 selected checks are also held after the later target,
+capture, control, declared-write and callable-instance findings. Those passes
+retain their recorded scope and do not approve the current successor.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted

@@ -1,418 +1,106 @@
 {
   "schema_version": 1,
-  "source_commit": "081be79c8efc4c000a84efeec323e4e35a317260 + proposed declared-binding/lexical successor",
+  "source_commit": "445b7af7383c96bc1009afc86327fa68489ffd0c + proposed frozen local-effect/Store successor",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
-    "hooks/common/mandate_scan.py": "5839179cdadab51147eb9e318c58c8a1286e28058c978f0d1220fc6fcf194d05",
+    "hooks/common/mandate_scan.py": "992e60231738e39bd4da50b6a13c01ebd9ad3e93a816674fa3e720ecbd2d88e0",
     "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
     "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-    "tests/32-quality-mandate.t.sh": "cc77d97c7831eca57c79f7e0159de1149792712bc01b2e35c58c3217e151201c",
+    "tests/32-quality-mandate.t.sh": "cd12e8e61425e993b9b92fc71b2206e04cfe14d3a0c5b81e5a3cb53fc6f4b18c",
     "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
     "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
     "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
     "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-    "docs/PYDANTIC_RECEIVER_REVIEW.md": "a563350fe3e8483398675244ba012c97fe271b625a429c18a0d1c7499938d242"
+    "docs/PYDANTIC_RECEIVER_REVIEW.md": "45d1157802f9cde4cfad51fbe8493d5767316c03fd96b1a9c83db82558380e00"
   },
   "author_evidence": {
-    "platform": "Windows dtm-p1gen9 / Git Bash / CPython3.15.2",
-    "red": "20 passed, 24 failed, 0 skipped",
-    "focused": "Current5839179C/CC77D97C:332 receiver assertions PASS,0fail,0skip in two independent hermetic categories",
-    "regression": "Current same4 documented categories in independent hermetic runners:666PASS,0FAIL,14existingraw-rule skips; not entire repository suite or a single-process result",
-    "global_precommit": "Current declared-binding source actual configured installed pre-commit PASS; all9source hashes unchanged before parallel runners. Existing nonblocking type/style advisories disclosed.",
-    "static_checks": "Current5839179C source isolated E,F Ruff/format, default mypy and ShellCheck actual exit0; declared-scope logs bound.",
-    "linux": "UNVERIFIED proposed successor; exact new-head CI required",
+    "platform": "Windows dtm-p1gen9 / Git Bash / CPython 3.15.2",
+    "focused": "Current 992e6023/CD12E8E6: 438 receiver assertions PASS (137 core +301 contexts), zero failures/skips",
+    "regression": "Current same four documented categories:772 PASS,0FAIL,14 existing raw-rule skips, four actual process exits0; not entire repository suite or line coverage",
+    "global_precommit": "Current actual configured installed pre-commit PASS with nine source hashes unchanged; existing nonblocking type/style advisories retained.",
+    "static_checks": "Current isolated Ruff E,F and format, default mypy, ShellCheck actual exits0.",
+    "linux": "UNVERIFIED current successor; exact new-head CI required",
     "logs": {
-      "global_precommit": {
-        "receipt": "git-guard-receiver-declared-scope-global-precommit.log",
-        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
-        "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
-      },
-      "mypy": {
-        "receipt": "git-guard-receiver-declared-scope-mypy.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
-      },
-      "shellcheck": {
-        "receipt": "git-guard-receiver-declared-scope-shellcheck.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
-      },
-      "outside_leads_red": {
-        "receipt": "git-guard-receiver-outside-leads-red.log",
-        "sha256": "f3762839d1133e45d08bc350d352e42e03476ae5f37e0af70581876cb4c959bc"
-      },
-      "namespace_red": {
-        "receipt": "git-guard-receiver-namespace-red.log",
-        "sha256": "8403da8d7c12ea5e3eaabbadba33bf4a5be7fca4bb80ff73fec75060d5fd7842"
-      },
-      "refinement_red": {
-        "receipt": "git-guard-receiver-comprehension-refinement-red.log",
-        "sha256": "1e266b37da92910dbcba4b4ccbc7687646106628bfa49f5bd6c06296d6807a7b"
-      },
-      "refinement_green": {
-        "receipt": "git-guard-receiver-comprehension-refinement-green.log",
-        "sha256": "13917b2aee427eff42f1b3dd6e6333d53571f38234bbe3a6421f97933d52a51e"
-      },
-      "class_lambda_red": {
-        "receipt": "git-guard-receiver-class-lambda-red.log",
-        "sha256": "1ef4d7aa1c0e2661701358279eb93fc4bdcb6314e51fb91a3dd6a2cf3946da4d"
-      },
-      "scope_short_green": {
-        "receipt": "git-guard-receiver-namespace-final-contracts.log",
-        "sha256": "246a67deadbc656ec6eaa04ee964b3ad4ab2254d3e0c65c96516d867ca42e503"
-      },
-      "annotation_effects_red": {
-        "receipt": "git-guard-receiver-annotation-effects-red.log",
-        "sha256": "394ea521c361a3cca557aa4d5ae29f71dc8de5dddcf22fd400fe05c143c4a84e"
-      },
-      "annotation_events_red": {
-        "receipt": "git-guard-receiver-annotation-events-red.log",
-        "sha256": "d4666f318795e387bdca9e504e5a5b45c4812a50ef210e41321a2df48e32d72f"
-      },
-      "annotation_effects_green": {
-        "receipt": "git-guard-receiver-annotation-effects-green.log",
-        "sha256": "906c04865504dd648ec20d563a54f1f4d4d43cedebf22c38f2c01c7663be50a2"
-      },
-      "ruff-format": {
-        "receipt": "git-guard-receiver-declared-scope-ruff-format.log",
-        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
-        "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
-      },
-      "ruff-check": {
-        "receipt": "git-guard-receiver-declared-scope-ruff-check.log",
-        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
-        "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
-      },
-      "nested_class_red": {
-        "receipt": "git-guard-receiver-nested-class-red.log",
-        "sha256": "242b6f2d133612773d6d36cf2a2ce3ddeecc9af666c1a0305c2111bd37a25ee1"
-      },
-      "nested_class_green": {
-        "receipt": "git-guard-receiver-nested-class-green.log",
-        "sha256": "3215d0efb97d7a4619f223d1de9eab95be789607655b151b59092c44169f0e06"
-      },
-      "declared_binding_red": {
-        "receipt": "git-guard-receiver-declared-binding-red.log",
-        "sha256": "ace0d79ae480ccb92dbb9e8d8367cc55942ae2b2e8cbbaaa3fc07e6ec42790d5"
-      },
-      "declared_binding_green": {
-        "receipt": "git-guard-receiver-declared-binding-green.log",
-        "sha256": "6cf0e3abe6a1b3172c6538af2c5183452ea968eccf29240faebc7632006be139"
-      },
       "quality": {
-        "receipt": "git-guard-receiver-declared-scope-quality.log",
-        "sha256": "ba9223fb3afff97a4f1b28ee8c7dc47d1d0bbb61837745ee6d6f5fed66003d0a",
-        "passed": 222,
-        "failed": 0,
-        "skipped": 0,
-        "process_exit": 0
+        "receipt": "git-guard-receiver-mutation-quality.log",
+        "sha256": "ba9223fb3afff97a4f1b28ee8c7dc47d1d0bbb61837745ee6d6f5fed66003d0a"
       },
       "core": {
-        "receipt": "git-guard-receiver-declared-scope-core.log",
-        "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
-        "passed": 137,
-        "failed": 0,
-        "skipped": 0,
-        "process_exit": 0
+        "receipt": "git-guard-receiver-mutation-core.log",
+        "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee"
       },
       "contexts": {
-        "receipt": "git-guard-receiver-declared-scope-contexts.log",
-        "sha256": "39d8885a71e033de08ec68ded4943877bd17ba79fc5b6cbf37f9a97487ddf75e",
-        "passed": 195,
-        "failed": 0,
-        "skipped": 0,
-        "process_exit": 0
+        "receipt": "git-guard-receiver-mutation-contexts.log",
+        "sha256": "11a00e8f55f9ad0d54b69e787a32c8665fe0330c9a589bde0db0a4ada212edc1"
       },
       "rules": {
-        "receipt": "git-guard-receiver-declared-scope-rules.log",
-        "sha256": "f646309e108562d3d1e8a74e8389a055ed9af3982677be2594884baa97972de7",
-        "passed": 112,
-        "failed": 0,
-        "skipped": 14,
-        "process_exit": 0
-      }
-    },
-    "mutation_red": "98 passed,7 failed,0 skipped on original source; intermediate115 passed,1 failed for deferred cls, then116 pass",
-    "members_red": "121 passed,9 failed,0 skipped at255629 source with new member controls",
-    "members_ast_controls": {
-      "receipt": "git-guard-receiver-members-ast-controls.json",
-      "sha256": "6f9748aeadf8b65d5a13acc82a82bc8c1d16392e51b95c020a71f1224b2dbea8",
-      "scope": "3 direct AST resolver controls for config mapping, instance dictionary data and plain method dictionary mutation; not Git mode/policy execution"
-    },
-    "settings_red": "133 passed,4 failed,0 skipped on preserved57139 source with new namespace controls",
-    "historical_logs": {
-      "red": {
-        "receipt": "git-guard-receiver-red.log",
-        "sha256": "cc3ac5ee115286525c5964819db84c934bfa374471d5eb8feca5501680b4cdfe",
-        "source_snapshot": "Baseline e8f636b2 with prototype receiver fixtures; diagnostic RED"
+        "receipt": "git-guard-receiver-mutation-rules.log",
+        "sha256": "f646309e108562d3d1e8a74e8389a055ed9af3982677be2594884baa97972de7"
       },
-      "focused": {
-        "receipt": "git-guard-receiver-focused.log",
-        "sha256": "1f07e04f1e1847f263822351d190960fedc45d6ac7b834d6e07fdb3b1030025d",
-        "source_snapshot": "Rejected a1fa86cc source;84 passed"
+      "ruff-format": {
+        "receipt": "git-guard-receiver-effect-successor-ruff-format.log",
+        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3"
       },
-      "regression-final-windows": {
-        "receipt": "git-guard-receiver-regression-final-windows.log",
-        "sha256": "39d815e22f6d4a8b2e91f95acd4603407be4ed1d6ecaaa87e18abfd86fd1db94",
-        "source_snapshot": "Rejected a1fa86cc source;418 passed/14 skips"
+      "ruff-check": {
+        "receipt": "git-guard-receiver-effect-successor-ruff-check.log",
+        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
       },
-      "global-precommit": {
-        "receipt": "git-guard-receiver-global-precommit.log",
-        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
-        "source_snapshot": "Rejected a1fa86cc source; normal hook receipt"
-      },
-      "shellcheck": {
-        "receipt": "git-guard-receiver-shellcheck.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "a1fa86cc test/runner snapshot"
-      },
-      "mypy-final": {
-        "receipt": "git-guard-receiver-mypy-final.log",
-        "sha256": "80b84f16e9324ebe5cbd43806dc159edadf2198b77d16ef746308bdab4017868",
-        "source_snapshot": "a1fa86cc scanner snapshot"
-      },
-      "attribute-red": {
-        "receipt": "git-guard-receiver-attribute-red.log",
-        "sha256": "a89001115a617e3269212e013a5edc479430fd7473e003ae05c09887022f97b4",
-        "source_snapshot": "a1fa86cc scanner with new mutation fixtures;98 passed/7 failed"
-      },
-      "attribute-intermediate": {
-        "receipt": "git-guard-receiver-attribute-intermediate.log",
-        "sha256": "6bf669cb538c9cb19be28feb325cc7b06677b644591e084a570f90bb69be25f9",
-        "source_snapshot": "Uncommitted mutation prototype before deferred-cls repair;115 passed/1 failed; exact source hash not captured"
-      },
-      "attribute-green": {
-        "receipt": "git-guard-receiver-attribute-green.log",
-        "sha256": "d34755fb5e029648d7c0942eed3f202636ad93a017601f87739f6ce34d7e8cf1",
-        "source_snapshot": "Rejected255629 source E04E/test8E8D;116 passed"
-      },
-      "attribute_global_precommit": {
-        "receipt": "git-guard-receiver-attribute-global-precommit.log",
-        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
-        "result": "PASS at corrected source; scanner/test raw hashes unchanged",
-        "source_snapshot": "Rejected255629 source E04E; normal hook receipt"
-      },
-      "members-red": {
-        "receipt": "git-guard-receiver-members-red.log",
-        "sha256": "0ea12092e30d6df304e0210eefb207c04c9d265e279b6ac285ca0365d3339090",
-        "source_snapshot": "Rejected255629 scanner with new member fixtures;121 passed/9 failed"
-      },
-      "members-green": {
-        "receipt": "git-guard-receiver-members-green.log",
-        "sha256": "2a59d905ecdbccd5f136fb52b3ec5f42a41e28cc2934c9bf6bc014e5a3148c5f",
-        "source_snapshot": "Preserved uncommitted57139 scanner/CC66 test snapshot;130 passed"
-      },
-      "members-regression-windows": {
-        "receipt": "git-guard-receiver-members-regression-windows.log",
-        "sha256": "d189bbf92608e762e4d046690d39271aeb25f168b5d02bd8b062748e7dfddefa",
-        "source_snapshot": "Preserved uncommitted57139 scanner/CC66 test snapshot;464 passed/14 skips"
-      },
-      "settings-red": {
-        "receipt": "git-guard-receiver-settings-red.log",
-        "sha256": "8c38623e802d6a1e8b1da16abc8f7f86d1ed122d9d82e7dc1bf64e534ec1fc98",
-        "source_snapshot": "Preserved57139 scanner/3D8B settings-red test snapshot;133 passed/4 failed"
-      },
-      "previous-current-focused": {
-        "receipt": "git-guard-receiver-settings-green.log",
-        "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
-        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
-      },
-      "previous-current-regression": {
-        "receipt": "git-guard-receiver-settings-regression-windows.log",
-        "sha256": "cd9deec00950ff6a3fa4e4193a5f6d824015c1a4e55ac26b64f35cd1834b8579",
-        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
-      },
-      "previous-current-global_precommit": {
-        "receipt": "git-guard-receiver-final-global-precommit.log",
-        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
-        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
-      },
-      "previous-current-ruff-format": {
-        "receipt": "git-guard-receiver-final-ruff-format.log",
-        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
-        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
-      },
-      "previous-current-ruff-check": {
-        "receipt": "git-guard-receiver-final-ruff-check.log",
-        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
-        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
-      },
-      "previous-current-mypy": {
-        "receipt": "git-guard-receiver-final-mypy.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
-      },
-      "previous-current-shellcheck": {
-        "receipt": "git-guard-receiver-final-shellcheck.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
-      },
-      "contexts-red": {
-        "receipt": "git-guard-receiver-contexts-red.log",
-        "sha256": "f62d1caa961e8a9531bff9fed30803d5037d1ebb5977db14c5ff613652bda8d4",
-        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
-      },
-      "contexts-focused-red": {
-        "receipt": "git-guard-receiver-contexts-focused-red.log",
-        "sha256": "dca474231ec24f71c26720155636d72df233841289081940ed2865893a5ddffc",
-        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
-      },
-      "contexts-closure-red": {
-        "receipt": "git-guard-receiver-contexts-closure-red.log",
-        "sha256": "a3f2c84ed8d6f95ce2cab9803ae0010f469ce9eb43fd70d9dbf98c6b5b8fe0d2",
-        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
-      },
-      "contexts-green": {
-        "receipt": "git-guard-receiver-contexts-green.log",
-        "sha256": "f0097d638c90700a28cfe12e1bf185428d4f5fa1fcd166631995859b2bba5df7",
-        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
-      },
-      "headers-red": {
-        "receipt": "git-guard-receiver-headers-red.log",
-        "sha256": "09d846f877ebd346465604f985f9bfd380c47c4025059a206a30988db408596f",
-        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
-      },
-      "contexts-final-green": {
-        "receipt": "git-guard-receiver-contexts-final-green.log",
-        "sha256": "9f4cdce3657bbccd02d3072c6a03fb0d86a31a07a0a145c3af1dbd29a69f9566",
-        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
-      },
-      "config-keywords-red": {
-        "receipt": "git-guard-receiver-config-keywords-red.log",
-        "sha256": "a5dce875dc103c9cab41be1a7dcac91eaf6311ef86b33b866ea217bcfad8ea48",
-        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
-      },
-      "held42cc-core137": {
-        "receipt": "git-guard-receiver-final-contexts-core.log",
-        "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
-        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
-      },
-      "held42cc-contexts70": {
-        "receipt": "git-guard-receiver-contexts-config-green.log",
-        "sha256": "7f108f31e9da575ca844edbd90dc42e070ae15bf97e01cce439f5cc0a331a1e7",
-        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
-      },
-      "held42cc-regression": {
-        "receipt": "git-guard-receiver-final-contexts-regression.log",
-        "sha256": "2dd67e1cce3e23bc6c25374f2fdfbc13ca79db6dad0115cc9a50ac36e5be8c32",
-        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
-      },
-      "held42cc-global_precommit": {
-        "receipt": "git-guard-receiver-contexts-global-precommit.log",
-        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
-        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
-      },
-      "held42cc-ruff-format": {
-        "receipt": "git-guard-receiver-contexts-final-ruff-format.log",
-        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
-        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
-      },
-      "held42cc-ruff-check": {
-        "receipt": "git-guard-receiver-contexts-final-ruff-check.log",
-        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
-        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
-      },
-      "held42cc-mypy": {
-        "receipt": "git-guard-receiver-contexts-final-mypy.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
-      },
-      "held42cc-shellcheck": {
-        "receipt": "git-guard-receiver-contexts-final-shellcheck.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
-      },
-      "followup-red": {
-        "receipt": "git-guard-receiver-followup-red.log",
-        "sha256": "fca14a90c300d748c19dddea53ef825a577aea8652d88cdcfaf0e7cd322a16c6",
-        "source_snapshot": "Read-only staged red controls on held42cc source296D; old reports retained"
-      },
-      "class-boundaries-red": {
-        "receipt": "git-guard-receiver-class-boundaries-red.log",
-        "sha256": "6cb105c818bbe07f19fbd7d0393a1d3f452d7ea7e02e2211be3562b9b957aff5",
-        "source_snapshot": "Read-only staged red controls on held42cc source296D; old reports retained"
-      },
-      "held081-core137": {
-        "receipt": "git-guard-receiver-boundaries-core.log",
-        "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
-        "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
-      },
-      "held081-contexts106": {
-        "receipt": "git-guard-receiver-boundaries-green.log",
-        "sha256": "1e71cecec49a519c6abf29d337dfca3f0ed8ca844389b327c60179fa93491718",
-        "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
-      },
-      "held081-global_precommit": {
-        "receipt": "git-guard-receiver-boundaries-global-precommit.log",
-        "sha256": "4fff5b4ed34e5e5cccde44e664c42f0b6404b9f794ba60faa43d5fc9022137db",
-        "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
-      },
-      "held081-ruff-format": {
-        "receipt": "git-guard-receiver-boundaries-final-ruff-format.log",
-        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
-        "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
-      },
-      "held081-ruff-check": {
-        "receipt": "git-guard-receiver-boundaries-final-ruff-check.log",
-        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
-        "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
-      },
-      "held081-mypy": {
-        "receipt": "git-guard-receiver-boundaries-final-mypy.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
-      },
-      "held081-shellcheck": {
-        "receipt": "git-guard-receiver-boundaries-final-shellcheck.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
-      },
-      "held081-regression": {
-        "receipt": "git-guard-receiver-boundaries-regression.log",
-        "sha256": "c30c97a36c5387cb8677d7b6e3778e15e7252aff1c9d4057fa74122d661ae442",
-        "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
-      },
-      "intermediate-ad515-global": {
-        "receipt": "git-guard-receiver-namespace-global-precommit.log",
-        "sha256": "7d24b69643e5809bdc8ea618d92cdd179061b1d52b124117c6e94e139906df83"
-      },
-      "intermediate-ad515-mypy": {
-        "receipt": "git-guard-receiver-namespace-mypy.log",
-        "sha256": "7727baac733b5dc172cfcb419cb9e15378f474061cbed63b29f581f3b54652fb"
-      },
-      "intermediate-ad515-shellcheck": {
-        "receipt": "git-guard-receiver-namespace-shellcheck.log",
+      "mypy": {
+        "receipt": "git-guard-receiver-effect-successor-mypy.log",
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
-      "intermediate-a492-global_precommit": {
-        "receipt": "git-guard-receiver-lexical-global-precommit.log",
+      "shellcheck": {
+        "receipt": "git-guard-receiver-effect-successor-shellcheck.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "global_precommit": {
+        "receipt": "git-guard-receiver-mutation-global-precommit.log",
         "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b"
       },
-      "intermediate-a492-mypy": {
-        "receipt": "git-guard-receiver-lexical-mypy.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "Current frozenA49269BA/2703CABB/0DF03D7A; actual exit0 explicitly observed, not inferred from empty output"
+      "target_class_red": {
+        "receipt": "git-guard-receiver-target-class-red.log",
+        "sha256": "d3369d4ead48094e0d5cbe0c704eac9af14940fcd5ef0efa7418c5733e9f06c5"
       },
-      "intermediate-a492-shellcheck": {
-        "receipt": "git-guard-receiver-lexical-shellcheck.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "source_snapshot": "Current frozenA49269BA/2703CABB/0DF03D7A; actual exit0 explicitly observed, not inferred from empty output"
+      "target_class_green": {
+        "receipt": "git-guard-receiver-target-class-green.log",
+        "sha256": "fd94e36dfa7ffb2497843ece9d52207c6d40030f15a68ece90fef971e6961ae4"
       },
-      "intermediate-a492-ruff-format": {
-        "receipt": "git-guard-receiver-lexical-ruff-format.log",
-        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
-        "source_snapshot": "Current frozenA49269BA/2703CABB/0DF03D7A; actual exit0 explicitly observed, not inferred from empty output"
+      "called_effect_red": {
+        "receipt": "git-guard-receiver-call-effect-boundaries-red.log",
+        "sha256": "dbae6f5bd49ba773dfbec83d5c48dde97b9b6f653293449e2ec6f0a5c7645607"
       },
-      "intermediate-a492-ruff-check": {
-        "receipt": "git-guard-receiver-lexical-ruff-check.log",
-        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
-        "source_snapshot": "Current frozenA49269BA/2703CABB/0DF03D7A; actual exit0 explicitly observed, not inferred from empty output"
+      "called_effect_green": {
+        "receipt": "git-guard-receiver-call-effect-boundaries-green.log",
+        "sha256": "efe65fcef0f888b599ab647b51421298eaa112920f97594428e0afcd31d0d25d"
+      },
+      "class_callable_red": {
+        "receipt": "git-guard-receiver-class-callable-red.log",
+        "sha256": "825adc6d175e697bf195c55078aeb9b6339c49bf87094ccfe8971db85797fd63"
+      },
+      "callable_shadow_red": {
+        "receipt": "git-guard-receiver-callable-shadow-red.log",
+        "sha256": "d8cd203598550e92d20ec02c8f137b118ed0529b5e73aa002365bcff225d290a"
+      },
+      "combined_green": {
+        "receipt": "git-guard-receiver-current-reconciliation-green.log",
+        "sha256": "619bd51a5757934c7f5947e942ade28072ebf7af5d396d1e560e432c7e0f2664"
+      },
+      "store_red": {
+        "receipt": "git-guard-receiver-store-boundary-red.log",
+        "sha256": "72f8b306851951c3b1fd20fa91c59aedc252e865e40e3685f5adfce22c55d229"
+      },
+      "store_green": {
+        "receipt": "git-guard-receiver-store-boundary-green.log",
+        "sha256": "2f23ef933220eb9926eae1cfe8c2270b5dab66e5d562ead76dfb4aa8ca0eb967"
       }
     },
-    "current_source_commit": "081be79c8efc4c000a84efeec323e4e35a317260 + proposed declared-binding/lexical successor",
-    "current_source_sha256": "5839179cdadab51147eb9e318c58c8a1286e28058c978f0d1220fc6fcf194d05",
-    "current_test_sha256": "cc77d97c7831eca57c79f7e0159de1149792712bc01b2e35c58c3217e151201c",
-    "source_guard": "All9source hashes unchanged across real normalhook and before/after all4parallel runners"
+    "qualification": {
+      "receipt": "git-guard-receiver-effect-successor-qualification.json",
+      "sha256": "2d424a8aca9086c3ed1c5bffff149b12c0f5606ae8f83a4ec527d92bb8e7f352"
+    },
+    "current_source_commit": "445b7af7383c96bc1009afc86327fa68489ffd0c + proposed frozen local-effect/Store successor",
+    "current_source_sha256": "992e60231738e39bd4da50b6a13c01ebd9ad3e93a816674fa3e720ecbd2d88e0",
+    "current_test_sha256": "cd12e8e61425e993b9b92fc71b2206e04cfe14d3a0c5b81e5a3cb53fc6f4b18c"
   },
   "rows": [
     {
@@ -426,8 +114,8 @@
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
-      "scope": "Expression/closure contexts plus34 namespace, called-effect, lambda, annotation, nested-class and declared-binding cases; real model/plain/unknown/eager/no-call counterparts. Full test file binds helpers. No general runtime/call-graph/alias claim.",
-      "selector_sha256": "9763121a27199601e8385c394791ffdc51f6c5b69a500aad9a856d5b8c1b57b1",
+      "scope": "301 actual staged scanner assertions protecting expression/closure/class lexical scopes, local syntactic called effects and declared writes, recursive and For/AsyncFor/comprehension/with Store targets, unresolved mutation roots and class-vs-callable-instance distinctions; known Model/config/data/no-call counterparts retained. Full test file binds all helpers. No general callgraph, return or alias inference.",
+      "selector_sha256": "91a2f4784f1d86ac1d7c7fafa4ba52ae0e7a33020e317ce718733abafd83e0b0",
       "disposition": "UNREVIEWED",
       "reviewer": null
     },
@@ -556,7 +244,7 @@
   },
   "independent_review": {
     "disposition": "UNREVIEWED",
-    "scope": "Fresh9source/3selector/2rule review required; earlier KEEP/FIX receipts retain original source scope"
+    "scope": "Fresh actual published source nine/three/two and final-head outside-family review required; root nineteen current resolver controls are candidate-only."
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -932,5 +620,480 @@
     },
     "ee8316_source_custody": "git-guard-receiver-source-custody/nested-scope/manifest.json",
     "reason": "Actual root and staged nested-class/global/nonlocal findings reconciled; oldresults remain source-specific"
+  },
+  "effect_predecessor": {
+    "source_commit": "445b7af7383c96bc1009afc86327fa68489ffd0c",
+    "disposition": "HELD after reproduced full PR findings and author-local Store/effect/callable controls; 666 previous passes do not qualify successor",
+    "source_hashes": {
+      "hooks/common/mandate_scan.py": "5839179cdadab51147eb9e318c58c8a1286e28058c978f0d1220fc6fcf194d05",
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "tests/32-quality-mandate.t.sh": "cc77d97c7831eca57c79f7e0159de1149792712bc01b2e35c58c3217e151201c",
+      "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+      "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": "a563350fe3e8483398675244ba012c97fe271b625a429c18a0d1c7499938d242"
+    },
+    "rows": [
+      {
+        "selector": "t_case_pydantic_receiver_classification",
+        "source": "tests/32-quality-mandate.t.sh",
+        "scope": "Original137 real scanner assertions including type/mutation/data/namespace distinctions and both selected-Git-snapshot divergence directions; full test file binds helpers",
+        "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
+        "disposition": "UNREVIEWED",
+        "reviewer": null
+      },
+      {
+        "selector": "t_case_pydantic_receiver_contexts",
+        "source": "tests/32-quality-mandate.t.sh",
+        "scope": "Expression/closure contexts plus34 namespace, called-effect, lambda, annotation, nested-class and declared-binding cases; real model/plain/unknown/eager/no-call counterparts. Full test file binds helpers. No general runtime/call-graph/alias claim.",
+        "selector_sha256": "9763121a27199601e8385c394791ffdc51f6c5b69a500aad9a856d5b8c1b57b1",
+        "disposition": "UNREVIEWED",
+        "reviewer": null
+      },
+      {
+        "selector": "t_case_rule_behaviour",
+        "source": "tests/27-rule-behaviour.t.sh",
+        "scope": "Raw candidate matrix including legacy-call positive and v2 negative; no ownership inference or qualification of14 existing skipped raw-rule controls",
+        "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
+        "disposition": "UNREVIEWED",
+        "reviewer": null
+      }
+    ],
+    "rule_reviews": [
+      {
+        "selector": "mandate-pydantic-v1",
+        "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "scope": "Strong syntax constructs retained; legacy call candidates classified by receiver evidence, ambiguity opt-out cannot remove known-model enforcement",
+        "disposition": "UNREVIEWED",
+        "reviewer": null
+      },
+      {
+        "selector": "mandate-pydantic-v1-ambiguous",
+        "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "scope": "Existing dictionary/copy candidates and unresolved legacy model-method receivers; default WARN unchanged",
+        "disposition": "UNREVIEWED",
+        "reviewer": null
+      }
+    ],
+    "independent_review": {
+      "disposition": "UNREVIEWED",
+      "scope": "Fresh9source/3selector/2rule review required; earlier KEEP/FIX receipts retain original source scope"
+    },
+    "author_evidence": {
+      "platform": "Windows dtm-p1gen9 / Git Bash / CPython3.15.2",
+      "red": "20 passed, 24 failed, 0 skipped",
+      "focused": "Current5839179C/CC77D97C:332 receiver assertions PASS,0fail,0skip in two independent hermetic categories",
+      "regression": "Current same4 documented categories in independent hermetic runners:666PASS,0FAIL,14existingraw-rule skips; not entire repository suite or a single-process result",
+      "global_precommit": "Current declared-binding source actual configured installed pre-commit PASS; all9source hashes unchanged before parallel runners. Existing nonblocking type/style advisories disclosed.",
+      "static_checks": "Current5839179C source isolated E,F Ruff/format, default mypy and ShellCheck actual exit0; declared-scope logs bound.",
+      "linux": "UNVERIFIED proposed successor; exact new-head CI required",
+      "logs": {
+        "global_precommit": {
+          "receipt": "git-guard-receiver-declared-scope-global-precommit.log",
+          "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+          "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
+        },
+        "mypy": {
+          "receipt": "git-guard-receiver-declared-scope-mypy.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
+        },
+        "shellcheck": {
+          "receipt": "git-guard-receiver-declared-scope-shellcheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
+        },
+        "outside_leads_red": {
+          "receipt": "git-guard-receiver-outside-leads-red.log",
+          "sha256": "f3762839d1133e45d08bc350d352e42e03476ae5f37e0af70581876cb4c959bc"
+        },
+        "namespace_red": {
+          "receipt": "git-guard-receiver-namespace-red.log",
+          "sha256": "8403da8d7c12ea5e3eaabbadba33bf4a5be7fca4bb80ff73fec75060d5fd7842"
+        },
+        "refinement_red": {
+          "receipt": "git-guard-receiver-comprehension-refinement-red.log",
+          "sha256": "1e266b37da92910dbcba4b4ccbc7687646106628bfa49f5bd6c06296d6807a7b"
+        },
+        "refinement_green": {
+          "receipt": "git-guard-receiver-comprehension-refinement-green.log",
+          "sha256": "13917b2aee427eff42f1b3dd6e6333d53571f38234bbe3a6421f97933d52a51e"
+        },
+        "class_lambda_red": {
+          "receipt": "git-guard-receiver-class-lambda-red.log",
+          "sha256": "1ef4d7aa1c0e2661701358279eb93fc4bdcb6314e51fb91a3dd6a2cf3946da4d"
+        },
+        "scope_short_green": {
+          "receipt": "git-guard-receiver-namespace-final-contracts.log",
+          "sha256": "246a67deadbc656ec6eaa04ee964b3ad4ab2254d3e0c65c96516d867ca42e503"
+        },
+        "annotation_effects_red": {
+          "receipt": "git-guard-receiver-annotation-effects-red.log",
+          "sha256": "394ea521c361a3cca557aa4d5ae29f71dc8de5dddcf22fd400fe05c143c4a84e"
+        },
+        "annotation_events_red": {
+          "receipt": "git-guard-receiver-annotation-events-red.log",
+          "sha256": "d4666f318795e387bdca9e504e5a5b45c4812a50ef210e41321a2df48e32d72f"
+        },
+        "annotation_effects_green": {
+          "receipt": "git-guard-receiver-annotation-effects-green.log",
+          "sha256": "906c04865504dd648ec20d563a54f1f4d4d43cedebf22c38f2c01c7663be50a2"
+        },
+        "ruff-format": {
+          "receipt": "git-guard-receiver-declared-scope-ruff-format.log",
+          "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
+          "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
+        },
+        "ruff-check": {
+          "receipt": "git-guard-receiver-declared-scope-ruff-check.log",
+          "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+          "source_snapshot": "Current5839179C/CC77D97C/A563350F, explicitly observed exit0"
+        },
+        "nested_class_red": {
+          "receipt": "git-guard-receiver-nested-class-red.log",
+          "sha256": "242b6f2d133612773d6d36cf2a2ce3ddeecc9af666c1a0305c2111bd37a25ee1"
+        },
+        "nested_class_green": {
+          "receipt": "git-guard-receiver-nested-class-green.log",
+          "sha256": "3215d0efb97d7a4619f223d1de9eab95be789607655b151b59092c44169f0e06"
+        },
+        "declared_binding_red": {
+          "receipt": "git-guard-receiver-declared-binding-red.log",
+          "sha256": "ace0d79ae480ccb92dbb9e8d8367cc55942ae2b2e8cbbaaa3fc07e6ec42790d5"
+        },
+        "declared_binding_green": {
+          "receipt": "git-guard-receiver-declared-binding-green.log",
+          "sha256": "6cf0e3abe6a1b3172c6538af2c5183452ea968eccf29240faebc7632006be139"
+        },
+        "quality": {
+          "receipt": "git-guard-receiver-declared-scope-quality.log",
+          "sha256": "ba9223fb3afff97a4f1b28ee8c7dc47d1d0bbb61837745ee6d6f5fed66003d0a",
+          "passed": 222,
+          "failed": 0,
+          "skipped": 0,
+          "process_exit": 0
+        },
+        "core": {
+          "receipt": "git-guard-receiver-declared-scope-core.log",
+          "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
+          "passed": 137,
+          "failed": 0,
+          "skipped": 0,
+          "process_exit": 0
+        },
+        "contexts": {
+          "receipt": "git-guard-receiver-declared-scope-contexts.log",
+          "sha256": "39d8885a71e033de08ec68ded4943877bd17ba79fc5b6cbf37f9a97487ddf75e",
+          "passed": 195,
+          "failed": 0,
+          "skipped": 0,
+          "process_exit": 0
+        },
+        "rules": {
+          "receipt": "git-guard-receiver-declared-scope-rules.log",
+          "sha256": "f646309e108562d3d1e8a74e8389a055ed9af3982677be2594884baa97972de7",
+          "passed": 112,
+          "failed": 0,
+          "skipped": 14,
+          "process_exit": 0
+        }
+      },
+      "mutation_red": "98 passed,7 failed,0 skipped on original source; intermediate115 passed,1 failed for deferred cls, then116 pass",
+      "members_red": "121 passed,9 failed,0 skipped at255629 source with new member controls",
+      "members_ast_controls": {
+        "receipt": "git-guard-receiver-members-ast-controls.json",
+        "sha256": "6f9748aeadf8b65d5a13acc82a82bc8c1d16392e51b95c020a71f1224b2dbea8",
+        "scope": "3 direct AST resolver controls for config mapping, instance dictionary data and plain method dictionary mutation; not Git mode/policy execution"
+      },
+      "settings_red": "133 passed,4 failed,0 skipped on preserved57139 source with new namespace controls",
+      "historical_logs": {
+        "red": {
+          "receipt": "git-guard-receiver-red.log",
+          "sha256": "cc3ac5ee115286525c5964819db84c934bfa374471d5eb8feca5501680b4cdfe",
+          "source_snapshot": "Baseline e8f636b2 with prototype receiver fixtures; diagnostic RED"
+        },
+        "focused": {
+          "receipt": "git-guard-receiver-focused.log",
+          "sha256": "1f07e04f1e1847f263822351d190960fedc45d6ac7b834d6e07fdb3b1030025d",
+          "source_snapshot": "Rejected a1fa86cc source;84 passed"
+        },
+        "regression-final-windows": {
+          "receipt": "git-guard-receiver-regression-final-windows.log",
+          "sha256": "39d815e22f6d4a8b2e91f95acd4603407be4ed1d6ecaaa87e18abfd86fd1db94",
+          "source_snapshot": "Rejected a1fa86cc source;418 passed/14 skips"
+        },
+        "global-precommit": {
+          "receipt": "git-guard-receiver-global-precommit.log",
+          "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+          "source_snapshot": "Rejected a1fa86cc source; normal hook receipt"
+        },
+        "shellcheck": {
+          "receipt": "git-guard-receiver-shellcheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "a1fa86cc test/runner snapshot"
+        },
+        "mypy-final": {
+          "receipt": "git-guard-receiver-mypy-final.log",
+          "sha256": "80b84f16e9324ebe5cbd43806dc159edadf2198b77d16ef746308bdab4017868",
+          "source_snapshot": "a1fa86cc scanner snapshot"
+        },
+        "attribute-red": {
+          "receipt": "git-guard-receiver-attribute-red.log",
+          "sha256": "a89001115a617e3269212e013a5edc479430fd7473e003ae05c09887022f97b4",
+          "source_snapshot": "a1fa86cc scanner with new mutation fixtures;98 passed/7 failed"
+        },
+        "attribute-intermediate": {
+          "receipt": "git-guard-receiver-attribute-intermediate.log",
+          "sha256": "6bf669cb538c9cb19be28feb325cc7b06677b644591e084a570f90bb69be25f9",
+          "source_snapshot": "Uncommitted mutation prototype before deferred-cls repair;115 passed/1 failed; exact source hash not captured"
+        },
+        "attribute-green": {
+          "receipt": "git-guard-receiver-attribute-green.log",
+          "sha256": "d34755fb5e029648d7c0942eed3f202636ad93a017601f87739f6ce34d7e8cf1",
+          "source_snapshot": "Rejected255629 source E04E/test8E8D;116 passed"
+        },
+        "attribute_global_precommit": {
+          "receipt": "git-guard-receiver-attribute-global-precommit.log",
+          "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+          "result": "PASS at corrected source; scanner/test raw hashes unchanged",
+          "source_snapshot": "Rejected255629 source E04E; normal hook receipt"
+        },
+        "members-red": {
+          "receipt": "git-guard-receiver-members-red.log",
+          "sha256": "0ea12092e30d6df304e0210eefb207c04c9d265e279b6ac285ca0365d3339090",
+          "source_snapshot": "Rejected255629 scanner with new member fixtures;121 passed/9 failed"
+        },
+        "members-green": {
+          "receipt": "git-guard-receiver-members-green.log",
+          "sha256": "2a59d905ecdbccd5f136fb52b3ec5f42a41e28cc2934c9bf6bc014e5a3148c5f",
+          "source_snapshot": "Preserved uncommitted57139 scanner/CC66 test snapshot;130 passed"
+        },
+        "members-regression-windows": {
+          "receipt": "git-guard-receiver-members-regression-windows.log",
+          "sha256": "d189bbf92608e762e4d046690d39271aeb25f168b5d02bd8b062748e7dfddefa",
+          "source_snapshot": "Preserved uncommitted57139 scanner/CC66 test snapshot;464 passed/14 skips"
+        },
+        "settings-red": {
+          "receipt": "git-guard-receiver-settings-red.log",
+          "sha256": "8c38623e802d6a1e8b1da16abc8f7f86d1ed122d9d82e7dc1bf64e534ec1fc98",
+          "source_snapshot": "Preserved57139 scanner/3D8B settings-red test snapshot;133 passed/4 failed"
+        },
+        "previous-current-focused": {
+          "receipt": "git-guard-receiver-settings-green.log",
+          "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
+          "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+        },
+        "previous-current-regression": {
+          "receipt": "git-guard-receiver-settings-regression-windows.log",
+          "sha256": "cd9deec00950ff6a3fa4e4193a5f6d824015c1a4e55ac26b64f35cd1834b8579",
+          "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+        },
+        "previous-current-global_precommit": {
+          "receipt": "git-guard-receiver-final-global-precommit.log",
+          "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+          "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+        },
+        "previous-current-ruff-format": {
+          "receipt": "git-guard-receiver-final-ruff-format.log",
+          "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
+          "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+        },
+        "previous-current-ruff-check": {
+          "receipt": "git-guard-receiver-final-ruff-check.log",
+          "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+          "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+        },
+        "previous-current-mypy": {
+          "receipt": "git-guard-receiver-final-mypy.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+        },
+        "previous-current-shellcheck": {
+          "receipt": "git-guard-receiver-final-shellcheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+        },
+        "contexts-red": {
+          "receipt": "git-guard-receiver-contexts-red.log",
+          "sha256": "f62d1caa961e8a9531bff9fed30803d5037d1ebb5977db14c5ff613652bda8d4",
+          "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+        },
+        "contexts-focused-red": {
+          "receipt": "git-guard-receiver-contexts-focused-red.log",
+          "sha256": "dca474231ec24f71c26720155636d72df233841289081940ed2865893a5ddffc",
+          "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+        },
+        "contexts-closure-red": {
+          "receipt": "git-guard-receiver-contexts-closure-red.log",
+          "sha256": "a3f2c84ed8d6f95ce2cab9803ae0010f469ce9eb43fd70d9dbf98c6b5b8fe0d2",
+          "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+        },
+        "contexts-green": {
+          "receipt": "git-guard-receiver-contexts-green.log",
+          "sha256": "f0097d638c90700a28cfe12e1bf185428d4f5fa1fcd166631995859b2bba5df7",
+          "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+        },
+        "headers-red": {
+          "receipt": "git-guard-receiver-headers-red.log",
+          "sha256": "09d846f877ebd346465604f985f9bfd380c47c4025059a206a30988db408596f",
+          "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+        },
+        "contexts-final-green": {
+          "receipt": "git-guard-receiver-contexts-final-green.log",
+          "sha256": "9f4cdce3657bbccd02d3072c6a03fb0d86a31a07a0a145c3af1dbd29a69f9566",
+          "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+        },
+        "config-keywords-red": {
+          "receipt": "git-guard-receiver-config-keywords-red.log",
+          "sha256": "a5dce875dc103c9cab41be1a7dcac91eaf6311ef86b33b866ea217bcfad8ea48",
+          "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+        },
+        "held42cc-core137": {
+          "receipt": "git-guard-receiver-final-contexts-core.log",
+          "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
+          "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+        },
+        "held42cc-contexts70": {
+          "receipt": "git-guard-receiver-contexts-config-green.log",
+          "sha256": "7f108f31e9da575ca844edbd90dc42e070ae15bf97e01cce439f5cc0a331a1e7",
+          "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+        },
+        "held42cc-regression": {
+          "receipt": "git-guard-receiver-final-contexts-regression.log",
+          "sha256": "2dd67e1cce3e23bc6c25374f2fdfbc13ca79db6dad0115cc9a50ac36e5be8c32",
+          "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+        },
+        "held42cc-global_precommit": {
+          "receipt": "git-guard-receiver-contexts-global-precommit.log",
+          "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+          "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+        },
+        "held42cc-ruff-format": {
+          "receipt": "git-guard-receiver-contexts-final-ruff-format.log",
+          "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
+          "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+        },
+        "held42cc-ruff-check": {
+          "receipt": "git-guard-receiver-contexts-final-ruff-check.log",
+          "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+          "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+        },
+        "held42cc-mypy": {
+          "receipt": "git-guard-receiver-contexts-final-mypy.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+        },
+        "held42cc-shellcheck": {
+          "receipt": "git-guard-receiver-contexts-final-shellcheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+        },
+        "followup-red": {
+          "receipt": "git-guard-receiver-followup-red.log",
+          "sha256": "fca14a90c300d748c19dddea53ef825a577aea8652d88cdcfaf0e7cd322a16c6",
+          "source_snapshot": "Read-only staged red controls on held42cc source296D; old reports retained"
+        },
+        "class-boundaries-red": {
+          "receipt": "git-guard-receiver-class-boundaries-red.log",
+          "sha256": "6cb105c818bbe07f19fbd7d0393a1d3f452d7ea7e02e2211be3562b9b957aff5",
+          "source_snapshot": "Read-only staged red controls on held42cc source296D; old reports retained"
+        },
+        "held081-core137": {
+          "receipt": "git-guard-receiver-boundaries-core.log",
+          "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
+          "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
+        },
+        "held081-contexts106": {
+          "receipt": "git-guard-receiver-boundaries-green.log",
+          "sha256": "1e71cecec49a519c6abf29d337dfca3f0ed8ca844389b327c60179fa93491718",
+          "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
+        },
+        "held081-global_precommit": {
+          "receipt": "git-guard-receiver-boundaries-global-precommit.log",
+          "sha256": "4fff5b4ed34e5e5cccde44e664c42f0b6404b9f794ba60faa43d5fc9022137db",
+          "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
+        },
+        "held081-ruff-format": {
+          "receipt": "git-guard-receiver-boundaries-final-ruff-format.log",
+          "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
+          "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
+        },
+        "held081-ruff-check": {
+          "receipt": "git-guard-receiver-boundaries-final-ruff-check.log",
+          "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+          "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
+        },
+        "held081-mypy": {
+          "receipt": "git-guard-receiver-boundaries-final-mypy.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
+        },
+        "held081-shellcheck": {
+          "receipt": "git-guard-receiver-boundaries-final-shellcheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
+        },
+        "held081-regression": {
+          "receipt": "git-guard-receiver-boundaries-regression.log",
+          "sha256": "c30c97a36c5387cb8677d7b6e3778e15e7252aff1c9d4057fa74122d661ae442",
+          "source_snapshot": "HELD e0d88/081be79 source557D/EEB2/DA70;243/577 historical, not current qualification"
+        },
+        "intermediate-ad515-global": {
+          "receipt": "git-guard-receiver-namespace-global-precommit.log",
+          "sha256": "7d24b69643e5809bdc8ea618d92cdd179061b1d52b124117c6e94e139906df83"
+        },
+        "intermediate-ad515-mypy": {
+          "receipt": "git-guard-receiver-namespace-mypy.log",
+          "sha256": "7727baac733b5dc172cfcb419cb9e15378f474061cbed63b29f581f3b54652fb"
+        },
+        "intermediate-ad515-shellcheck": {
+          "receipt": "git-guard-receiver-namespace-shellcheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "intermediate-a492-global_precommit": {
+          "receipt": "git-guard-receiver-lexical-global-precommit.log",
+          "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b"
+        },
+        "intermediate-a492-mypy": {
+          "receipt": "git-guard-receiver-lexical-mypy.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "Current frozenA49269BA/2703CABB/0DF03D7A; actual exit0 explicitly observed, not inferred from empty output"
+        },
+        "intermediate-a492-shellcheck": {
+          "receipt": "git-guard-receiver-lexical-shellcheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source_snapshot": "Current frozenA49269BA/2703CABB/0DF03D7A; actual exit0 explicitly observed, not inferred from empty output"
+        },
+        "intermediate-a492-ruff-format": {
+          "receipt": "git-guard-receiver-lexical-ruff-format.log",
+          "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
+          "source_snapshot": "Current frozenA49269BA/2703CABB/0DF03D7A; actual exit0 explicitly observed, not inferred from empty output"
+        },
+        "intermediate-a492-ruff-check": {
+          "receipt": "git-guard-receiver-lexical-ruff-check.log",
+          "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+          "source_snapshot": "Current frozenA49269BA/2703CABB/0DF03D7A; actual exit0 explicitly observed, not inferred from empty output"
+        }
+      },
+      "current_source_commit": "081be79c8efc4c000a84efeec323e4e35a317260 + proposed declared-binding/lexical successor",
+      "current_source_sha256": "5839179cdadab51147eb9e318c58c8a1286e28058c978f0d1220fc6fcf194d05",
+      "current_test_sha256": "cc77d97c7831eca57c79f7e0159de1149792712bc01b2e35c58c3217e151201c",
+      "source_guard": "All9source hashes unchanged across real normalhook and before/after all4parallel runners"
+    },
+    "qualification": {
+      "receipt": "git-guard-receiver-declared-scope-qualification.json",
+      "sha256": "8c033a7bd2867bf6da2287869e6eac2c658e73e648278eea0a7c184f6a029418"
+    },
+    "source_head": {
+      "receipt": "git-guard-receiver-declared-scope-source-head.json",
+      "sha256": "e776011b3358bb8f6f7a40b3f7e54e5b3e3bdacf37951152b0c0f6306a592148"
+    },
+    "latest_finding": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6967293596"
+  },
+  "effect_successor_mapping": {
+    "receipt": "git-guard-receiver-effect-successor-binding-map.json",
+    "sha256": "f968f657e4f363826941b5bf5cd4392d3b7b408dde321bd01abddebfb3058e40"
   }
 }

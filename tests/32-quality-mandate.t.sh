@@ -536,6 +536,11 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_annotation_effect_contexts
   _qm_receiver_nested_class_contexts
   _qm_receiver_declared_binding_contexts
+  _qm_receiver_target_and_class_capture_contexts
+  _qm_receiver_call_effect_composition_contexts
+  _qm_receiver_class_declared_write_contexts
+  _qm_receiver_callable_result_contexts
+  _qm_receiver_store_boundary_contexts
 }
 
 # Protects: annotations and class/import namespaces cannot invent plain proof.
@@ -644,6 +649,120 @@ _qm_receiver_declared_binding_contexts() {
     "${_qmr_types}receiver = Parser()\ndef change():\n    global receiver\n    receiver = Model\nchange()\nModel.parse_file('m.json')\n" 1 model
   _qm_receiver_case 'global declaration and model config write preserve model type' \
     "${_qmr_types}def configure():\n    global Model\n    Model.model_config = {}\nconfigure()\nModel.parse_file('m.json')\n" 1 model
+}
+
+# Protects: unpacked mutations and immediate class suites invalidate captures.
+# Detects: mutation summaries stopping at tuple/list/starred targets or classes.
+# Needs: staged scanner; deferred/no-call/model/data-write counterparts.
+# Breadcrumb: hooks/common/mandate_scan.py target mutation leaves and scope prepass.
+_qm_receiver_target_and_class_capture_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'tuple unpacking invalidates changed method slot' \
+    "${_qmr_types}Parser.parse_file, unused = Model.parse_file, None\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'list unpacking invalidates changed method slot' \
+    "${_qmr_types}[Parser.parse_file, unused] = [Model.parse_file, None]\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'starred target cannot retain callable method proof' \
+    "${_qmr_types}*Parser.parse_file, unused = Model.parse_file, None\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'deferred function sees later immediate class mutation' \
+    "${_qmr_types}def load():\n    return Parser().parse_file('m.json')\nclass Patch:\n    Parser.parse_file = Model.parse_file\nload()\n" 0 unknown
+  _qm_receiver_case 'deferred lambda sees later immediate class mutation' \
+    "${_qmr_types}load = lambda: Parser().parse_file('m.json')\nclass Patch:\n    Parser.parse_file = Model.parse_file\nload()\n" 0 unknown
+  _qm_receiver_case 'class inside uncalled function is not an immediate mutation' \
+    "${_qmr_types}def define_patch():\n    class Patch:\n        Parser.parse_file = Model.parse_file\nParser().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'class parser mutation preserves unrelated deferred model' \
+    "${_qmr_types}def load():\n    return Model.parse_file('m.json')\nclass Patch:\n    Parser.parse_file = Model.parse_file\nload()\n" 1 model
+  _qm_receiver_case 'unpacked ordinary data write preserves plain method proof' \
+    "${_qmr_types}[Parser.label, unused] = ['notes', None]\nParser().parse_file('notes.md')\n" 0 plain
+}
+
+# Protects: modeled local call effects compose with captures, classes and loops.
+# Detects: effects discarded by scope copies or deferred generator consumption.
+# Needs: staged scanner; no-call/data/eager-iterator model counterparts.
+# Breadcrumb: hooks/common/mandate_scan.py eager call-name summaries and scope views.
+_qm_receiver_call_effect_composition_contexts() {
+  _qmr_effect_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\nclass Patch:\n    def mutate(self):\n        Parser.parse_file = Model.parse_file\n'
+  _qm_receiver_case 'immediate class calls local sensitive mutator' \
+    "${_qmr_effect_types}class Run:\n    Patch().mutate()\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'deferred capture sees later local mutator call' \
+    "${_qmr_effect_types}load = lambda: Parser().parse_file('m.json')\nPatch().mutate()\nload()\n" 0 unknown
+  _qm_receiver_case 'deferred capture sees later declared global call effect' \
+    "${_qmr_effect_types}receiver = Parser()\ndef change():\n    global receiver\n    receiver = Model\nload = lambda: receiver.parse_file('m.json')\nchange()\nload()\n" 0 unknown
+  _qm_receiver_case 'generator body local mutator may change outer method' \
+    "${_qmr_effect_types}changes = (Patch().mutate() for item in [0])\nnext(changes)\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'generator body declared call may change outer binding' \
+    "${_qmr_effect_types}receiver = Parser()\ndef change():\n    global receiver\n    receiver = Model\nchanges = (change() for item in [0])\nnext(changes)\nreceiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'loop call effects survive discarded scope copies' \
+    "${_qmr_effect_types}for item in [0]:\n    Patch().mutate()\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'uncalled mutator leaves deferred plain capture intact' \
+    "${_qmr_effect_types}load = lambda: Parser().parse_file('notes.md')\nload()\n" 0 plain
+  _qm_receiver_case 'generator ordinary data call preserves plain method' \
+    "${_qmr_effect_types}def store():\n    Parser.label = 'notes'\nchanges = (store() for item in [0])\nnext(changes)\nParser().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'generator first iterator remains eager before body effects' \
+    "${_qmr_effect_types}changes = (Patch().mutate() for item in Model.parse_file('m.json'))\n" 1 model
+}
+
+# Protects: only declared writes escape copied class namespaces.
+# Detects: lost globals and declarations conflated with unrelated outer stores.
+# Needs: staged scanner, deferred reader and no-write/config counterparts.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_declared_writes and scope effects.
+_qm_receiver_class_declared_write_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'class global write invalidates enclosing receiver' \
+    "${_qmr_types}receiver = Parser()\nclass Patch:\n    global receiver\n    receiver = Model\nreceiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'deferred capture sees class global write' \
+    "${_qmr_types}receiver = Parser()\nload = lambda: receiver.parse_file('m.json')\nclass Patch:\n    global receiver\n    receiver = Model\nload()\n" 0 unknown
+  _qm_receiver_case 'class global declaration without write preserves receiver' \
+    "${_qmr_types}receiver = Parser()\nclass Inspect:\n    global receiver\n    value = 'notes'\nload = lambda: receiver.parse_file('notes.md')\nload()\n" 0 plain
+  _qm_receiver_case 'class global config write preserves model type' \
+    "${_qmr_types}class Configure:\n    global Model\n    Model.model_config = {}\nModel.parse_file('m.json')\n" 1 model
+}
+
+# Protects: constructor proof does not become callable-instance return proof.
+# Detects: repeated calls, parameter/self confusion and ownership-join regression.
+# Needs: staged scanner; real class/instance/classmethod and known-model fixtures.
+# Breadcrumb: hooks/common/mandate_scan.py ReceiverBinding instance flag and value.
+_qm_receiver_callable_result_contexts() {
+  _qmr_factory='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Factory:\n    def parse_file(self, path):\n        return path\n    def __call__(self):\n        return Model\n'
+  _qm_receiver_case 'callable instance result is not constructor proof' \
+    "${_qmr_factory}factory = Factory()\nfactory().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'constructor result still owns declared plain method' \
+    "${_qmr_factory}Factory().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'annotated callable parameter is an instance' \
+    "${_qmr_factory}def load(factory: Factory):\n    return factory().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'implicit self callable result remains unresolved' \
+    "${_qmr_factory}class Child(Factory):\n    def load(self):\n        return self().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'implicit cls still constructs a plain instance' \
+    "${_qmr_factory}class Child(Factory):\n    @classmethod\n    def load(cls):\n        return cls().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'model class and instance join retain model ownership' \
+    "${_qmr_factory}receiver = Model\nif choice:\n    receiver = Model()\nreceiver.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'model instance call result is not proven model' \
+    "${_qmr_factory}class CallableModel(Model):\n    def __call__(self):\n        return Factory()\ninstance = CallableModel()\ninstance().parse_file('notes.md')\n" 0 unknown
+  _qm_receiver_case 'shadowed classmethod does not prove constructor cls' \
+    "${_qmr_factory}classmethod = lambda fn: fn\nclass Child(Factory):\n    @classmethod\n    def load(cls):\n        return cls().parse_file('m.json')\n" 0 unknown
+}
+
+# Protects: explicit Store targets and unresolved mutation aliases lose proof.
+# Detects: loop/context targets omitted or annotations restoring unsafe captures.
+# Needs: staged scanner; ordinary-data and known-model mutation counterparts.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_mutated_names/invalidate_binding.
+_qm_receiver_store_boundary_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'for attribute target changes method slot' \
+    "${_qmr_types}for Parser.parse_file in [Model.parse_file]:\n    pass\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'async-for attribute target changes method slot' \
+    "${_qmr_types}async def load(values):\n    async for Parser.parse_file in values:\n        pass\n    return Parser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'comprehension attribute target changes method slot' \
+    "${_qmr_types}values = [None for Parser.parse_file in [Model.parse_file]]\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'context optional target changes method slot' \
+    "from contextlib import nullcontext\n${_qmr_types}with nullcontext(Model.parse_file) as Parser.parse_file:\n    pass\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'unknown unpacked alias mutation invalidates deferred proof' \
+    "${_qmr_types}Alias, unused = Parser, None\ndef load():\n    return Parser().parse_file('m.json')\nAlias.parse_file = Model.parse_file\nload()\n" 0 unknown
+  _qm_receiver_case 'annotation cannot restore proof across unresolved mutation' \
+    "${_qmr_types}Alias, unused = Parser, None\ndef load(parser: Parser):\n    return parser.parse_file('m.json')\nAlias.parse_file = Model.parse_file\nload(Parser())\n" 0 unknown
+  _qm_receiver_case 'ordinary unknown-alias data write preserves plain method' \
+    "${_qmr_types}Alias, unused = Parser, None\nAlias.label = 'notes'\nload = lambda: Parser().parse_file('notes.md')\nload()\n" 0 plain
+  _qm_receiver_case 'unknown method mutation preserves unrelated known model' \
+    "${_qmr_types}Alias, unused = Parser, None\nAlias.parse_file = Model.parse_file\nModel.parse_file('m.json')\n" 1 model
 }
 
 t_case_quality_mandate() {
