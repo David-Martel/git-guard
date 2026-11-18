@@ -79,6 +79,22 @@ Tuple, list and starred mutation targets share the same leaf traversal in
 immediate invalidation and capture summaries. Those summaries include immediately
 executed class suites while continuing to exclude uncalled function bodies.
 Loop, comprehension and context-manager Store targets use that same traversal.
+Assignment containers process their leaves in left-to-right store order, so
+later target expressions observe earlier method writes and name stores.
+Loaded expressions within a target retain their own side-effect bindings;
+only an actual annotated name receives declaration evidence. Unpacked values
+remain unresolved rather than inferring a relationship with each RHS element.
+Function-header scanning processes defaults once before annotations. For mixed
+positional-only and normal positional annotations it joins the two observed
+Python 3.10 and 3.15 group orders, followed by vararg, keyword-only, keyword-vararg
+and return annotations. Environments and constructor-callee proofs merge
+conservatively; model-call evidence from either order remains strong. The scanner
+does not infer the repository's target runtime or enumerate arbitrary orders.
+It visits source syntax without executing callbacks or forcing annotation
+evaluation. Current
+regression fixtures use compile-valid call expressions. Historical annotation
+walrus controls retain their older-language scope and current Ruff syntax
+limitation rather than serving as current-runtime qualification.
 An unresolved method mutation root forfeits plain proof rather than guessing
 aliases; type-changing writes also forfeit uncertain model proof. Ordinary data
 writes keep method ownership, and method replacement alone preserves model type.
@@ -166,6 +182,9 @@ comprehension and captured-assignment-target findings.
 Source b038e161 / metadata 28b1cb0b and its 903 checks remain held after
 lambda-local capture and implicit bare-decorator effect findings. Its source
 KEEP is historical and does not admit the current successor.
+Source 8fb562b2 / metadata daf7ce9f and its 940 checks remain held after
+annotated-target binding, unpacked-store order and parameter/return annotation
+order findings. Its root source KEEP920AE retains only its recorded scope.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted

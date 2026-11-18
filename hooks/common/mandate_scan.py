@@ -1395,7 +1395,7 @@ def receiver_target_leaves(target: ast.AST) -> Iterable[ast.AST]:
     while pending:
         node = pending.pop()
         if isinstance(node, (ast.Tuple, ast.List)):
-            pending.extend(node.elts)
+            pending.extend(reversed(node.elts))
         elif isinstance(node, ast.Starred):
             pending.append(node.value)
         else:
@@ -1644,21 +1644,22 @@ class PydanticReceivers(ast.NodeVisitor):
         self.visit(node.value)
         binding = self.value(node.value)
         for target in node.targets:
-            self.visit(target)
-            binding = self.revalidate_binding(binding, [target], target=target)
-            self.invalidate_target(target)
-            for name in receiver_bound_names(target):
-                self.env[name] = (
-                    binding if isinstance(target, ast.Name) else UNKNOWN_RECEIVER
-                )
+            for leaf in receiver_target_leaves(target):
+                self.visit(leaf)
+                binding = self.revalidate_binding(binding, [leaf], target=leaf)
+                self.invalidate_target(leaf)
+                if isinstance(leaf, ast.Name):
+                    self.env[leaf.id] = (
+                        binding if isinstance(target, ast.Name) else UNKNOWN_RECEIVER
+                    )
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value is not None:
             self.visit(node.value)
         binding = self.value(node.value)
         self.visit(node.target)
-        self.visit(node.annotation)
         if node.value is None:
+            self.visit(node.annotation)
             return
         if binding == UNKNOWN_RECEIVER:
             binding = self.value(node.annotation)
@@ -1666,8 +1667,9 @@ class PydanticReceivers(ast.NodeVisitor):
                 binding = replace(binding, is_instance=True)
         binding = self.revalidate_binding(binding, [node.target], target=node.target)
         self.invalidate_target(node.target)
-        for name in receiver_bound_names(node.target):
-            self.env[name] = binding
+        if isinstance(node.target, ast.Name):
+            self.env[node.target.id] = binding
+        self.visit(node.annotation)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
         self.visit(node.value)
@@ -1880,20 +1882,20 @@ class PydanticReceivers(ast.NodeVisitor):
     def visit_FunctionDef(
         self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     ) -> None:
-        args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        args = [*node.args.posonlyargs, *node.args.args]
         if node.args.vararg:
             args.append(node.args.vararg)
+        args.extend(node.args.kwonlyargs)
         if node.args.kwarg:
             args.append(node.args.kwarg)
         for expression in [
             *node.decorator_list,
             *node.args.defaults,
             *node.args.kw_defaults,
-            node.returns,
-            *(argument.annotation for argument in args),
         ]:
             if expression is not None:
                 self.visit(expression)
+        self.visit_parameter_annotations(node, args)
         outer, local = self.deferred_bindings()
         for statement in node.body:
             for name in receiver_bound_names(statement):
@@ -1943,6 +1945,34 @@ class PydanticReceivers(ast.NodeVisitor):
         self.env[node.name] = UNKNOWN_RECEIVER
 
     visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_parameter_annotations(
+        self,
+        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        args: Sequence[ast.arg],
+    ) -> None:
+        """Join the two observed legacy/current mixed positional annotation orders."""
+        positional = [arg.annotation for arg in node.args.posonlyargs if arg.annotation]
+        normal = [arg.annotation for arg in node.args.args if arg.annotation]
+        offset = len(node.args.posonlyargs) + len(node.args.args)
+        tail = [arg.annotation for arg in args[offset:] if arg.annotation]
+        if node.returns is not None:
+            tail.append(node.returns)
+        if not positional or not normal:
+            for annotation in [*positional, *normal, *tail]:
+                self.visit(annotation)
+            return
+        base = dict(self.env)
+        before_callees = dict(self.call_callees)
+        current = self.scoped([*positional, *normal, *tail], dict(base))
+        current_callees = self.call_callees
+        self.call_callees = dict(before_callees)
+        legacy = self.scoped([*normal, *positional, *tail], dict(base))
+        self.merge_bindings(current, legacy)
+        for call in current_callees.keys() | self.call_callees.keys():
+            left = current_callees.get(call, UNKNOWN_RECEIVER)
+            right = self.call_callees.get(call, UNKNOWN_RECEIVER)
+            self.call_callees[call] = left if left == right else UNKNOWN_RECEIVER
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         for default in [*node.args.defaults, *node.args.kw_defaults]:

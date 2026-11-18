@@ -551,6 +551,105 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_lambda_local_contexts
   _qm_receiver_bare_decorator_contexts
   _qm_receiver_decorator_order_contexts
+  _qm_receiver_annotated_target_contexts
+  _qm_receiver_unpacked_order_contexts
+  _qm_receiver_parameter_annotation_contexts
+  _qm_receiver_annotated_store_order_contexts
+  _qm_receiver_mixed_annotation_contexts
+}
+
+# Protects: Both observed mixed parameter annotation orders retain evidence.
+# Detects: Order-sensitive plain exemptions or loss of a possible model call.
+# Needs: actual staged scanner and315compile-valid fixtures;310/315 proof separate.
+# Breadcrumb: hooks/common/mandate_scan.py visit_parameter_annotations/cache.
+_qm_receiver_mixed_annotation_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'mixed order cannot exempt initial plain posonly call' \
+    "${_qmr_types}receiver=Parser()\ndef change():\n    global receiver\n    receiver=Model\ndef load(a: receiver.parse_file('m.json'), /, b: change()):\n    pass\n" 0 unknown
+  _qm_receiver_case 'mixed order retains initial model posonly call' \
+    "${_qmr_types}receiver=Model\ndef change():\n    global receiver\n    receiver=Parser()\ndef load(a: receiver.parse_file('m.json'), /, b: change()):\n    pass\n" 1 model
+  _qm_receiver_case 'mixed order retains initial model normal call' \
+    "${_qmr_types}receiver=Model\ndef change():\n    global receiver\n    receiver=Parser()\ndef load(a: change(), /, b: receiver.parse_file('m.json')):\n    pass\n" 1 model
+  _qm_receiver_case 'mixed order cannot exempt initial plain normal call' \
+    "${_qmr_types}receiver=Parser()\ndef change():\n    global receiver\n    receiver=Model\ndef load(a: change(), /, b: receiver.parse_file('m.json')):\n    pass\n" 0 unknown
+  _qm_receiver_case 'mixed stable model annotations retain strong evidence' \
+    "${_qmr_types}def load(a: Model.parse_file('m.json'), /, b: Model.parse_file('m.json')):\n    pass\n" 1 model
+  _qm_receiver_case 'mixed stable plain annotations remain plain' \
+    "${_qmr_types}def load(a: Parser().parse_file('notes.md'), /, b: Parser().parse_file('notes.md')):\n    pass\n" 0 plain
+  _qm_receiver_case 'unmixed annotation call precedes return write' \
+    "${_qmr_types}receiver=Model\ndef change():\n    global receiver\n    receiver=Parser()\ndef load(a: receiver.parse_file('m.json')) -> change():\n    pass\n" 1 model
+}
+
+# Protects: Annotated assignment stores precede annotation-source inspection.
+# Detects: Stale receiver proof in name/member annotations and inverse blocks.
+# Needs: actual staged scanner, compile-valid315 fixtures; legacy310 order separate.
+# Breadcrumb: hooks/common/mandate_scan.py visit_AnnAssign.
+_qm_receiver_annotated_store_order_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'annotated name stores model before scanning annotation' \
+    "${_qmr_types}receiver = Parser()\nreceiver: receiver.parse_file('m.json') = Model\n" 1 model
+  _qm_receiver_case 'annotated name stores parser before scanning annotation' \
+    "${_qmr_types}receiver = Model\nreceiver: receiver.parse_file('notes.md') = Parser()\n" 0 plain
+  _qm_receiver_case 'annotated method store precedes annotation call' \
+    "${_qmr_types}Parser.parse_file: Parser().parse_file('m.json') = Model.parse_file\n" 0 unknown
+  _qm_receiver_case 'annotated ordinary data preserves plain call' \
+    "${_qmr_types}Parser.label: Parser().parse_file('notes.md') = 'label'\n" 0 plain
+  _qm_receiver_case 'annotation without value preserves existing model' \
+    "${_qmr_types}receiver = Model\nreceiver: receiver.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'simple declaration retains known model evidence' \
+    "${_qmr_types}receiver: Model = None\nreceiver.parse_file('m.json')\n" 1 model
+}
+
+# Protects: Only actual annotated names acquire declaration evidence.
+# Detects: Walrus bindings in loaded target expressions must retain their own values.
+# Needs: actual staged scanner and compile-valid315 fixtures; no fixture imports.
+# Breadcrumb: hooks/common/mandate_scan.py AnnAssign and receiver_target_leaves.
+_qm_receiver_annotated_target_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'annotated subscript walrus keeps model binding' \
+    "${_qmr_types}cache[(receiver := Model)]: Parser = None\nreceiver.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'annotated subscript walrus keeps plain binding' \
+    "${_qmr_types}cache[(receiver := Parser())]: Model = None\nreceiver.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'simple annotated name retains declared model evidence' \
+    "${_qmr_types}receiver: Model = None\nreceiver.parse_file('m.json')\n" 1 model
+}
+
+# Protects: Assignment leaves take effect left to right across nested/starred targets.
+# Detects: Later target expressions must observe prior method writes or name stores.
+# Needs: actual staged scanner and compile-valid315 fixtures; no fixture imports.
+# Breadcrumb: hooks/common/mandate_scan.py visit_Assign, target traversal and invalidation.
+_qm_receiver_unpacked_order_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'unpacked earlier mutation reaches later target call' \
+    "${_qmr_types}Parser.parse_file, cache[Parser().parse_file('x')] = Model.parse_file, 0\n" 0 unknown
+  _qm_receiver_case 'unpacked ordinary data preserves later plain target' \
+    "${_qmr_types}Parser.label, cache[Parser().parse_file('notes.md')] = 'label', 0\n" 0 plain
+  _qm_receiver_case 'unpacked name store cannot retain previous plain value' \
+    "${_qmr_types}receiver = Parser()\nreceiver, cache[receiver.parse_file('m.json')] = Model, 0\n" 0 unknown
+  _qm_receiver_case 'nested unpacked mutation precedes nested target call' \
+    "${_qmr_types}Parser.parse_file, (other, cache[Parser().parse_file('x')]) = Model.parse_file, (0, 1)\n" 0 unknown
+  _qm_receiver_case 'starred unpacked mutation precedes later target call' \
+    "${_qmr_types}Parser.parse_file, *other, cache[Parser().parse_file('x')] = Model.parse_file, 0, 1\n" 0 unknown
+}
+
+# Protects: Function defaults and parameter annotations precede return annotations.
+# Detects: Return-header effects cannot rewrite earlier parameter-call evidence.
+# Needs: actual staged scanner and compile-valid315 fixtures; no fixture imports.
+# Breadcrumb: hooks/common/mandate_scan.py visit_FunctionDef eager header traversal.
+_qm_receiver_parameter_annotation_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'parameter model annotation precedes return declared write' \
+    "${_qmr_types}receiver = Model\ndef change():\n    global receiver\n    receiver = Parser()\ndef load(value: receiver.parse_file('m.json')) -> change():\n    pass\n" 1 model
+  _qm_receiver_case 'parameter plain annotation precedes return declared write' \
+    "${_qmr_types}receiver = Parser()\ndef change():\n    global receiver\n    receiver = Model\ndef load(value: receiver.parse_file('notes.md')) -> change():\n    pass\n" 0 plain
+  _qm_receiver_case 'unchanged parameter model annotation remains strong' \
+    "${_qmr_types}receiver = Model\ndef load(value: receiver.parse_file('m.json')) -> None:\n    pass\n" 1 model
+  _qm_receiver_case 'default evaluation precedes parameter annotation' \
+    "${_qmr_types}receiver = Model\ndef load(value: receiver.parse_file('notes.md') = (receiver := Parser())):\n    pass\n" 0 plain
+  _qm_receiver_case 'parameter declared write precedes return model evidence' \
+    "${_qmr_types}receiver = Model\ndef change():\n    global receiver\n    receiver = Parser()\ndef load(value: change()) -> receiver.parse_file('m.json'):\n    pass\n" 0 unknown
+  _qm_receiver_case 'parameter declared write precedes return plain evidence' \
+    "${_qmr_types}receiver = Parser()\ndef change():\n    global receiver\n    receiver = Model\ndef load(value: change()) -> receiver.parse_file('m.json'):\n    pass\n" 0 unknown
 }
 
 # Protects: nested lambda captures account for their enclosing lambda's writes.
