@@ -53,7 +53,7 @@ import time
 import tokenize
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, IntFlag
 from pathlib import Path, PurePosixPath
 from typing import (
     Dict,
@@ -1152,6 +1152,28 @@ def rule_inventory() -> Dict[str, Path]:
     return ids
 
 
+class ReceiverOperation(IntFlag):
+    """Finite unsupported projections; these do not erase class ancestry."""
+
+    NONE = 0
+    CONSTRUCT = 1
+    INSTANCE_ACCESS = 2
+    CLASS_SUBSCRIPT = 4
+    SUBCLASS = 8
+
+
+class ReceiverEffect(IntFlag):
+    """Keep namespace events distinct from absent events and operation effects."""
+
+    NONE = 0
+    NAMESPACE = 1
+    TYPE = 2
+    CONSTRUCT = 4
+    INSTANCE_ACCESS = 8
+    CLASS_SUBSCRIPT = 16
+    SUBCLASS = 32
+
+
 @dataclass(frozen=True)
 class ReceiverBinding:
     """Local static receiver evidence; unknown never means a proven model."""
@@ -1161,6 +1183,7 @@ class ReceiverBinding:
     identity: str = ""
     dependencies: FrozenSet[str] = frozenset()
     is_instance: bool = False
+    opaque: ReceiverOperation = ReceiverOperation.NONE
 
 
 UNKNOWN_RECEIVER = ReceiverBinding("unknown")
@@ -1170,8 +1193,8 @@ MODEL_RECEIVER = ReceiverBinding(
 PYDANTIC_MODULE = ReceiverBinding("module")
 PYDANTIC_SETTINGS_MODULE = ReceiverBinding("module", identity="pydantic-settings")
 LEGACY_MODEL_METHODS = frozenset({"parse_obj", "parse_raw", "parse_file", "from_orm"})
+RECEIVER_NAMESPACE_MEMBERS = frozenset({"__code__"})
 MODEL_BASES = frozenset({"BaseModel", "BaseSettings", "RootModel"})
-RECEIVER_HOOK_MEMBERS = frozenset({"__init__", "__init_subclass__"})
 RECEIVER_TYPE_MEMBERS = frozenset(
     {
         "__class__",
@@ -1183,6 +1206,62 @@ RECEIVER_TYPE_MEMBERS = frozenset(
         "__getattribute__",
     }
 )
+RECEIVER_OPERATION_MEMBERS = {
+    "__init__": ReceiverEffect.CONSTRUCT,
+    "__call__": ReceiverEffect.CONSTRUCT,
+    "__setattr__": ReceiverEffect.CONSTRUCT | ReceiverEffect.INSTANCE_ACCESS,
+    "__delattr__": ReceiverEffect.INSTANCE_ACCESS,
+    "__getitem__": ReceiverEffect.CLASS_SUBSCRIPT,
+    "__class_getitem__": ReceiverEffect.CLASS_SUBSCRIPT,
+    "__init_subclass__": ReceiverEffect.SUBCLASS,
+    "__prepare__": ReceiverEffect.SUBCLASS,
+    "__mro_entries__": ReceiverEffect.SUBCLASS,
+}
+
+
+def receiver_effect(
+    binding: ReceiverBinding, effect: ReceiverEffect
+) -> ReceiverBinding:
+    """Invalidate type/namespace proof or retain ancestry with opaque projections."""
+    if binding.kind == "data-hook":
+        return UNKNOWN_RECEIVER if effect else binding
+    if binding.kind not in {"plain", "model"}:
+        return binding
+    if effect & ReceiverEffect.TYPE or (
+        binding.kind == "plain" and effect & ReceiverEffect.NAMESPACE
+    ):
+        return UNKNOWN_RECEIVER
+    operations = ReceiverOperation.NONE
+    for mutation, operation in (
+        (ReceiverEffect.CONSTRUCT, ReceiverOperation.CONSTRUCT),
+        (ReceiverEffect.INSTANCE_ACCESS, ReceiverOperation.INSTANCE_ACCESS),
+        (ReceiverEffect.CLASS_SUBSCRIPT, ReceiverOperation.CLASS_SUBSCRIPT),
+        (ReceiverEffect.SUBCLASS, ReceiverOperation.SUBCLASS),
+    ):
+        if effect & mutation:
+            operations |= operation
+    result = replace(binding, opaque=binding.opaque | operations)
+    if result.is_instance and result.opaque & ReceiverOperation.INSTANCE_ACCESS:
+        return UNKNOWN_RECEIVER
+    return result
+
+
+def receiver_join(one: ReceiverBinding, two: ReceiverBinding) -> ReceiverBinding:
+    """Join operation uncertainty without discarding identical class ancestry."""
+    if one == two:
+        return one
+    if one.kind in {"model", "plain"} and replace(
+        one, is_instance=False, opaque=ReceiverOperation.NONE
+    ) == replace(two, is_instance=False, opaque=ReceiverOperation.NONE):
+        return receiver_effect(
+            replace(
+                one,
+                is_instance=one.is_instance or two.is_instance,
+                opaque=one.opaque | two.opaque,
+            ),
+            ReceiverEffect.NONE,
+        )
+    return UNKNOWN_RECEIVER
 
 
 def receiver_annotation_root(annotation: Optional[ast.AST]) -> Optional[str]:
@@ -1398,7 +1477,58 @@ def receiver_target_name(node: ast.AST) -> Optional[str]:
     return node.id if isinstance(node, ast.Name) else None
 
 
-def receiver_target_mutation(node: ast.AST) -> Optional[Tuple[str, bool]]:
+def receiver_combined_effects(effects: Iterable[ReceiverEffect]) -> ReceiverEffect:
+    """Merge effect categories without collapsing namespace events to booleans."""
+    combined = ReceiverEffect.NONE
+    for effect in effects:
+        combined |= effect
+    return combined
+
+
+def receiver_unresolved_effect(effect: ReceiverEffect) -> ReceiverEffect:
+    """An unresolved initializer owner may be a shared metaclass."""
+    if effect & ReceiverEffect.CONSTRUCT:
+        return effect | ReceiverEffect.SUBCLASS
+    return effect
+
+
+def receiver_literal_data_hook(node: ast.AST) -> bool:
+    """Prove only literal/name data stores on the callback's first argument."""
+    if not isinstance(node, ast.FunctionDef) or node.decorator_list:
+        return False
+    positional = [*node.args.posonlyargs, *node.args.args]
+    if not positional:
+        return False
+    receiver = positional[0].arg
+    for statement in node.body:
+        if isinstance(statement, ast.Pass) or (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+        ):
+            continue
+        if isinstance(statement, ast.Return) and (
+            statement.value is None
+            or isinstance(statement.value, ast.Constant)
+            and statement.value.value is None
+        ):
+            continue
+        if not isinstance(statement, ast.Assign) or not isinstance(
+            statement.value, (ast.Constant, ast.Name)
+        ):
+            return False
+        for target in statement.targets:
+            if not (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == receiver
+                and not target.attr.startswith("__")
+                and target.attr not in LEGACY_MODEL_METHODS
+            ):
+                return False
+    return True
+
+
+def receiver_target_mutation(node: ast.AST) -> Optional[Tuple[str, ReceiverEffect]]:
     """Separate method-namespace/type changes from ordinary field writes."""
     if isinstance(node, ast.Attribute):
         member = node.attr
@@ -1419,11 +1549,21 @@ def receiver_target_mutation(node: ast.AST) -> Optional[Tuple[str, bool]]:
     else:
         return None
     if member not in (
-        LEGACY_MODEL_METHODS | RECEIVER_TYPE_MEMBERS | RECEIVER_HOOK_MEMBERS
+        LEGACY_MODEL_METHODS
+        | RECEIVER_NAMESPACE_MEMBERS
+        | RECEIVER_TYPE_MEMBERS
+        | RECEIVER_OPERATION_MEMBERS.keys()
     ):
         return None
     name = receiver_target_name(node)
-    return (name or "<unresolved-mutation>", member in RECEIVER_TYPE_MEMBERS)
+    effect = (
+        ReceiverEffect.TYPE
+        if member in RECEIVER_TYPE_MEMBERS
+        else RECEIVER_OPERATION_MEMBERS.get(member, ReceiverEffect.NAMESPACE)
+    )
+    if name is None:
+        effect = receiver_unresolved_effect(effect)
+    return (name or "<unresolved-mutation>", effect)
 
 
 def receiver_target_leaves(target: ast.AST) -> Iterable[ast.AST]:
@@ -1441,11 +1581,11 @@ def receiver_target_leaves(target: ast.AST) -> Iterable[ast.AST]:
 
 def receiver_mutated_names(
     nodes: Iterable[ast.AST], include_class_bodies: bool = True
-) -> Dict[str, bool]:
-    """Find relevant mutations/aliases; the value marks type-proof invalidation."""
+) -> Dict[str, ReceiverEffect]:
+    """Find relevant mutations/aliases without collapsing distinct effect categories."""
     pending = list(nodes)
     aliases: Dict[str, Set[str]] = {}
-    mutated: Dict[str, bool] = {}
+    mutated: Dict[str, ReceiverEffect] = {}
     while pending:
         node = pending.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or (
@@ -1465,8 +1605,8 @@ def receiver_mutated_names(
             for leaf in receiver_target_leaves(target):
                 mutation = receiver_target_mutation(leaf)
                 if mutation:
-                    name, changes_type = mutation
-                    mutated[name] = mutated.get(name, False) or changes_type
+                    name, effect = mutation
+                    mutated[name] = mutated.get(name, ReceiverEffect.NONE) | effect
             value = getattr(node, "value", None)
             if isinstance(target, ast.Name) and isinstance(value, ast.Name):
                 aliases.setdefault(target.id, set()).add(value.id)
@@ -1474,9 +1614,9 @@ def receiver_mutated_names(
         pending.extend(ast.iter_child_nodes(node))
     while True:
         expanded = dict(mutated)
-        for name, changes_type in mutated.items():
+        for name, effect in mutated.items():
             for alias in aliases.get(name, set()):
-                expanded[alias] = expanded.get(alias, False) or changes_type
+                expanded[alias] = expanded.get(alias, ReceiverEffect.NONE) | effect
         if expanded == mutated:
             return mutated
         mutated = expanded
@@ -1492,11 +1632,11 @@ class PydanticReceivers(ast.NodeVisitor):
         self.class_outer: Optional[Dict[str, ReceiverBinding]] = None
         self.class_comprehension_outer: Optional[Dict[str, ReceiverBinding]] = None
         self.has_star_import = False
-        self.sensitive_call_names: Dict[str, bool] = {}
+        self.sensitive_call_effects: Dict[str, ReceiverEffect] = {}
         self.binding_call_names: Dict[str, Set[str]] = {}
-        self.capture_call_changes_type: Optional[bool] = None
+        self.capture_call_effect = ReceiverEffect.NONE
         self.rebound: Set[str] = set()
-        self.mutated: Dict[str, bool] = {}
+        self.mutated: Dict[str, ReceiverEffect] = {}
         self.calls: Dict[Tuple[int, int, str], Set[str]] = {}
         self.call_callees: Dict[ast.Call, ReceiverBinding] = {}
         self.subscript_bindings: Dict[ast.Subscript, ReceiverBinding] = {}
@@ -1511,9 +1651,11 @@ class PydanticReceivers(ast.NodeVisitor):
                     )
                 effects = receiver_mutated_names(child.body, include_class_bodies=True)
                 if effects:
-                    self.sensitive_call_names[child.name] = (
-                        self.sensitive_call_names.get(child.name, False)
-                        or any(effects.values())
+                    self.sensitive_call_effects[child.name] = (
+                        self.sensitive_call_effects.get(child.name, ReceiverEffect.NONE)
+                        | receiver_unresolved_effect(
+                            receiver_combined_effects(effects.values())
+                        )
                     )
         self.has_star_import = any(
             isinstance(child, ast.ImportFrom)
@@ -1544,6 +1686,10 @@ class PydanticReceivers(ast.NodeVisitor):
             if binding is None:
                 binding = self.value(node.func)
             if binding.kind in {"model", "plain"} and not binding.is_instance:
+                if binding.opaque & (
+                    ReceiverOperation.CONSTRUCT | ReceiverOperation.INSTANCE_ACCESS
+                ):
+                    return UNKNOWN_RECEIVER
                 return replace(binding, is_instance=True)
             return UNKNOWN_RECEIVER
         if isinstance(node, ast.Subscript):
@@ -1552,7 +1698,9 @@ class PydanticReceivers(ast.NodeVisitor):
             binding = self.value(node.value)
             return (
                 binding
-                if binding.kind == "model" and not binding.is_instance
+                if binding.kind == "model"
+                and not binding.is_instance
+                and not binding.opaque & ReceiverOperation.CLASS_SUBSCRIPT
                 else UNKNOWN_RECEIVER
             )
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -1575,16 +1723,16 @@ class PydanticReceivers(ast.NodeVisitor):
         self.env = previous
         return result
 
-    def call_effects(self, nodes: Iterable[ast.AST]) -> Tuple[Set[str], Optional[bool]]:
+    def call_effects(self, nodes: Iterable[ast.AST]) -> Tuple[Set[str], ReceiverEffect]:
         """Summarize one level of already known local callable effects."""
         nodes = list(nodes)
         written = receiver_declared_writes(nodes)
-        changes_type: Optional[bool] = None
+        effect = ReceiverEffect.NONE
         for name in receiver_immediate_call_names(nodes):
             written.update(self.binding_call_names.get(name, set()))
-            if name in self.sensitive_call_names:
-                changes_type = bool(changes_type) or self.sensitive_call_names[name]
-        return written, changes_type
+            if name in self.sensitive_call_effects:
+                effect = effect | self.sensitive_call_effects[name]
+        return written, effect
 
     def apply_decorator_effects(self, decorators: Sequence[ast.expr]) -> None:
         """Apply known bare decorator calls after eager definition evaluation."""
@@ -1600,35 +1748,34 @@ class PydanticReceivers(ast.NodeVisitor):
                 self.apply_call_effects(
                     self.env,
                     self.binding_call_names.get(name, set()),
-                    self.sensitive_call_names.get(name),
+                    self.sensitive_call_effects.get(name, ReceiverEffect.NONE),
                 )
 
     @contextmanager
     def call_effect_scope(self, nodes: Iterable[ast.AST]) -> Iterator[None]:
         """Keep eager may-effects visible to captures made in this scope."""
         previous_rebound = self.rebound
-        previous_changes = self.capture_call_changes_type
-        written, changes_type = self.call_effects(nodes)
+        previous_changes = self.capture_call_effect
+        written, effect = self.call_effects(nodes)
         self.rebound = self.rebound | written
-        if changes_type is not None:
-            self.capture_call_changes_type = bool(previous_changes) or changes_type
+        if effect:
+            self.capture_call_effect = previous_changes | effect
         try:
             yield
         finally:
             self.rebound = previous_rebound
-            self.capture_call_changes_type = previous_changes
+            self.capture_call_effect = previous_changes
 
     @staticmethod
     def apply_call_effects(
-        env: Dict[str, ReceiverBinding], written: Set[str], changes_type: Optional[bool]
+        env: Dict[str, ReceiverBinding], written: Set[str], effect: ReceiverEffect
     ) -> None:
         """Forfeit affected proofs without confusing rebinding with mutation."""
         for name in written:
             env[name] = UNKNOWN_RECEIVER
-        if changes_type is not None:
+        if effect:
             for name, value in list(env.items()):
-                if value.kind == "plain" or (changes_type and value.kind == "model"):
-                    env[name] = UNKNOWN_RECEIVER
+                env[name] = receiver_effect(value, effect)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
@@ -1668,17 +1815,17 @@ class PydanticReceivers(ast.NodeVisitor):
             for leaf in receiver_target_leaves(target):
                 mutation = receiver_target_mutation(leaf)
                 if mutation:
-                    name, target_changes_type = mutation
-                    mutations[name] = mutations.get(name, False) or target_changes_type
-        _, call_changes_type = self.call_effects(nodes)
-        if (
-            binding.kind == "plain" and (mutations or call_changes_type is not None)
-        ) or (
-            binding.kind == "model"
-            and (any(mutations.values()) or call_changes_type is True)
-        ):
-            return UNKNOWN_RECEIVER
-        return binding
+                    name, target_effect = mutation
+                    mutations[name] = (
+                        mutations.get(name, ReceiverEffect.NONE) | target_effect
+                    )
+        _, call_effect = self.call_effects(nodes)
+        for name, effect in list(mutations.items()):
+            if self.env.get(name, UNKNOWN_RECEIVER).kind == "unknown":
+                mutations[name] = receiver_unresolved_effect(effect)
+        return receiver_effect(
+            binding, receiver_combined_effects(mutations.values()) | call_effect
+        )
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self.visit(node.value)
@@ -1687,7 +1834,7 @@ class PydanticReceivers(ast.NodeVisitor):
             for leaf in receiver_target_leaves(target):
                 self.visit(leaf)
                 binding = self.revalidate_binding(binding, [leaf], target=leaf)
-                self.invalidate_target(leaf)
+                self.invalidate_target(leaf, node.value)
                 if isinstance(leaf, ast.Name):
                     self.env[leaf.id] = (
                         binding if isinstance(target, ast.Name) else UNKNOWN_RECEIVER
@@ -1704,9 +1851,11 @@ class PydanticReceivers(ast.NodeVisitor):
         if binding == UNKNOWN_RECEIVER:
             binding = self.value(node.annotation)
             if binding.kind in {"model", "plain"}:
-                binding = replace(binding, is_instance=True)
+                binding = receiver_effect(
+                    replace(binding, is_instance=True), ReceiverEffect.NONE
+                )
         binding = self.revalidate_binding(binding, [node.target], target=node.target)
-        self.invalidate_target(node.target)
+        self.invalidate_target(node.target, node.value)
         if isinstance(node.target, ast.Name):
             self.env[node.target.id] = binding
         self.visit(node.annotation)
@@ -1718,49 +1867,58 @@ class PydanticReceivers(ast.NodeVisitor):
 
     @staticmethod
     def invalidate_binding(
-        env: Dict[str, ReceiverBinding], name: str, changes_type: bool
+        env: Dict[str, ReceiverBinding], name: str, effect: ReceiverEffect
     ) -> None:
         binding = env.get(name, UNKNOWN_RECEIVER)
+        if binding.kind == "unknown":
+            effect = receiver_unresolved_effect(effect)
         for candidate, value in list(env.items()):
-            if value.kind == "model" and not changes_type:
-                continue
             if (
                 candidate == name
                 or (binding.identity and binding.identity in value.dependencies)
                 or (
                     binding.kind == "unknown"
-                    and (
-                        value.kind == "plain"
-                        or (changes_type and value.kind == "model")
-                    )
+                    and value.kind in {"plain", "model", "data-hook"}
                 )
             ):
-                env[candidate] = UNKNOWN_RECEIVER
+                env[candidate] = (
+                    UNKNOWN_RECEIVER
+                    if value.kind == "module" and effect & ReceiverEffect.TYPE
+                    else receiver_effect(value, effect)
+                )
 
-    def invalidate_target(self, target: ast.AST) -> None:
+    def invalidate_target(
+        self, target: ast.AST, assigned: Optional[ast.AST] = None
+    ) -> None:
         for leaf in receiver_target_leaves(target):
             mutation = receiver_target_mutation(leaf)
             if mutation:
+                if (
+                    isinstance(leaf, ast.Attribute)
+                    and leaf.attr == "__init_subclass__"
+                    and isinstance(assigned, ast.Call)
+                    and isinstance(assigned.func, ast.Name)
+                    and assigned.func.id == "classmethod"
+                    and "classmethod" not in self.env
+                    and len(assigned.args) == 1
+                    and not assigned.keywords
+                    and self.value(assigned.args[0]).kind == "data-hook"
+                ):
+                    mutation = (mutation[0], ReceiverEffect.NAMESPACE)
                 self.invalidate_binding(self.env, *mutation)
 
     def stable_binding(
         self, binding: ReceiverBinding, outer: Mapping[str, ReceiverBinding]
     ) -> ReceiverBinding:
-        if self.capture_call_changes_type is not None and (
-            binding.kind == "plain"
-            or (self.capture_call_changes_type and binding.kind == "model")
-        ):
-            return UNKNOWN_RECEIVER
-        for name, changes_type in self.mutated.items():
-            if binding.kind == "model" and not changes_type:
-                continue
+        binding = receiver_effect(binding, self.capture_call_effect)
+        for name, effect in self.mutated.items():
             changed = outer.get(name, UNKNOWN_RECEIVER)
-            if changed.kind == "unknown" and (
-                binding.kind == "plain" or (changes_type and binding.kind == "model")
+            if changed.kind == "unknown":
+                effect = receiver_unresolved_effect(effect)
+            if changed.kind == "unknown" or (
+                changed.identity and changed.identity in binding.dependencies
             ):
-                return UNKNOWN_RECEIVER
-            if changed.identity and changed.identity in binding.dependencies:
-                return UNKNOWN_RECEIVER
+                binding = receiver_effect(binding, effect)
         return binding
 
     def plain_class_methods(
@@ -1809,16 +1967,20 @@ class PydanticReceivers(ast.NodeVisitor):
 
     @staticmethod
     def class_mutation_barrier(
-        env: Dict[str, ReceiverBinding], mutations: Mapping[str, bool]
+        env: Dict[str, ReceiverBinding], mutations: Mapping[str, ReceiverEffect]
     ) -> None:
         """Share immediate class effects with enclosing and comprehension views."""
         if mutations:
             for name, value in list(env.items()):
                 if value.kind == "plain":
                     env[name] = UNKNOWN_RECEIVER
-            for name, changes_type in mutations.items():
-                if changes_type:
-                    PydanticReceivers.invalidate_binding(env, name, True)
+        for name, effect in mutations.items():
+            # Immediate class suites can mutate an outer alias; keep the existing
+            # conservative namespace barrier, but operation flags retain ancestry.
+            if effect & ReceiverEffect.NAMESPACE:
+                PydanticReceivers.apply_call_effects(env, set(), effect)
+            else:
+                PydanticReceivers.invalidate_binding(env, name, effect)
 
     def capture_class_base(self, base: ast.AST) -> ReceiverBinding:
         """Capture a supported base before its own index changes owner bindings."""
@@ -1833,7 +1995,9 @@ class PydanticReceivers(ast.NodeVisitor):
         owner = self.revalidate_binding(owner, [node.slice])
         self.subscript_bindings[node] = (
             owner
-            if owner.kind == "model" and not owner.is_instance
+            if owner.kind == "model"
+            and not owner.is_instance
+            and not owner.opaque & ReceiverOperation.CLASS_SUBSCRIPT
             else UNKNOWN_RECEIVER
         )
 
@@ -1879,6 +2043,7 @@ class PydanticReceivers(ast.NodeVisitor):
             or uncertain_keywords
             or dynamic
             or unsupported_hook
+            or any(base.opaque & ReceiverOperation.SUBCLASS for base in bases)
             or (not model_base and len(bases) > 1)
             or (not model_base and not self.plain_initializer_supported(node))
         ):
@@ -1896,18 +2061,38 @@ class PydanticReceivers(ast.NodeVisitor):
                 identity,
                 dependencies,
             )
+            opaque = ReceiverOperation.NONE
+            for parent_binding in bases:
+                opaque |= parent_binding.opaque
+            for child in node.body:
+                names = receiver_bound_names(child)
+                if names & {"__setattr__", "__delattr__"}:
+                    opaque |= ReceiverOperation.INSTANCE_ACCESS
+                if "__setattr__" in names:
+                    opaque |= ReceiverOperation.CONSTRUCT
+                if "__class_getitem__" in names:
+                    opaque |= ReceiverOperation.CLASS_SUBSCRIPT
+                if "__init__" in names and not self.plain_initializer_supported(node):
+                    opaque |= ReceiverOperation.CONSTRUCT
+                if "__init_subclass__" in names:
+                    # A data-only hook is supported; opaque calls or namespace
+                    # writes can change what a future subclass means.
+                    supported = receiver_literal_data_hook(child)
+                    if not supported:
+                        opaque |= ReceiverOperation.SUBCLASS
+            binding = replace(binding, opaque=opaque)
         else:
             binding = UNKNOWN_RECEIVER
         previous = self.class_binding
         previous_outer = self.class_outer
         previous_comprehension_outer = self.class_comprehension_outer
         mutations = receiver_mutated_names(node.body, include_class_bodies=True)
-        written, changes_type = self.call_effects(node.body)
+        written, effect = self.call_effects(node.body)
         self.class_binding = binding
         self.class_outer = dict(method_outer)
         self.class_comprehension_outer = dict(body_outer)
         self.class_mutation_barrier(self.class_comprehension_outer, mutations)
-        self.apply_call_effects(self.class_comprehension_outer, written, changes_type)
+        self.apply_call_effects(self.class_comprehension_outer, written, effect)
         if not nested:
             self.class_outer[node.name] = binding
         self.scoped(node.body, dict(body_outer))
@@ -1915,8 +2100,8 @@ class PydanticReceivers(ast.NodeVisitor):
         self.class_outer = previous_outer
         self.class_comprehension_outer = previous_comprehension_outer
         self.class_mutation_barrier(self.env, mutations)
-        self.apply_call_effects(self.env, written, changes_type)
-        if (mutations or changes_type is not None) and binding.kind == "plain":
+        self.apply_call_effects(self.env, written, effect)
+        if (mutations or effect) and binding.kind == "plain":
             binding = UNKNOWN_RECEIVER
         self.apply_decorator_effects(node.decorator_list)
         self.env[node.name] = binding
@@ -1934,9 +2119,9 @@ class PydanticReceivers(ast.NodeVisitor):
         local = dict(outer)
         if self.has_star_import:
             local = {name: UNKNOWN_RECEIVER for name in local}
-        self.apply_call_effects(local, set(), self.capture_call_changes_type)
-        for name, changes_type in self.mutated.items():
-            self.invalidate_binding(local, name, changes_type)
+        self.apply_call_effects(local, set(), self.capture_call_effect)
+        for name, effect in self.mutated.items():
+            self.invalidate_binding(local, name, effect)
         for name in self.rebound:
             local[name] = UNKNOWN_RECEIVER
         return outer, local
@@ -1965,7 +2150,9 @@ class PydanticReceivers(ast.NodeVisitor):
         for argument in args:
             annotation = self.stable_binding(self.value(argument.annotation), outer)
             local[argument.arg] = (
-                replace(annotation, is_instance=True)
+                receiver_effect(
+                    replace(annotation, is_instance=True), ReceiverEffect.NONE
+                )
                 if annotation.kind in {"model", "plain"}
                 else annotation
             )
@@ -1989,7 +2176,9 @@ class PydanticReceivers(ast.NodeVisitor):
                 for d in node.decorator_list
             )
             local[args[0].arg] = (
-                replace(binding, is_instance=not class_method)
+                receiver_effect(
+                    replace(binding, is_instance=not class_method), ReceiverEffect.NONE
+                )
                 if binding.kind in {"model", "plain"}
                 else binding
             )
@@ -2002,14 +2191,21 @@ class PydanticReceivers(ast.NodeVisitor):
             node.body, formal_names
         )
         self.mutated = dict(self.mutated)
-        for name, changes_type in receiver_mutated_names(node.body).items():
-            self.mutated[name] = self.mutated.get(name, False) or changes_type
+        for name, effect in receiver_mutated_names(node.body).items():
+            self.mutated[name] = self.mutated.get(name, ReceiverEffect.NONE) | effect
         self.scoped(node.body, local)
         self.class_binding = previous
         self.rebound = previous_rebound
         self.mutated = previous_mutated
         self.apply_decorator_effects(node.decorator_list)
-        self.env[node.name] = UNKNOWN_RECEIVER
+        identity = f"data-hook:{node.lineno}:{node.name}"
+        self.env[node.name] = (
+            ReceiverBinding(
+                "data-hook", identity=identity, dependencies=frozenset({identity})
+            )
+            if receiver_literal_data_hook(node)
+            else UNKNOWN_RECEIVER
+        )
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
@@ -2042,13 +2238,11 @@ class PydanticReceivers(ast.NodeVisitor):
         for call in current_callees.keys() | self.call_callees.keys():
             left = current_callees.get(call, UNKNOWN_RECEIVER)
             right = self.call_callees.get(call, UNKNOWN_RECEIVER)
-            self.call_callees[call] = left if left == right else UNKNOWN_RECEIVER
+            self.call_callees[call] = receiver_join(left, right)
         for subscript in current_subscripts.keys() | self.subscript_bindings.keys():
             left = current_subscripts.get(subscript, UNKNOWN_RECEIVER)
             right = self.subscript_bindings.get(subscript, UNKNOWN_RECEIVER)
-            self.subscript_bindings[subscript] = (
-                left if left == right else UNKNOWN_RECEIVER
-            )
+            self.subscript_bindings[subscript] = receiver_join(left, right)
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         for default in [*node.args.defaults, *node.args.kw_defaults]:
@@ -2073,8 +2267,8 @@ class PydanticReceivers(ast.NodeVisitor):
             [node.body], formal_names
         )
         self.mutated = dict(self.mutated)
-        for name, changes_type in receiver_mutated_names([node.body]).items():
-            self.mutated[name] = self.mutated.get(name, False) or changes_type
+        for name, effect in receiver_mutated_names([node.body]).items():
+            self.mutated[name] = self.mutated.get(name, ReceiverEffect.NONE) | effect
         self.scoped([node.body], local)
         self.class_binding = previous_class
         self.rebound = previous_rebound
@@ -2087,7 +2281,7 @@ class PydanticReceivers(ast.NodeVisitor):
         if generators:
             self.visit(generators[0].iter)
         body = receiver_comprehension_body(node)
-        written, changes_type = self.call_effects(body)
+        written, effect = self.call_effects(body)
         mutations = receiver_mutated_names([node])
         local = dict(previous)
         with self.call_effect_scope(body):
@@ -2100,9 +2294,9 @@ class PydanticReceivers(ast.NodeVisitor):
                 if deferred:
                     local = self.deferred_bindings(self.class_comprehension_outer)[1]
             self.class_binding = None
-            self.apply_call_effects(local, written, changes_type)
-            for name, mutates_type in mutations.items():
-                self.invalidate_binding(local, name, mutates_type)
+            self.apply_call_effects(local, written, effect)
+            for name, mutation_effect in mutations.items():
+                self.invalidate_binding(local, name, mutation_effect)
             for part in body:
                 for name in receiver_walrus_names(part):
                     if local.get(name, UNKNOWN_RECEIVER).kind == "plain":
@@ -2128,9 +2322,9 @@ class PydanticReceivers(ast.NodeVisitor):
             before = previous.get(name, UNKNOWN_RECEIVER)
             after = local.get(name, UNKNOWN_RECEIVER)
             self.env[name] = before if before == after else UNKNOWN_RECEIVER
-        self.apply_call_effects(self.env, written, changes_type)
-        for name, mutates_type in mutations.items():
-            self.invalidate_binding(self.env, name, mutates_type)
+        self.apply_call_effects(self.env, written, effect)
+        for name, mutation_effect in mutations.items():
+            self.invalidate_binding(self.env, name, mutation_effect)
 
     visit_ListComp = comprehension
     visit_SetComp = comprehension
@@ -2159,16 +2353,7 @@ class PydanticReceivers(ast.NodeVisitor):
         for name in set(left) | set(right):
             one = left.get(name, UNKNOWN_RECEIVER)
             two = right.get(name, UNKNOWN_RECEIVER)
-            if one == two:
-                self.env[name] = one
-            elif one.kind in {"model", "plain"} and replace(
-                one, is_instance=False
-            ) == replace(two, is_instance=False):
-                self.env[name] = replace(
-                    one, is_instance=one.is_instance or two.is_instance
-                )
-            else:
-                self.env[name] = UNKNOWN_RECEIVER
+            self.env[name] = receiver_join(one, two)
 
     def visit_If(self, node: ast.If) -> None:
         self.visit(node.test)
@@ -2214,12 +2399,12 @@ class PydanticReceivers(ast.NodeVisitor):
         base = dict(self.env)
         assigned = receiver_bound_names(node)
         mutations = receiver_mutated_names([node])
-        written, call_changes_type = self.call_effects([node])
-        self.apply_call_effects(base, written, call_changes_type)
+        written, call_effect = self.call_effects([node])
+        self.apply_call_effects(base, written, call_effect)
         for name in assigned:
             base[name] = UNKNOWN_RECEIVER
-        for name, mutates_type in mutations.items():
-            self.invalidate_binding(base, name, mutates_type)
+        for name, mutation_effect in mutations.items():
+            self.invalidate_binding(base, name, mutation_effect)
         if isinstance(node, ast.While):
             initial_model = {
                 key for key, kinds in self.calls.items() if kinds == {"model"}
@@ -2239,9 +2424,9 @@ class PydanticReceivers(ast.NodeVisitor):
                 self.scoped([item], dict(base))
         for name in assigned:
             self.env[name] = UNKNOWN_RECEIVER
-        for name, changes_type in mutations.items():
-            self.invalidate_binding(self.env, name, changes_type)
-        self.apply_call_effects(self.env, written, call_changes_type)
+        for name, effect in mutations.items():
+            self.invalidate_binding(self.env, name, effect)
+        self.apply_call_effects(self.env, written, call_effect)
 
     visit_For = conservative_control
     visit_AsyncFor = conservative_control
@@ -2269,7 +2454,7 @@ class PydanticReceivers(ast.NodeVisitor):
             and function.attr in LEGACY_MODEL_METHODS
         ):
             binding = self.value(function.value)
-            kind = binding.kind
+            kind = binding.kind if binding.kind in {"model", "plain"} else "unknown"
             if kind == "plain" and function.attr not in binding.methods:
                 kind = "unknown"
             segment = ast.get_source_segment(self.source, node)
@@ -2280,8 +2465,8 @@ class PydanticReceivers(ast.NodeVisitor):
         for argument in arguments:
             self.visit(argument)
         self.call_callees[node] = self.revalidate_binding(callee, arguments)
-        written, changes_type = self.call_effects([node])
-        self.apply_call_effects(self.env, written, changes_type)
+        written, effect = self.call_effects([node])
+        self.apply_call_effects(self.env, written, effect)
 
 
 class PydanticReceiverCache:

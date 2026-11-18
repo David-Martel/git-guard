@@ -79,11 +79,61 @@ plain initializers with sensitive writes or opaque calls forfeit plain proof;
 simple data-only initialization and known model configuration retain precision.
 Aliased or decorated plain initializers remain unsupported. Plain bases with
 `__init_subclass__` hooks cannot establish inherited method ownership; an already
-known model base retains its model evidence.
+known model class retains its direct API evidence. Unsupported subclass hooks
+make future subclass creation uncertain; data-only known-model hooks retain
+the existing supported boundary.
 Explicit later `__init__` and `__init_subclass__` namespace writes also revoke
 plain construction/subclass proof. They preserve direct known-model ancestry;
 the existing `__new__` allocation/type barrier remains separate and unchanged.
 This does not infer arbitrary initializer, factory or MRO effects.
+
+Receiver evidence now carries four finite opaque-operation flags: construction,
+instance access, class subscription and subclass creation. Type changes,
+method-namespace changes and operation effects merge explicitly; a namespace
+change is a real event, distinct from no effect. Aliases, deferred captures and
+one-level local call summaries share those categories. A known class's direct
+model ancestry is separate from the result of an unsupported operation.
+
+The [Python data model](https://docs.python.org/3.15/reference/datamodel.html#customizing-attribute-access)
+defines implicit setter and deleter dispatch. Visible or later replaced
+`__setattr__`/`__delattr__` hooks therefore revoke plain instance-access proof.
+Custom defined, assigned, inherited or later replaced `__class_getitem__`
+hooks make subscription results unresolved; the analyzer does not infer their
+returns. [Metaclass subscription takes precedence](https://docs.python.org/3.15/reference/datamodel.html#class-getitem-versus-getitem).
+Unresolved shared-metaclass call/subscription changes conservatively mark the
+corresponding projections. An unresolved initializer owner may be a shared
+metaclass, so its effects also cover future subclass creation; a known ordinary
+class initializer retains construction-only treatment. Control-flow joins union
+opaque operations only when kind, identity and ownership evidence match;
+different ancestry remains unresolved. A positively resolved, unshadowed
+`classmethod` callback may preserve known model subclass ownership when its local
+body only writes literal or name data to its first argument's ordinary fields.
+Unsupported targets, protocol-bearing RHS expressions, calls, decorators and
+other statements remain uncertain. This is a small structural proof, not a
+purity or arbitrary return analysis. Earlier opaque metaclass/type effects still
+win. Internal callback evidence never establishes a plain API receiver.
+Callback bindings carry identity dependencies through the existing Name-alias
+machinery. Explicit function `__code__` writes expire their structural evidence,
+including deferred and known local-call effects. An unresolved mutation owner
+uses the same conservative fallback for callback evidence as for other proofs;
+it does not infer the owner through a container or arbitrary return. A code read or an uncalled
+mutator does not execute that write. The namespace event leaves ordinary known
+model ancestry intact; it does not infer the replacement function's behavior.
+Exact type changes invalidate a trusted module namespace; unrelated module data
+writes retain their existing treatment. Immediate class-suite mutation retains
+the original barrier across all enclosing plain proofs when the true nested
+owner cannot be established. Explicit metaclasses, non-type MRO proxies and
+instance-subscription results remain unsupported. The existing `__new__`
+allocation/type barrier stays intact. This is not metaclass identity or MRO
+inference, and it does not execute hook bodies.
+
+Direct model APIs, stock generic model specialization and ordinary data writes
+retain their separate positive controls. Earlier owner-capture fixtures used a
+custom hook returning `cls`; those fixtures now use stock `Generic[T]` with
+valid type indices, retaining their mutation/evaluation triggers and every
+assertion kind. Their old/new sources and real Pydantic specialization/receiver
+observations are preserved separately; unsupported instance subscription and
+deliberate type-mutation controls are explicitly distinguished from execution.
 
 Annotations without assigned values preserve existing runtime bindings and
 method declarations, including the mutation and capture-event summaries.
@@ -236,6 +286,9 @@ retained with its result; it did not execute the finding or grant admission.
 Source 23bca8f6 / metadata fa630dd7 and its 1,191 checks remain source-specific
 history after formal-binding capture and later initializer-hook findings.
 Their source/metadata KEEP receipts do not admit this corrected successor.
+Source 2a857b53 / metadata c437d6cc and its 1,226 checks remain held after
+implicit write/delete hooks and custom subscription ownership findings. Their
+source-only KEEP receipts do not admit the operation-projection successor.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted
