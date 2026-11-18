@@ -1454,6 +1454,7 @@ class PydanticReceivers(ast.NodeVisitor):
         self.rebound: Set[str] = set()
         self.mutated: Dict[str, bool] = {}
         self.calls: Dict[Tuple[int, int, str], Set[str]] = {}
+        self.call_callees: Dict[ast.Call, ReceiverBinding] = {}
 
     def visit_Module(self, node: ast.Module) -> None:
         for child in ast.walk(node):
@@ -1494,13 +1495,19 @@ class PydanticReceivers(ast.NodeVisitor):
             elif namespace == PYDANTIC_SETTINGS_MODULE and node.attr == "BaseSettings":
                 return MODEL_RECEIVER
         if isinstance(node, ast.Call):
-            binding = self.value(node.func)
+            binding = self.call_callees.get(node)
+            if binding is None:
+                binding = self.value(node.func)
             if binding.kind in {"model", "plain"} and not binding.is_instance:
                 return replace(binding, is_instance=True)
             return UNKNOWN_RECEIVER
         if isinstance(node, ast.Subscript):
             binding = self.value(node.value)
-            return binding if binding.kind == "model" else UNKNOWN_RECEIVER
+            return (
+                binding
+                if binding.kind == "model" and not binding.is_instance
+                else UNKNOWN_RECEIVER
+            )
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             try:
                 return self.value(ast.parse(node.value, mode="eval").body)
@@ -1605,6 +1612,8 @@ class PydanticReceivers(ast.NodeVisitor):
             return
         if binding == UNKNOWN_RECEIVER:
             binding = self.value(node.annotation)
+            if binding.kind in {"model", "plain"}:
+                binding = replace(binding, is_instance=True)
         self.invalidate_target(node.target)
         for name in receiver_bound_names(node.target):
             self.env[name] = binding
@@ -2035,6 +2044,15 @@ class PydanticReceivers(ast.NodeVisitor):
             base[name] = UNKNOWN_RECEIVER
         for name, mutates_type in mutations.items():
             self.invalidate_binding(base, name, mutates_type)
+        if isinstance(node, ast.While):
+            initial_model = {
+                key for key, kinds in self.calls.items() if kinds == {"model"}
+            }
+            self.scoped([node.test], dict(base))
+            # The initial known-model header remains a proven violation even
+            # when later iterations have uncertain ownership.
+            for key in initial_model:
+                self.calls[key] = {"model"}
         for field_name, item in ast.iter_fields(node):
             if field_name in headers:
                 continue
@@ -2058,9 +2076,18 @@ class PydanticReceivers(ast.NodeVisitor):
     visit_TryStar = conservative_control
     visit_Match = conservative_control
 
+    def visit_withitem(self, node: ast.withitem) -> None:
+        self.visit(node.context_expr)
+        if node.optional_vars is not None:
+            self.visit(node.optional_vars)
+            self.invalidate_target(node.optional_vars)
+            for name in receiver_bound_names(node.optional_vars):
+                self.env[name] = UNKNOWN_RECEIVER
+
     def visit_Call(self, node: ast.Call) -> None:
         function = node.func
         self.visit(function)
+        callee = self.value(function)
         if (
             isinstance(function, ast.Attribute)
             and function.attr in LEGACY_MODEL_METHODS
@@ -2073,8 +2100,20 @@ class PydanticReceivers(ast.NodeVisitor):
             if segment is not None:
                 key = (node.lineno, getattr(node, "end_lineno", node.lineno), segment)
                 self.calls.setdefault(key, set()).add(kind)
-        for argument in [*node.args, *node.keywords]:
+        arguments = [*node.args, *node.keywords]
+        for argument in arguments:
             self.visit(argument)
+        argument_mutations = receiver_mutated_names(arguments)
+        _, argument_changes_type = self.call_effects(arguments)
+        if (
+            callee.kind == "plain"
+            and (argument_mutations or argument_changes_type is not None)
+        ) or (
+            callee.kind == "model"
+            and (any(argument_mutations.values()) or argument_changes_type is True)
+        ):
+            callee = UNKNOWN_RECEIVER
+        self.call_callees[node] = callee
         written, changes_type = self.call_effects([node])
         self.apply_call_effects(self.env, written, changes_type)
 

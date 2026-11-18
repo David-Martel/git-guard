@@ -545,6 +545,8 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_opaque_target_contexts
   _qm_receiver_initializer_boundary_contexts
   _qm_receiver_container_evaluation_contexts
+  _qm_receiver_subscript_return_contexts
+  _qm_receiver_control_flow_contexts
 }
 
 # Protects: annotations and class/import namespaces cannot invent plain proof.
@@ -839,6 +841,57 @@ _qm_receiver_container_evaluation_contexts() {
     "${_qmr_types}receiver = Model\nresult = {0: (receiver := Parser()), receiver.parse_file('notes.md'): 1}\n" 0 plain
   _qm_receiver_case 'dictionary unpacking precedes later key' \
     "${_qmr_types}receiver = Parser()\nresult = {**{0: (receiver := Model)}, receiver.parse_file('m.json'): 1}\n" 1 model
+}
+
+# Protects: model instance lookup returns do not inherit model ownership.
+# Detects: unrelated lookup results falsely blocked as deprecated model calls.
+# Needs: real staged scanner; generic-class/model/plain direct-call counterparts.
+# Breadcrumb: hooks/common/mandate_scan.py PydanticReceivers.value Subscript.
+_qm_receiver_subscript_return_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    @classmethod\n    def parse_file(cls, path):\n        return "Parser"\n'
+  _qm_receiver_case 'model instance lookup return is unresolved' \
+    "${_qmr_types}class Holder(BaseModel):\n    def __getitem__(self, key):\n        return Parser\nresult = Holder()[0].parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'plain instance lookup return is unresolved' \
+    "${_qmr_types}class Holder:\n    def __getitem__(self, key):\n        return Model\n    def parse_file(self, path):\n        return path\nHolder()[0].parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'annotated model instance lookup return is unresolved' \
+    "${_qmr_types}class Holder(BaseModel):\n    def __getitem__(self, key):\n        return Parser\ndef load(holder: Holder):\n    return holder[0].parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'known generic model class subscription remains model' \
+    "${_qmr_types}from typing import Generic, TypeVar\nT = TypeVar('T')\nclass GenericModel(BaseModel, Generic[T]):\n    pass\nGenericModel[int].parse_file('x')\n" 1 model
+  _qm_receiver_case 'direct model instance retains known ancestry' \
+    "${_qmr_types}Model().parse_file('x')\n" 1 model
+  _qm_receiver_case 'direct plain parser remains plain' \
+    "${_qmr_types}Parser().parse_file('x')\n" 0 plain
+}
+
+# Protects: captured callees, repeated headers and sequential binding targets.
+# Detects: name-rebound constructors, stale loop/with proof and annotation classes.
+# Needs: staged scanner; first-model, reverse-callee and ordinary-data controls.
+# Breadcrumb: hooks/common/mandate_scan.py visit_Call/conservative_control/AnnAssign.
+_qm_receiver_control_flow_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def __init__(self, marker=None):\n        self.marker = marker\n    def parse_file(self, path):\n        return path\n'
+  _qmr_factory='class Factory:\n    def __call__(self):\n        return Model\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'constructor preserves captured model callee' \
+    "${_qmr_types}receiver = Model\nreceiver(marker=(receiver := Parser)).parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'constructor preserves captured plain callee' \
+    "${_qmr_types}receiver = Parser\nreceiver(marker=(receiver := Model)).parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'while header accounts for next iteration rebind' \
+    "${_qmr_types}receiver = Parser()\nwhile receiver.parse_file('m.json'):\n    receiver = Model\n" 0 unknown
+  _qm_receiver_case 'while initial known model survives later parser rebind' \
+    "${_qmr_types}receiver = Model\nwhile receiver.parse_file('m.json'):\n    receiver = Parser()\n" 1 model
+  _qm_receiver_case 'while known model header survives ordinary data' \
+    "${_qmr_types}while Model.parse_file('m.json'):\n    Model.label = 'data'\n" 1 model
+  _qm_receiver_case 'while plain header survives ordinary data' \
+    "${_qmr_types}receiver = Parser()\nwhile receiver.parse_file('notes.md'):\n    receiver.label = 'data'\n" 0 plain
+  _qm_receiver_case 'later with item cannot use overwritten plain binding' \
+    "${_qmr_types}from contextlib import nullcontext\nreceiver = Parser()\nwith nullcontext(Model) as receiver, nullcontext(receiver.parse_file('m.json')):\n    pass\n" 0 unknown
+  _qm_receiver_case 'unrelated with target preserves plain receiver' \
+    "${_qmr_types}from contextlib import nullcontext\nreceiver = Parser()\nwith nullcontext(Model) as other, nullcontext(receiver.parse_file('notes.md')):\n    pass\n" 0 plain
+  _qm_receiver_case 'annotated callable instance return is unresolved' \
+    "${_qmr_types}${_qmr_factory}factory: Factory = make_factory()\nfactory().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'annotated plain direct method remains plain' \
+    "${_qmr_types}${_qmr_factory}factory: Factory = make_factory()\nfactory.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'annotated model direct method remains model' \
+    "${_qmr_types}model: Model = make_model()\nmodel.parse_file('m.json')\n" 1 model
 }
 
 t_case_quality_mandate() {

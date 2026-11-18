@@ -82,9 +82,18 @@ an instance; calling that instance has an unresolved return type. Parameters and
 implicit `self` represent instances, while trusted builtin classmethods retain
 class evidence for `cls`. Ownership joins preserve known model membership when
 only the class/instance distinction differs. No callable return body is inferred.
+Subscription of a known model class retains model evidence; lookup on a model
+instance has an unresolved return type and cannot inherit that model ownership.
 The callee expression is visited once before recording method ownership, so
 effects in constructor arguments apply before the outer method lookup. Outer
 call arguments are visited afterwards, preserving lookup-before-argument order.
+Constructor evidence retains the callee selected before its arguments, while
+known argument method/type mutations still invalidate uncertain proof. Mere
+name rebinding does not change the class already selected. A while header is
+also checked with conservative later-iteration bindings; a known-model finding
+from its initial evaluation stays strong. Context-manager targets take effect
+before the next item, with unresolved returned ownership. Variable annotation
+fallbacks represent instances consistently with parameter annotations.
 
 Conditional expressions and short-circuit operations merge binding evidence;
 comprehension assignment expressions account for their outer bindings. Lambdas
@@ -135,6 +144,10 @@ initializer and subclass-hook failures. Its source KEEP retains only its
 original review scope and does not admit this corrected successor.
 The intermediate 562709 source's 815 selected checks also remain held after
 the staged comprehension-target and dictionary-order failures.
+Source 8e76e12c / metadata 7ac5c1b5 and its 827 selected checks are held after
+the model-instance subscript false block. Its source KEEP remains historical.
+The intermediate FAE4F0F6 source's 843 checks are also held after constructor,
+loop-header, sequential context-target and annotation-instance findings.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted
