@@ -1794,13 +1794,26 @@ class PydanticReceivers(ast.NodeVisitor):
                 if changes_type:
                     PydanticReceivers.invalidate_binding(env, name, True)
 
+    def capture_class_base(self, base: ast.AST) -> ReceiverBinding:
+        """Capture a supported base before its own index changes owner bindings."""
+        if isinstance(base, ast.Subscript):
+            owner = self.capture_class_base(base.value)
+            self.visit(base.slice)
+            owner = self.revalidate_binding(owner, [base.slice])
+            return (
+                owner
+                if owner.kind == "model" and not owner.is_instance
+                else UNKNOWN_RECEIVER
+            )
+        self.visit(base)
+        return self.value(base)
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         for expression in node.decorator_list:
             self.visit(expression)
         captured_bases = []
         for base in node.bases:
-            self.visit(base)
-            captured_bases.append(self.value(base))
+            captured_bases.append(self.capture_class_base(base))
         keywords = [keyword.value for keyword in node.keywords]
         for expression in keywords:
             self.visit(expression)

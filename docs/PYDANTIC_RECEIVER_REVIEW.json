@@ -1,86 +1,86 @@
 {
   "schema_version": 1,
-  "source_commit": "proposed quoted/base successor to3288; actual signed localSourceA to be bound in metadataB",
+  "source_commit": "proposed inner-base successor to LOCALaa3; actualsignedsuccessorA to be boundinmetadataB",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
-    "hooks/common/mandate_scan.py": "6a842a6a1fbbdcd1bd05f7e135c09f02639dd56f2e1f80f2f6465c5d0496b63b",
+    "hooks/common/mandate_scan.py": "1b49bb02c7e80ad1ca75482de4562ed74ac75bcc0a6d2fe65b62b51dd0a25d5b",
     "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
     "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-    "tests/32-quality-mandate.t.sh": "c3b3dc0db8113c32746cd1f7110d5414b57ea4b909ef36501be142606ca0e892",
+    "tests/32-quality-mandate.t.sh": "c2d71cbcd414d94fdade6fa90168ae833a75e7dcb2a7e3beae76002b14d60130",
     "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
     "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
     "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
     "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-    "docs/PYDANTIC_RECEIVER_REVIEW.md": "e2495e4d42da1b645bcfb485c3ddb5b9a6d6696b92571edc2e9c612e266710ba"
+    "docs/PYDANTIC_RECEIVER_REVIEW.md": "3e9d1fc23dd073240a78dec5b0888ed9984af95da049f4aa4c6d729d54263681"
   },
   "author_evidence": {
-    "platform": "Windows dtm-p1gen9 / GitBash / CPython3.15.2",
-    "focused": "726 receiver assertions (137core+589contexts) pass withoutfailures/skips; separate229relatedfocus pass atfrozen source.",
-    "regression": "1060PASS/0FAIL/14existing rawrule skips acrossfourexisting hermeticcategories, allactualexits0; notwholerepo or linecoverage.",
-    "global_precommit": "Corrected actualglobalhook0 at frozen6A/C3B/E249. New helperwarning resolved by validatedevidence reuse, initial warninglog retained; existingnonblockingadvisories remain.",
-    "static_checks": "Current isolated Ruff E,F/format, defaultmypy andShellCheck all0.",
-    "linux": "Unverified newfinalhead; exactB native/docker CIrequired.",
-    "current_source_commit": "proposed quoted/base successor to3288",
-    "current_source_sha256": "6a842a6a1fbbdcd1bd05f7e135c09f02639dd56f2e1f80f2f6465c5d0496b63b",
-    "current_test_sha256": "c3b3dc0db8113c32746cd1f7110d5414b57ea4b909ef36501be142606ca0e892",
+    "platform": "Windowsdtm-p1gen9/GitBash/CPython3.15.2",
+    "focused": "755receiver assertions (137core+618contexts) pass0fail/0skip; separate258currentrelatedfocus passes.",
+    "regression": "1089PASS/0FAIL/14existingrawskips, four documentedcategories, allactualexits0; notwholerepo/linecoverage.",
+    "global_precommit": "Actualcurrentglobalhook0 atfrozen1B/C2D/3E; onlyexistingnonblockingadvisories, no suppression.",
+    "static_checks": "CurrentisolatedRuffE,F/format/defaultmypy/ShellCheck0.",
+    "linux": "Unqualifiednewfinalhead; exactBnative/DockerCIrequired.",
+    "current_source_commit": "proposedinner-base local successor toaa3",
+    "current_source_sha256": "1b49bb02c7e80ad1ca75482de4562ed74ac75bcc0a6d2fe65b62b51dd0a25d5b",
+    "current_test_sha256": "c2d71cbcd414d94fdade6fa90168ae833a75e7dcb2a7e3beae76002b14d60130",
     "qualification": {
-      "receipt": "git-guard-receiver-quoted-base-final-qualification.json",
-      "sha256": "eec8ccdefb1539ba280a430a5b245434fe2c7d8695c5137d8c6e664a1223dc27"
+      "receipt": "git-guard-receiver-inner-base-final-qualification.json",
+      "sha256": "58f227ebb7ee78deb578a0a480dc0e83fab33e006a0e01fc8676b16ad92e5be3"
     },
     "logs": {
       "quality": {
-        "receipt": "git-guard-receiver-quoted-base-final-quality.log",
+        "receipt": "git-guard-receiver-inner-base-final-quality.log",
         "sha256": "ba9223fb3afff97a4f1b28ee8c7dc47d1d0bbb61837745ee6d6f5fed66003d0a",
         "process_exit": 0
       },
       "core": {
-        "receipt": "git-guard-receiver-quoted-base-final-core.log",
+        "receipt": "git-guard-receiver-inner-base-final-core.log",
         "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
         "process_exit": 0
       },
       "contexts": {
-        "receipt": "git-guard-receiver-quoted-base-final-contexts.log",
-        "sha256": "21dde5948e1c5af07cbd65f06ac8757c342ca184e9bd57f073ac7071d73d06b7",
+        "receipt": "git-guard-receiver-inner-base-final-contexts.log",
+        "sha256": "1a2fbe05fdeeba939e99689dcfbb1dd6d1667cd7f710aa0830fdb37608794f75",
         "process_exit": 0
       },
       "rules": {
-        "receipt": "git-guard-receiver-quoted-base-final-rules.log",
+        "receipt": "git-guard-receiver-inner-base-final-rules.log",
         "sha256": "f646309e108562d3d1e8a74e8389a055ed9af3982677be2594884baa97972de7",
         "process_exit": 0
       },
       "ruff-format": {
         "exit": 0,
-        "receipt": "git-guard-receiver-quoted-base-final-ruff-format.log",
+        "receipt": "git-guard-receiver-inner-base-final-ruff-format.log",
         "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3"
       },
       "ruff-check": {
         "exit": 0,
-        "receipt": "git-guard-receiver-quoted-base-final-ruff-check.log",
+        "receipt": "git-guard-receiver-inner-base-final-ruff-check.log",
         "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
       },
       "mypy": {
         "exit": 0,
-        "receipt": "git-guard-receiver-quoted-base-final-mypy.log",
+        "receipt": "git-guard-receiver-inner-base-final-mypy.log",
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       "shellcheck": {
         "exit": 0,
-        "receipt": "git-guard-receiver-quoted-base-final-shellcheck.log",
+        "receipt": "git-guard-receiver-inner-base-final-shellcheck.log",
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       "global_precommit": {
         "exit": 0,
-        "receipt": "git-guard-receiver-quoted-base-cleared-global-precommit.log",
-        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
-        "advisories": "Only existing nonblocking basedpyright/use-walrus remain; not globalwarningfree."
+        "receipt": "git-guard-receiver-inner-base-final-global-precommit.log",
+        "sha256": "4fff5b4ed34e5e5cccde44e664c42f0b6404b9f794ba60faa43d5fc9022137db",
+        "advisories": "Existing nonblocking basedpyright/use-walrus disclosed; no new advisory, notglobalwarningfree."
       },
       "focused_current": {
-        "passed": 229,
+        "passed": 258,
         "failed": 0,
         "skipped": 0,
         "exit": 0,
-        "receipt": "git-guard-receiver-quoted-base-final-focus.log",
-        "sha256": "5ef738d05dca6146d2a9b804347f637b407ead2d08aa16515667d2a1c5d02eca"
+        "receipt": "git-guard-receiver-inner-base-final-focus.log",
+        "sha256": "d70d6aca2498697358a8cc2c1e234777c10513ed2251372ecbbc5a141da1389f"
       }
     }
   },
@@ -89,15 +89,15 @@
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "scope": "Fresh9source context after quoted-root/base-snapshot changes; heldprevious reviews retained.",
+      "scope": "Freshactual9source context andcumulative3288delta afterown-indexsnapshotfix; no approval transferredfromLOCALaa3.",
       "disposition": "UNREVIEWED",
       "reviewer": ""
     },
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
-      "selector_sha256": "b1fe3768cc24ae82d7f6e510c6628f437dbc414edcd7f014bb6612e33c4ccf32",
-      "scope": "Fresh9source context after quoted-root/base-snapshot changes; heldprevious reviews retained.",
+      "selector_sha256": "dc8d78bf21cf49a1685699c7b07927ca7874cc2f3c8eeb546f53797b9f5f9121",
+      "scope": "Freshactual9source context andcumulative3288delta afterown-indexsnapshotfix; no approval transferredfromLOCALaa3.",
       "disposition": "UNREVIEWED",
       "reviewer": ""
     },
@@ -105,7 +105,7 @@
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "scope": "Fresh9source context after quoted-root/base-snapshot changes; heldprevious reviews retained.",
+      "scope": "Freshactual9source context andcumulative3288delta afterown-indexsnapshotfix; no approval transferredfromLOCALaa3.",
       "disposition": "UNREVIEWED",
       "reviewer": ""
     }
@@ -230,7 +230,7 @@
   },
   "independent_review": {
     "disposition": "UNREVIEWED",
-    "scope": "Freshactual9/3/2 review needed at signedlocalSourceA; old6DE/3288held underEAF8."
+    "scope": "Root70 candidatecontrols notfinal9/3/2sourceapproval. ActualsignedlocalSourceA successor+fullcumulative3288delta needreview, thenJSONB. LOCALaa3 neverapproved."
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -2157,7 +2157,7 @@
   "source_reviews": [
     {
       "source": "hooks/common/mandate_scan.py",
-      "source_sha256": "6a842a6a1fbbdcd1bd05f7e135c09f02639dd56f2e1f80f2f6465c5d0496b63b",
+      "source_sha256": "1b49bb02c7e80ad1ca75482de4562ed74ac75bcc0a6d2fe65b62b51dd0a25d5b",
       "disposition": "UNREVIEWED",
       "reviewer": ""
     },
@@ -2175,7 +2175,7 @@
     },
     {
       "source": "tests/32-quality-mandate.t.sh",
-      "source_sha256": "c3b3dc0db8113c32746cd1f7110d5414b57ea4b909ef36501be142606ca0e892",
+      "source_sha256": "c2d71cbcd414d94fdade6fa90168ae833a75e7dcb2a7e3beae76002b14d60130",
       "disposition": "UNREVIEWED",
       "reviewer": ""
     },
@@ -2205,7 +2205,7 @@
     },
     {
       "source": "docs/PYDANTIC_RECEIVER_REVIEW.md",
-      "source_sha256": "e2495e4d42da1b645bcfb485c3ddb5b9a6d6696b92571edc2e9c612e266710ba",
+      "source_sha256": "3e9d1fc23dd073240a78dec5b0888ed9984af95da049f4aa4c6d729d54263681",
       "disposition": "UNREVIEWED",
       "reviewer": ""
     }
@@ -3214,5 +3214,211 @@
   "quoted_base_successor_mapping": {
     "receipt": "git-guard-receiver-quoted-base-final-binding-map.json",
     "sha256": "2e5b2ba1a906cabe08ae07498fe882e12db26b0b50ff558cbe933474ae5c49d5"
+  },
+  "inner_base_predecessor": {
+    "source_commit": "proposed quoted/base successor to3288; actual signed localSourceA to be bound in metadataB",
+    "source_hashes": {
+      "hooks/common/mandate_scan.py": "6a842a6a1fbbdcd1bd05f7e135c09f02639dd56f2e1f80f2f6465c5d0496b63b",
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "tests/32-quality-mandate.t.sh": "c3b3dc0db8113c32746cd1f7110d5414b57ea4b909ef36501be142606ca0e892",
+      "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+      "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": "e2495e4d42da1b645bcfb485c3ddb5b9a6d6696b92571edc2e9c612e266710ba"
+    },
+    "rows": [
+      {
+        "selector": "t_case_pydantic_receiver_classification",
+        "source": "tests/32-quality-mandate.t.sh",
+        "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
+        "scope": "Fresh9source context after quoted-root/base-snapshot changes; heldprevious reviews retained.",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "selector": "t_case_pydantic_receiver_contexts",
+        "source": "tests/32-quality-mandate.t.sh",
+        "selector_sha256": "b1fe3768cc24ae82d7f6e510c6628f437dbc414edcd7f014bb6612e33c4ccf32",
+        "scope": "Fresh9source context after quoted-root/base-snapshot changes; heldprevious reviews retained.",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "selector": "t_case_rule_behaviour",
+        "source": "tests/27-rule-behaviour.t.sh",
+        "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
+        "scope": "Fresh9source context after quoted-root/base-snapshot changes; heldprevious reviews retained.",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      }
+    ],
+    "rule_reviews": [
+      {
+        "selector": "mandate-pydantic-v1",
+        "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
+        "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "scope": "Actual unchangedrulebytes retain knownModel strong/provenplain clear/unresolved warning; raw14skips explicit.",
+        "disposition": "UNREVIEWED",
+        "reviewer": "",
+        "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
+      },
+      {
+        "selector": "mandate-pydantic-v1-ambiguous",
+        "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+        "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "scope": "Actual unchangedrulebytes retain knownModel strong/provenplain clear/unresolved warning; raw14skips explicit.",
+        "disposition": "UNREVIEWED",
+        "reviewer": "",
+        "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
+      }
+    ],
+    "source_reviews": [
+      {
+        "source": "hooks/common/mandate_scan.py",
+        "source_sha256": "6a842a6a1fbbdcd1bd05f7e135c09f02639dd56f2e1f80f2f6465c5d0496b63b",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
+        "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+        "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "source": "tests/32-quality-mandate.t.sh",
+        "source_sha256": "c3b3dc0db8113c32746cd1f7110d5414b57ea4b909ef36501be142606ca0e892",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "source": "tests/27-rule-behaviour.t.sh",
+        "source_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "source": "tests/run.sh",
+        "source_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "source": "docs/QA_TOOLING.md",
+        "source_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "source": "docs/RULES.md",
+        "source_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      },
+      {
+        "source": "docs/PYDANTIC_RECEIVER_REVIEW.md",
+        "source_sha256": "e2495e4d42da1b645bcfb485c3ddb5b9a6d6696b92571edc2e9c612e266710ba",
+        "disposition": "UNREVIEWED",
+        "reviewer": ""
+      }
+    ],
+    "independent_review": {
+      "disposition": "UNREVIEWED",
+      "scope": "Freshactual9/3/2 review needed at signedlocalSourceA; old6DE/3288held underEAF8."
+    },
+    "author_evidence": {
+      "platform": "Windows dtm-p1gen9 / GitBash / CPython3.15.2",
+      "focused": "726 receiver assertions (137core+589contexts) pass withoutfailures/skips; separate229relatedfocus pass atfrozen source.",
+      "regression": "1060PASS/0FAIL/14existing rawrule skips acrossfourexisting hermeticcategories, allactualexits0; notwholerepo or linecoverage.",
+      "global_precommit": "Corrected actualglobalhook0 at frozen6A/C3B/E249. New helperwarning resolved by validatedevidence reuse, initial warninglog retained; existingnonblockingadvisories remain.",
+      "static_checks": "Current isolated Ruff E,F/format, defaultmypy andShellCheck all0.",
+      "linux": "Unverified newfinalhead; exactB native/docker CIrequired.",
+      "current_source_commit": "proposed quoted/base successor to3288",
+      "current_source_sha256": "6a842a6a1fbbdcd1bd05f7e135c09f02639dd56f2e1f80f2f6465c5d0496b63b",
+      "current_test_sha256": "c3b3dc0db8113c32746cd1f7110d5414b57ea4b909ef36501be142606ca0e892",
+      "qualification": {
+        "receipt": "git-guard-receiver-quoted-base-final-qualification.json",
+        "sha256": "eec8ccdefb1539ba280a430a5b245434fe2c7d8695c5137d8c6e664a1223dc27"
+      },
+      "logs": {
+        "quality": {
+          "receipt": "git-guard-receiver-quoted-base-final-quality.log",
+          "sha256": "ba9223fb3afff97a4f1b28ee8c7dc47d1d0bbb61837745ee6d6f5fed66003d0a",
+          "process_exit": 0
+        },
+        "core": {
+          "receipt": "git-guard-receiver-quoted-base-final-core.log",
+          "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
+          "process_exit": 0
+        },
+        "contexts": {
+          "receipt": "git-guard-receiver-quoted-base-final-contexts.log",
+          "sha256": "21dde5948e1c5af07cbd65f06ac8757c342ca184e9bd57f073ac7071d73d06b7",
+          "process_exit": 0
+        },
+        "rules": {
+          "receipt": "git-guard-receiver-quoted-base-final-rules.log",
+          "sha256": "f646309e108562d3d1e8a74e8389a055ed9af3982677be2594884baa97972de7",
+          "process_exit": 0
+        },
+        "ruff-format": {
+          "exit": 0,
+          "receipt": "git-guard-receiver-quoted-base-final-ruff-format.log",
+          "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3"
+        },
+        "ruff-check": {
+          "exit": 0,
+          "receipt": "git-guard-receiver-quoted-base-final-ruff-check.log",
+          "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
+        },
+        "mypy": {
+          "exit": 0,
+          "receipt": "git-guard-receiver-quoted-base-final-mypy.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "shellcheck": {
+          "exit": 0,
+          "receipt": "git-guard-receiver-quoted-base-final-shellcheck.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "global_precommit": {
+          "exit": 0,
+          "receipt": "git-guard-receiver-quoted-base-cleared-global-precommit.log",
+          "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+          "advisories": "Only existing nonblocking basedpyright/use-walrus remain; not globalwarningfree."
+        },
+        "focused_current": {
+          "passed": 229,
+          "failed": 0,
+          "skipped": 0,
+          "exit": 0,
+          "receipt": "git-guard-receiver-quoted-base-final-focus.log",
+          "sha256": "5ef738d05dca6146d2a9b804347f637b407ead2d08aa16515667d2a1c5d02eca"
+        }
+      }
+    },
+    "quoted_base_successor_mapping": {
+      "receipt": "git-guard-receiver-quoted-base-final-binding-map.json",
+      "sha256": "2e5b2ba1a906cabe08ae07498fe882e12db26b0b50ff558cbe933474ae5c49d5"
+    },
+    "actual_local_commit": "aa3d44525cc13ff679a44e9e6da57fd7a98af5d4",
+    "publication": "LOCALONLY, neverapproved orpushed.",
+    "disposition": "UNREVIEWED historicalsnapshot1060; residualown-indexfalseModel foundbeforeAapproval, root98DE. No priorKEEP claimed.",
+    "root_hold": {
+      "receipt": "git-guard-inner-base-root-hold.json",
+      "sha256": "98de63975f319559213843dadedf9cb92a36fa2f6993bf4300345a641abc4aba"
+    }
+  },
+  "inner_base_successor_mapping": {
+    "receipt": "git-guard-receiver-inner-base-final-binding-map.json",
+    "sha256": "964967a67865897047134c0a0aa65ed2ce9ead6cec9a75ddf50c5071e4e0079c"
   }
 }

@@ -39,6 +39,10 @@ its expression is visited, then revalidated against later base and keyword
 effects. A later name-only write does not change the captured object; relevant
 method or type mutations retain the existing conservative proof loss. This does
 not infer arbitrary factory returns, MRO proxies or multiple-inheritance order.
+Within a subscript base, its owner is captured before its index, including nested
+subscriptions. Supported model-class ownership survives name-only index writes;
+actual type effects still invalidate it. Plain generic return values remain
+unresolved, and index expressions retain their independent call findings.
 
 Binding events are counted individually even within one compound statement.
 Deferred generator bodies use capture safeguards; their first iterator remains
@@ -196,6 +200,9 @@ order findings. Its root source KEEP920AE retains only its recorded scope.
 Source 518eabb9 / metadata 3288b309 and its 1,010 checks remain held after
 quoted-annotation capture and delayed class-base resolution findings. Its
 root source KEEP6DE508 retains only its recorded scope.
+Local source aa3d4452 and its 1,060 checks remained unreviewed after the same
+capture issue was found inside a single subscript base. That local snapshot is
+preserved as source-specific evidence, not independent approval.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted

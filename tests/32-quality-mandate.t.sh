@@ -560,6 +560,48 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_class_base_capture_contexts
   _qm_receiver_quoted_root_controls
   _qm_receiver_base_revalidation_controls
+  _qm_receiver_inner_base_owner_controls
+  _qm_receiver_inner_base_effect_controls
+}
+
+# Protects: A base subscript captures its owner before evaluating its index.
+# Detects: Own-index name changes inventing or dropping Model ancestry.
+# Needs: real staged scanner,315compile-valid fixtures; no MRO/type mutation runs.
+# Breadcrumb: hooks/common/mandate_scan.py capture_class_base/revalidate_binding.
+_qm_receiver_inner_base_owner_controls() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return "Parser"\n    def __class_getitem__(cls,item):\n        return cls\n'
+  _qm_receiver_case 'plain generic owner is captured before index model rebind' \
+    "${_qmr_types}Receiver=Parser\nclass Child(Receiver[(Receiver:=Model)]):\n    pass\nanswer=Child().parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'model generic owner survives index parser name rebind' \
+    "${_qmr_types}Receiver=Model\nclass Child(Receiver[(Receiver:=Parser)]):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+  _qm_receiver_case 'stable model generic base retains model ancestry' \
+    "${_qmr_types}class Child(Model[0]):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+  _qm_receiver_case 'stable plain generic base stays unsupported' \
+    "${_qmr_types}class Child(Parser[0]):\n    pass\nanswer=Child().parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'own index type mutation invalidates captured model proof' \
+    "${_qmr_types}def alter():\n    Model.__bases__=(external,)\n    return 0\nclass Child(Model[alter()]):\n    pass\nanswer=Child().parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'own index method-only mutation preserves model ancestry' \
+    "${_qmr_types}def alter():\n    Model.parse_file=Parser.parse_file\n    return 0\nclass Child(Model[alter()]):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+}
+
+# Protects: Base snapshots retain data/no-call and independent index findings.
+# Detects: Nested owner rereads or lost mutation/eager-call boundaries.
+# Needs: real staged scanner,315compile-valid fixtures; no MRO/type mutation runs.
+# Breadcrumb: hooks/common/mandate_scan.py capture_class_base/visit_ClassDef.
+_qm_receiver_inner_base_effect_controls() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    @classmethod\n    def __class_getitem__(cls,item):\n        return cls\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return "Parser"\n    def __class_getitem__(cls,item):\n        return cls\n'
+  _qm_receiver_case 'own index ordinary data preserves model ancestry' \
+    "${_qmr_types}def alter():\n    Model.label='notes'\n    return 0\nclass Child(Model[alter()]):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+  _qm_receiver_case 'uncalled index mutator does not change model base' \
+    "${_qmr_types}def alter():\n    Model.__bases__=(external,)\n    return 0\nclass Child(Model[0]):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+  _qm_receiver_case 'nested plain generic owner cannot become model ancestry' \
+    "${_qmr_types}Receiver=Parser\nclass Child(Receiver[(Receiver:=Model)][0]):\n    pass\nanswer=Child().parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'nested model generic owner survives name-only index writes' \
+    "${_qmr_types}Receiver=Model\nclass Child(Receiver[(Receiver:=Parser)][0]):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+  _qm_receiver_case 'generic base index retains independent model call evidence' \
+    "${_qmr_types}class Child(Parser[Model.parse_file('x')]):\n    pass\n" 1 model
+  _qm_receiver_case 'uncalled mutator does not invent plain generic return proof' \
+    "${_qmr_types}def alter():\n    Parser.parse_file=Model.parse_file\n    return 0\nclass Child(Parser[0]):\n    pass\nanswer=Child().parse_file('x')\n" 0 unknown
 }
 
 # Protects: Quoted root guards preserve generic ancestry and ordinary data.
