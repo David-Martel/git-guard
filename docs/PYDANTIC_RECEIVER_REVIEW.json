@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "Pending signed local SOURCE commit; no standalone source push.",
+  "source_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
     "hooks/common/mandate_scan.py": "410914a40396c445f0ee57bd109f831fc09b6acdec85b6987175767142d3fd3a",
@@ -20,7 +20,7 @@
     "global_precommit": "Actual normalglobalhook exit0; existing basedpyright/use-walrus advisories disclosed.",
     "static_checks": "Current isolated Ruff E,F/format,mypy,ShellCheck exit0 with before/after sourcefreeze guards.",
     "linux": "Current successor unqualified; final metadata-head native/Docker CI required.",
-    "current_source_commit": "Pending signed localSourceA",
+    "current_source_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
     "current_source_sha256": "410914a40396c445f0ee57bd109f831fc09b6acdec85b6987175767142d3fd3a",
     "current_test_sha256": "bfabf7dc82285aaa396a78c96a378ec7568a1c2876b3ecf454cd86467f2aa9ef",
     "qualification": {
@@ -146,37 +146,37 @@
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Complete selector read and current actual staged/range/census or raw-candidate evidence verified. New helper-body and stock-scaffold continuity are reviewed separately; unchanged assertion spelling is not used as automatic approval."
     },
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "71b843107688ee3c2c0a3a1cd149eca578ac653d4becbaa595744447b9774257",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Complete selector read and current actual staged/range/census or raw-candidate evidence verified. New helper-body and stock-scaffold continuity are reviewed separately; unchanged assertion spelling is not used as automatic approval."
     },
     {
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Complete selector read and current actual staged/range/census or raw-candidate evidence verified. New helper-body and stock-scaffold continuity are reviewed separately; unchanged assertion spelling is not used as automatic approval."
     }
   ],
   "rule_reviews": [
@@ -184,27 +184,27 @@
       "selector": "mandate-pydantic-v1",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Complete unchanged candidate rule read with current source-bound receiver-policy routing. Strong ownership and configured ambiguity remain distinct; default severities are unchanged.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06"
     },
     {
       "selector": "mandate-pydantic-v1-ambiguous",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Complete unchanged candidate rule read with current source-bound receiver-policy routing. Strong ownership and configured ambiguity remain distinct; default severities are unchanged.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06"
     }
   ],
   "integration": {
@@ -306,8 +306,20 @@
     "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   },
   "independent_review": {
-    "disposition": "UNREVIEWED",
-    "scope": "Actual signed localSourceA required before root9/3/2 binding; final-head outside/currentCI/autopilot pending."
+    "disposition": "KEEP_SOURCE_ONLY",
+    "reviewer": "codex-python-closeout",
+    "reviewer_type": "independent-agent",
+    "date": "2026-11-18T12:16:40.514395+00:00",
+    "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+    "scope": "Scoped source/evidence KEEP; exact-head CI/outside-family review and mapped autopilot still govern integration. Installed7136/VERSION/release remain unchanged; previousc437/38/0DE receipts are held source-specific history. Four targeted categories,14existing skips and two generic precommit advisories remain explicit; no whole-repository numeric coverage or arbitrary Python solver claim.",
+    "root_source_review": {
+      "receipt": "git-guard-hook-code-qualified-root-source-review.json",
+      "sha256": "79544a9f1da85a42ff1f48011ad991f1908873cb6111a4148cf24e04cfaffe68"
+    },
+    "host_candidate_review": {
+      "receipt": "git-guard-callback-code-independent-review.json",
+      "sha256": "24ec9d8e8529844d1f256b0dcf48379755697a680717df4350539313970af79a"
+    }
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -2236,100 +2248,100 @@
       "selector": "source:hooks/common/mandate_scan.py",
       "selector_sha256": "410914a40396c445f0ee57bd109f831fc09b6acdec85b6987175767142d3fd3a",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Read entire cumulative receiver-operation production delta and final callback-expiry delta. Finite effect flags preserve ancestry separately from construction/access/subscription/subclass results; namespace events stay nonzero. Exact module TYPE and original class-suite plain barriers are retained. Literal callback proof uses bounded structural stores and expires through identity, alias, known-call, deferred and unknown-owner effects; no arbitrary owner/return/MRO inference."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Read complete unchanged strong candidate rule and fresh scanner routing: namespace/decorator/Config findings and known model legacy calls retain strong policy. A spelling-only candidate is not a receiver proof; plain calls clear and unknown uses separate configured policy."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Read complete unchanged ambiguous rule and default-warn contract. Disabling this rule cannot disable proven model ownership; strict-mode controls retain explicit unknown blocking without changing defaults."
     },
     {
       "selector": "source:tests/32-quality-mandate.t.sh",
       "selector_sha256": "bfabf7dc82285aaa396a78c96a378ec7568a1c2876b3ecf454cd86467f2aa9ef",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Read new hook/projection/preservation/callback fixtures and all complete selector bodies; root fresh34-stock capture matches independently reviewed semantics/assertions. Actual current contexts888 plus other categories total1359; root separate14 resolver/runtime controls pass. New mutation return effects are not guessed, and positive data/stock/direct-model controls stay strong."
     },
     {
       "selector": "source:tests/27-rule-behaviour.t.sh",
       "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Read rule-behaviour selector including complete current Pydantic failing/passing candidate controls. This isolates raw matches from category32 receiver policy;112pass and14 explicitly retained inert/raw skips are not a claim that every bundled rule works."
     },
     {
       "selector": "source:tests/run.sh",
       "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Unchanged hash-bound native suite driver reviewed with actual four independent terminal exit/count receipts. Category selection and positive failure controls remain the mechanism; no whole-repository coverage claim."
     },
     {
       "selector": "source:docs/QA_TOOLING.md",
       "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Unchanged hash-bound QA/policy guidance retains changed-line mandate, justified per-line suppression and strong versus ambiguous severities; no broad waiver, hook bypass or installed release claim."
     },
     {
       "selector": "source:docs/RULES.md",
       "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Unchanged hash-bound rule inventory keeps raw matcher limits separate from maintained receiver refinement and documented inert cases. Current measured raw skips are preserved."
     },
     {
       "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
       "selector_sha256": "9dce8990c2dccb424847a03f2c92c039e4db26e730525c486e402f5f8cfeb69a",
       "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent actual source-bound review required; predecessor bindings retained in hook_projection_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T12:16:40.514395+00:00",
+      "reviewed_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+      "disposition": "KEEP",
+      "scope": "Read complete family and callback documentation deltas: finite operation boundaries, conservative module/class invalidation, stock-scaffold qualification and held source lineage accurately match inspected source. No purity, runtime solver or final-admission certification."
     }
   ],
   "lambda_decorator_predecessor": {
@@ -5144,5 +5156,17 @@
       "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
     }
+  },
+  "metadata_successor_binding": {
+    "source_commit": "22fbf2c0ba40d6fe2aca47ca115614ba08119b06",
+    "review_receipt": "git-guard-hook-code-qualified-root-source-review.json",
+    "review_receipt_sha256": "79544a9f1da85a42ff1f48011ad991f1908873cb6111a4148cf24e04cfaffe68",
+    "source9_unchanged": true,
+    "target_manifest_sha256": "c883e58c98a7c63a7499573ad960e6838f53cd1ece00f208dee934ac80260d02",
+    "stable_rule_id_to_path": {
+      "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    },
+    "phase": "JSON-only review metadata successor; source/evidence KEEP only. Final-head CI/outside-family review/mapped autopilot still required; root verifies actual B before one completepublish."
   }
 }
