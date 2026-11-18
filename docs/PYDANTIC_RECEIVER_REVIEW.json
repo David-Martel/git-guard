@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "Pending signed local SOURCE commit; no standalone source push.",
+  "source_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
     "hooks/common/mandate_scan.py": "794bed11c3eb147981dea040adb8a138f899027385905420222e056b0c4a4910",
@@ -20,7 +20,7 @@
     "global_precommit": "Actual current global hook exit0; existing nonblocking advisories disclosed.",
     "static_checks": "Current isolated Ruff E,F/format, default mypy, ShellCheck exit0.",
     "linux": "Current successor unqualified; final metadata head native/Docker CI required.",
-    "current_source_commit": "Pending signed local SourceA",
+    "current_source_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
     "current_source_sha256": "794bed11c3eb147981dea040adb8a138f899027385905420222e056b0c4a4910",
     "current_test_sha256": "e6614bf99c09ea42ece40c1369ccd913fae5b1efd4f09138a4995b77ec5ce94f",
     "qualification": {
@@ -99,37 +99,37 @@
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Actual full selector through first columnzero brace excluding trailing newline; whole9source target binds helpers. Author1226fourcategories/892receiver/35focus receipts, exits and terminals verified; root9new/80stable controls and5prior causal failures. No coverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6"
     },
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "1ca62c2e5f2cd751c56ffbd1a22f43b8e7a826d688e2925fca6f088c26ca9abe",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Actual full selector through first columnzero brace excluding trailing newline; whole9source target binds helpers. Author1226fourcategories/892receiver/35focus receipts, exits and terminals verified; root9new/80stable controls and5prior causal failures. No coverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6"
     },
     {
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Actual full selector through first columnzero brace excluding trailing newline; whole9source target binds helpers. Author1226fourcategories/892receiver/35focus receipts, exits and terminals verified; root9new/80stable controls and5prior causal failures. No coverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6"
     }
   ],
   "rule_reviews": [
@@ -137,27 +137,27 @@
       "selector": "mandate-pydantic-v1",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Previously read unchanged exact rule bytes and stable ruleID-to-path mapping; new analysis evidence bound by whole9file target. KnownModel strong/plain clear/unresolved warn;14raw skips retained.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6"
     },
     {
       "selector": "mandate-pydantic-v1-ambiguous",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Previously read unchanged exact rule bytes and stable ruleID-to-path mapping; new analysis evidence bound by whole9file target. KnownModel strong/plain clear/unresolved warn;14raw skips retained.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6"
     }
   ],
   "integration": {
@@ -259,8 +259,21 @@
     "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   },
   "independent_review": {
-    "disposition": "UNREVIEWED",
-    "scope": "Actual local SourceA required before independent 9/3/2 binding; outside/current-head CI/autopilot admission still pending."
+    "reviewer": "codex-python-closeout",
+    "reviewer_type": "independent-agent",
+    "date": "2026-11-18T10:12:57.265490+00:00",
+    "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+    "disposition": "KEEP",
+    "receipt": "git-guard-parameter-hook-root-source-review.json",
+    "sha256": "11f1f0f2bc2e9ae78cb4f10281518fdd305aae847c18323267aa8d9a9132c7bf",
+    "scope": "ROOT_LOCAL_SOURCE_KEEP_ONLY_NOT_FINAL_ADMISSION; actual signed source9, selector3 and rule2 verified at2a857, raw qualification1226/892/35 bound; formal binding/shadowing and initializer namespace scope.",
+    "limits": [
+      "Author four hermetic categories are not the whole repository or coverage;14raw skips and existing basedpyright/use-walrus advisories remain explicit.",
+      "Root9new controls compile/execute stdlib FakeBase on315;80stable include explicitly historical AST-only forms. No realPydantic/device/provider import or thirdparty runtime certification.",
+      "Prior23b/fa630 root KEEP receipts remain historical held admission evidence; current review applies only to2a857 frozen794/D795/3460.",
+      "Actual current outside review/CI/admission remain required. Local OAuth owner refresh pending; no duplicate paid review or credential mutation.",
+      "Installed7136, VERSION, foreign worktrees and global configuration unchanged; no release/install/policy waiver."
+    ]
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -2189,100 +2202,100 @@
       "selector": "source:hooks/common/mandate_scan.py",
       "selector_sha256": "794bed11c3eb147981dea040adb8a138f899027385905420222e056b0c4a4910",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+      "disposition": "KEEP",
+      "scope": "Root read entire fa630 to 2a857 three-file source delta7B3417 and complete FunctionDef/Lambda argument/header/scope contexts. A also includes explicit provisional JSON resetting all9/3/2 toUNREVIEWED; original approvals/history preserved and changed top-level metadata keys bounded. Initial formal bindings now count toward later deferred rebinding and mask lexical outer-name rebound state. Two explicit initializer-hook namespace activators revoke plain proof while existing __new__ type/allocation barrier and known-model ancestry remain. No arbitrary runtime/hook/MRO solver. Actual signed9sourceblobs,3complete selectors and2unchangedrules verified. Root9valid runtime/resolver plus80stable GREEN; same prior source reproduces5falseclears. SOURCE ONLY."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+      "disposition": "KEEP",
+      "scope": "Root read entire fa630 to 2a857 three-file source delta7B3417 and complete FunctionDef/Lambda argument/header/scope contexts. A also includes explicit provisional JSON resetting all9/3/2 toUNREVIEWED; original approvals/history preserved and changed top-level metadata keys bounded. Initial formal bindings now count toward later deferred rebinding and mask lexical outer-name rebound state. Two explicit initializer-hook namespace activators revoke plain proof while existing __new__ type/allocation barrier and known-model ancestry remain. No arbitrary runtime/hook/MRO solver. Actual signed9sourceblobs,3complete selectors and2unchangedrules verified. Root9valid runtime/resolver plus80stable GREEN; same prior source reproduces5falseclears. SOURCE ONLY."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+      "disposition": "KEEP",
+      "scope": "Root read entire fa630 to 2a857 three-file source delta7B3417 and complete FunctionDef/Lambda argument/header/scope contexts. A also includes explicit provisional JSON resetting all9/3/2 toUNREVIEWED; original approvals/history preserved and changed top-level metadata keys bounded. Initial formal bindings now count toward later deferred rebinding and mask lexical outer-name rebound state. Two explicit initializer-hook namespace activators revoke plain proof while existing __new__ type/allocation barrier and known-model ancestry remain. No arbitrary runtime/hook/MRO solver. Actual signed9sourceblobs,3complete selectors and2unchangedrules verified. Root9valid runtime/resolver plus80stable GREEN; same prior source reproduces5falseclears. SOURCE ONLY."
     },
     {
       "selector": "source:tests/32-quality-mandate.t.sh",
       "selector_sha256": "e6614bf99c09ea42ece40c1369ccd913fae5b1efd4f09138a4995b77ec5ce94f",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+      "disposition": "KEEP",
+      "scope": "Root read entire fa630 to 2a857 three-file source delta7B3417 and complete FunctionDef/Lambda argument/header/scope contexts. A also includes explicit provisional JSON resetting all9/3/2 toUNREVIEWED; original approvals/history preserved and changed top-level metadata keys bounded. Initial formal bindings now count toward later deferred rebinding and mask lexical outer-name rebound state. Two explicit initializer-hook namespace activators revoke plain proof while existing __new__ type/allocation barrier and known-model ancestry remain. No arbitrary runtime/hook/MRO solver. Actual signed9sourceblobs,3complete selectors and2unchangedrules verified. Root9valid runtime/resolver plus80stable GREEN; same prior source reproduces5falseclears. SOURCE ONLY."
     },
     {
       "selector": "source:tests/27-rule-behaviour.t.sh",
       "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+      "disposition": "KEEP",
+      "scope": "Root read entire fa630 to 2a857 three-file source delta7B3417 and complete FunctionDef/Lambda argument/header/scope contexts. A also includes explicit provisional JSON resetting all9/3/2 toUNREVIEWED; original approvals/history preserved and changed top-level metadata keys bounded. Initial formal bindings now count toward later deferred rebinding and mask lexical outer-name rebound state. Two explicit initializer-hook namespace activators revoke plain proof while existing __new__ type/allocation barrier and known-model ancestry remain. No arbitrary runtime/hook/MRO solver. Actual signed9sourceblobs,3complete selectors and2unchangedrules verified. Root9valid runtime/resolver plus80stable GREEN; same prior source reproduces5falseclears. SOURCE ONLY."
     },
     {
       "selector": "source:tests/run.sh",
       "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+      "disposition": "KEEP",
+      "scope": "Root read entire fa630 to 2a857 three-file source delta7B3417 and complete FunctionDef/Lambda argument/header/scope contexts. A also includes explicit provisional JSON resetting all9/3/2 toUNREVIEWED; original approvals/history preserved and changed top-level metadata keys bounded. Initial formal bindings now count toward later deferred rebinding and mask lexical outer-name rebound state. Two explicit initializer-hook namespace activators revoke plain proof while existing __new__ type/allocation barrier and known-model ancestry remain. No arbitrary runtime/hook/MRO solver. Actual signed9sourceblobs,3complete selectors and2unchangedrules verified. Root9valid runtime/resolver plus80stable GREEN; same prior source reproduces5falseclears. SOURCE ONLY."
     },
     {
       "selector": "source:docs/QA_TOOLING.md",
       "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+      "disposition": "KEEP",
+      "scope": "Root read entire fa630 to 2a857 three-file source delta7B3417 and complete FunctionDef/Lambda argument/header/scope contexts. A also includes explicit provisional JSON resetting all9/3/2 toUNREVIEWED; original approvals/history preserved and changed top-level metadata keys bounded. Initial formal bindings now count toward later deferred rebinding and mask lexical outer-name rebound state. Two explicit initializer-hook namespace activators revoke plain proof while existing __new__ type/allocation barrier and known-model ancestry remain. No arbitrary runtime/hook/MRO solver. Actual signed9sourceblobs,3complete selectors and2unchangedrules verified. Root9valid runtime/resolver plus80stable GREEN; same prior source reproduces5falseclears. SOURCE ONLY."
     },
     {
       "selector": "source:docs/RULES.md",
       "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+      "disposition": "KEEP",
+      "scope": "Root read entire fa630 to 2a857 three-file source delta7B3417 and complete FunctionDef/Lambda argument/header/scope contexts. A also includes explicit provisional JSON resetting all9/3/2 toUNREVIEWED; original approvals/history preserved and changed top-level metadata keys bounded. Initial formal bindings now count toward later deferred rebinding and mask lexical outer-name rebound state. Two explicit initializer-hook namespace activators revoke plain proof while existing __new__ type/allocation barrier and known-model ancestry remain. No arbitrary runtime/hook/MRO solver. Actual signed9sourceblobs,3complete selectors and2unchangedrules verified. Root9valid runtime/resolver plus80stable GREEN; same prior source reproduces5falseclears. SOURCE ONLY."
     },
     {
       "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
       "selector_sha256": "b603a69d829146ada98526d695b4fcc9c41905fc239e4aec93c9bdd4a33309d4",
       "target_manifest_sha256": "346049cb1127b4126593d45b45cc0535a65d99486b42b3017e6564120319e0df",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in parameter_hook_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T10:12:57.265490+00:00",
+      "reviewed_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+      "disposition": "KEEP",
+      "scope": "Root read entire fa630 to 2a857 three-file source delta7B3417 and complete FunctionDef/Lambda argument/header/scope contexts. A also includes explicit provisional JSON resetting all9/3/2 toUNREVIEWED; original approvals/history preserved and changed top-level metadata keys bounded. Initial formal bindings now count toward later deferred rebinding and mask lexical outer-name rebound state. Two explicit initializer-hook namespace activators revoke plain proof while existing __new__ type/allocation barrier and known-model ancestry remain. No arbitrary runtime/hook/MRO solver. Actual signed9sourceblobs,3complete selectors and2unchangedrules verified. Root9valid runtime/resolver plus80stable GREEN; same prior source reproduces5falseclears. SOURCE ONLY."
     }
   ],
   "lambda_decorator_predecessor": {
@@ -4688,6 +4701,52 @@
     "rules": {
       "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    }
+  },
+  "metadata_successor_binding": {
+    "reviewed_source_commit": "2a857b531abc58db86be576723588b18bb0aeff6",
+    "scope": "Sole JSON metadata B; source9 unchanged from reviewed actual2a857. Root verifies B before one complete normal publish; maintained review/current CI/admission still required. No local paid retry or installed change.",
+    "rule_selector_map": {
+      "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    },
+    "source_map": {
+      "hooks/common/mandate_scan.py": {
+        "reviewed_source": "794bed11c3eb147981dea040adb8a138f899027385905420222e056b0c4a4910",
+        "metadata_successor": "794bed11c3eb147981dea040adb8a138f899027385905420222e056b0c4a4910"
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": {
+        "reviewed_source": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "metadata_successor": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": {
+        "reviewed_source": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "metadata_successor": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
+      },
+      "tests/32-quality-mandate.t.sh": {
+        "reviewed_source": "e6614bf99c09ea42ece40c1369ccd913fae5b1efd4f09138a4995b77ec5ce94f",
+        "metadata_successor": "e6614bf99c09ea42ece40c1369ccd913fae5b1efd4f09138a4995b77ec5ce94f"
+      },
+      "tests/27-rule-behaviour.t.sh": {
+        "reviewed_source": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "metadata_successor": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374"
+      },
+      "tests/run.sh": {
+        "reviewed_source": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "metadata_successor": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d"
+      },
+      "docs/QA_TOOLING.md": {
+        "reviewed_source": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "metadata_successor": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873"
+      },
+      "docs/RULES.md": {
+        "reviewed_source": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "metadata_successor": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b"
+      },
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": {
+        "reviewed_source": "b603a69d829146ada98526d695b4fcc9c41905fc239e4aec93c9bdd4a33309d4",
+        "metadata_successor": "b603a69d829146ada98526d695b4fcc9c41905fc239e4aec93c9bdd4a33309d4"
+      }
     }
   }
 }
