@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "Pending signed local SOURCE commit; no standalone source push.",
+  "source_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
     "hooks/common/mandate_scan.py": "13cdf42fd8dd4de78dde609e417367b3014958ace0cb23d461ae415561664410",
@@ -20,7 +20,7 @@
     "global_precommit": "Actual current global hook exit0; existing nonblocking advisories disclosed.",
     "static_checks": "Current isolated Ruff E,F/format, default mypy, ShellCheck exit0.",
     "linux": "Current successor unqualified; final metadata head native/Docker CI required.",
-    "current_source_commit": "Pending signed local SourceA",
+    "current_source_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
     "current_source_sha256": "13cdf42fd8dd4de78dde609e417367b3014958ace0cb23d461ae415561664410",
     "current_test_sha256": "932baddd33af03f7c3a25f8b36b12275ba4ae9013214f60c6fe85c9d3aed3350",
     "qualification": {
@@ -99,37 +99,37 @@
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Root actualselector declaration through firstcolumnzero brace excludingnewline; whole9filetarget binds helpers. Author1191fourcategories/857receiver/46focus boundlogs and root80/12witnesses checked. Legacy28AST+2currentstagedRuffbarriers are separate from16modernstaged assertions; no coverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9"
     },
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "3cd1337f20cfcbb82412a21365be05683ace7de94a25c2c298698b617847cd89",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Root actualselector declaration through firstcolumnzero brace excludingnewline; whole9filetarget binds helpers. Author1191fourcategories/857receiver/46focus boundlogs and root80/12witnesses checked. Legacy28AST+2currentstagedRuffbarriers are separate from16modernstaged assertions; no coverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9"
     },
     {
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Root actualselector declaration through firstcolumnzero brace excludingnewline; whole9filetarget binds helpers. Author1191fourcategories/857receiver/46focus boundlogs and root80/12witnesses checked. Legacy28AST+2currentstagedRuffbarriers are separate from16modernstaged assertions; no coverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9"
     }
   ],
   "rule_reviews": [
@@ -137,27 +137,27 @@
       "selector": "mandate-pydantic-v1",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Exact unchanged previouslyread rulebytes: knownModelstrong/provenplainclear/unresolvedwarn; namespace/decorator/Config strong. Raw14skips explicitly retained.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9"
     },
     {
       "selector": "mandate-pydantic-v1-ambiguous",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "unassigned",
+      "scope": "Exact unchanged previouslyread rulebytes: knownModelstrong/provenplainclear/unresolvedwarn; namespace/decorator/Config strong. Raw14skips explicitly retained.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": ""
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9"
     }
   ],
   "integration": {
@@ -259,8 +259,21 @@
     "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   },
   "independent_review": {
-    "disposition": "UNREVIEWED",
-    "scope": "Actual local SourceA required before independent 9/3/2 binding; outside/current-head CI/autopilot admission still pending."
+    "reviewer": "codex-python-closeout",
+    "reviewer_type": "independent-agent",
+    "date": "2026-11-18T09:30:20.114467+00:00",
+    "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+    "disposition": "KEEP",
+    "receipt": "git-guard-legacy-scope-root-source-review.json",
+    "sha256": "359c10c1ca2027021623b853d56578cbdf49f25093464c445b53ae171681d860",
+    "scope": "ROOT_LOCAL_SOURCE_KEEP_ONLY_NOT_FINAL_ADMISSION; actual signed source9, complete selector3 and unchanged rule2 verified; cumulative416 delta read,1191/857/46 author receipts checked, independent80resolver/9modern+3legacy runtime witnesses.",
+    "limits": [
+      "Actual310legacy classifier defect did not demonstrate defaultpipelinebypass: currentRuffrejects annotationwalrus. Two315compile rejections and author314/31521rejections+7positives explicit.",
+      "Root80resolver plus9modern/3legacy runtime controls; author1191/46 and28/21+7witnesses independently hash/terminal/recordedexit bound, not whole-repo coverage or root reruns.",
+      "Actualoutside416FIX partial/unread limits and both runtime/privatefixture controller corrections retained; prior416 andF3051175 heldhistorical.",
+      "Currentoutside/CI/admission required; localOAuthrepairquestionpending, maintainedremote route mayindependentlyreview. No duplicatepaid/credential edit.",
+      "Installed7136/VERSION/globalconfig/foreignWIP unchanged; existingnonblockingadvisories disclosed."
+    ]
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -2189,100 +2202,100 @@
       "selector": "source:hooks/common/mandate_scan.py",
       "selector_sha256": "13cdf42fd8dd4de78dde609e417367b3014958ace0cb23d461ae415561664410",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+      "disposition": "KEEP",
+      "scope": "Root read entire cumulative416\u219223b production/tests/docs delta12921. Existing eager binding events now include all argument-kind and return annotations; comprehensions reuse same events without borrowing iteration targets, preserving iterator/filter/body walrus and independent target-call handling. No scope/version/permutation solver added. Actual signed9sourceblobs,3complete selectors and2unchangedrules bound. Root80resolver/9modern+3legacy runtime witnesses pass; oldF305 four comprehension defects independently reproduced. SOURCEONLY."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+      "disposition": "KEEP",
+      "scope": "Root read entire cumulative416\u219223b production/tests/docs delta12921. Existing eager binding events now include all argument-kind and return annotations; comprehensions reuse same events without borrowing iteration targets, preserving iterator/filter/body walrus and independent target-call handling. No scope/version/permutation solver added. Actual signed9sourceblobs,3complete selectors and2unchangedrules bound. Root80resolver/9modern+3legacy runtime witnesses pass; oldF305 four comprehension defects independently reproduced. SOURCEONLY."
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+      "disposition": "KEEP",
+      "scope": "Root read entire cumulative416\u219223b production/tests/docs delta12921. Existing eager binding events now include all argument-kind and return annotations; comprehensions reuse same events without borrowing iteration targets, preserving iterator/filter/body walrus and independent target-call handling. No scope/version/permutation solver added. Actual signed9sourceblobs,3complete selectors and2unchangedrules bound. Root80resolver/9modern+3legacy runtime witnesses pass; oldF305 four comprehension defects independently reproduced. SOURCEONLY."
     },
     {
       "selector": "source:tests/32-quality-mandate.t.sh",
       "selector_sha256": "932baddd33af03f7c3a25f8b36b12275ba4ae9013214f60c6fe85c9d3aed3350",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+      "disposition": "KEEP",
+      "scope": "Root read entire cumulative416\u219223b production/tests/docs delta12921. Existing eager binding events now include all argument-kind and return annotations; comprehensions reuse same events without borrowing iteration targets, preserving iterator/filter/body walrus and independent target-call handling. No scope/version/permutation solver added. Actual signed9sourceblobs,3complete selectors and2unchangedrules bound. Root80resolver/9modern+3legacy runtime witnesses pass; oldF305 four comprehension defects independently reproduced. SOURCEONLY."
     },
     {
       "selector": "source:tests/27-rule-behaviour.t.sh",
       "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+      "disposition": "KEEP",
+      "scope": "Root read entire cumulative416\u219223b production/tests/docs delta12921. Existing eager binding events now include all argument-kind and return annotations; comprehensions reuse same events without borrowing iteration targets, preserving iterator/filter/body walrus and independent target-call handling. No scope/version/permutation solver added. Actual signed9sourceblobs,3complete selectors and2unchangedrules bound. Root80resolver/9modern+3legacy runtime witnesses pass; oldF305 four comprehension defects independently reproduced. SOURCEONLY."
     },
     {
       "selector": "source:tests/run.sh",
       "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+      "disposition": "KEEP",
+      "scope": "Root read entire cumulative416\u219223b production/tests/docs delta12921. Existing eager binding events now include all argument-kind and return annotations; comprehensions reuse same events without borrowing iteration targets, preserving iterator/filter/body walrus and independent target-call handling. No scope/version/permutation solver added. Actual signed9sourceblobs,3complete selectors and2unchangedrules bound. Root80resolver/9modern+3legacy runtime witnesses pass; oldF305 four comprehension defects independently reproduced. SOURCEONLY."
     },
     {
       "selector": "source:docs/QA_TOOLING.md",
       "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+      "disposition": "KEEP",
+      "scope": "Root read entire cumulative416\u219223b production/tests/docs delta12921. Existing eager binding events now include all argument-kind and return annotations; comprehensions reuse same events without borrowing iteration targets, preserving iterator/filter/body walrus and independent target-call handling. No scope/version/permutation solver added. Actual signed9sourceblobs,3complete selectors and2unchangedrules bound. Root80resolver/9modern+3legacy runtime witnesses pass; oldF305 four comprehension defects independently reproduced. SOURCEONLY."
     },
     {
       "selector": "source:docs/RULES.md",
       "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+      "disposition": "KEEP",
+      "scope": "Root read entire cumulative416\u219223b production/tests/docs delta12921. Existing eager binding events now include all argument-kind and return annotations; comprehensions reuse same events without borrowing iteration targets, preserving iterator/filter/body walrus and independent target-call handling. No scope/version/permutation solver added. Actual signed9sourceblobs,3complete selectors and2unchangedrules bound. Root80resolver/9modern+3legacy runtime witnesses pass; oldF305 four comprehension defects independently reproduced. SOURCEONLY."
     },
     {
       "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
       "selector_sha256": "d27893f53a27f451b57c0004d012240d761fc3eeca6327ecb3c9c52bd2d14be8",
       "target_manifest_sha256": "3efd2d983547d86f0e2f5daeffdc7d8f46a32e268115f80f02e5482b8c7c8627",
-      "reviewer": "unassigned",
-      "reviewer_type": "unassigned",
-      "date": "",
-      "reviewed_commit": "",
-      "disposition": "UNREVIEWED",
-      "scope": "Fresh independent source-bound review required; old KEEP is retained in legacy_scope_predecessor."
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T09:30:20.114467+00:00",
+      "reviewed_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+      "disposition": "KEEP",
+      "scope": "Root read entire cumulative416\u219223b production/tests/docs delta12921. Existing eager binding events now include all argument-kind and return annotations; comprehensions reuse same events without borrowing iteration targets, preserving iterator/filter/body walrus and independent target-call handling. No scope/version/permutation solver added. Actual signed9sourceblobs,3complete selectors and2unchangedrules bound. Root80resolver/9modern+3legacy runtime witnesses pass; oldF305 four comprehension defects independently reproduced. SOURCEONLY."
     }
   ],
   "lambda_decorator_predecessor": {
@@ -4288,6 +4301,52 @@
     "rules": {
       "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    }
+  },
+  "metadata_successor_binding": {
+    "reviewed_source_commit": "23bca8f66dd9643631156b495f64877077bf10c9",
+    "scope": "Sole JSON metadata B; nine source files unchanged from actual reviewed local SourceA. Publish complete B once, then maintained remote review/current CI/admission. No local paid retry or installed change. Source KEEP alone is not final admission.",
+    "rule_selector_map": {
+      "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    },
+    "source_map": {
+      "hooks/common/mandate_scan.py": {
+        "reviewed_source": "13cdf42fd8dd4de78dde609e417367b3014958ace0cb23d461ae415561664410",
+        "metadata_successor": "13cdf42fd8dd4de78dde609e417367b3014958ace0cb23d461ae415561664410"
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": {
+        "reviewed_source": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "metadata_successor": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": {
+        "reviewed_source": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "metadata_successor": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
+      },
+      "tests/32-quality-mandate.t.sh": {
+        "reviewed_source": "932baddd33af03f7c3a25f8b36b12275ba4ae9013214f60c6fe85c9d3aed3350",
+        "metadata_successor": "932baddd33af03f7c3a25f8b36b12275ba4ae9013214f60c6fe85c9d3aed3350"
+      },
+      "tests/27-rule-behaviour.t.sh": {
+        "reviewed_source": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "metadata_successor": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374"
+      },
+      "tests/run.sh": {
+        "reviewed_source": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "metadata_successor": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d"
+      },
+      "docs/QA_TOOLING.md": {
+        "reviewed_source": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "metadata_successor": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873"
+      },
+      "docs/RULES.md": {
+        "reviewed_source": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "metadata_successor": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b"
+      },
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": {
+        "reviewed_source": "d27893f53a27f451b57c0004d012240d761fc3eeca6327ecb3c9c52bd2d14be8",
+        "metadata_successor": "d27893f53a27f451b57c0004d012240d761fc3eeca6327ecb3c9c52bd2d14be8"
+      }
     }
   }
 }
