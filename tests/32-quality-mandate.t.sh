@@ -484,6 +484,40 @@ _qm_receiver_header_contexts() {
     "${_qmr_model}class Configured(Model, **options):\n    pass\nConfigured.parse_file('m.json')\n" 0 unknown
 }
 
+# Protects: deferred generators/counts/comparisons/class effects retain uncertainty.
+# Detects: four review-proven stale-proof paths plus eager/ordinary-write guards.
+# Needs: actual staged scanner and owned source fixtures; no fixture execution.
+# Breadcrumb: hooks/common/mandate_scan.py binding events/deferred/class visitors.
+_qm_receiver_followup_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    id: int = 1\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'generator capture observes later rebound' \
+    "${_qmr_types}receiver = Parser()\nloads = (receiver.parse_file('m.json') for item in [0])\nreceiver = Model\nlist(loads)\n" 0 unknown
+  _qm_receiver_case 'compound statement retains both binding events' \
+    "${_qmr_types}if condition:\n    receiver = Parser()\n    load = lambda: receiver.parse_file('m.json')\n    receiver = Model\n    load()\n" 0 unknown
+  _qm_receiver_case 'one expression retains both binding events' \
+    "${_qmr_types}((receiver := Parser()), (load := lambda: receiver.parse_file('m.json')), (receiver := Model), load())\n" 0 unknown
+  _qm_receiver_case 'chained comparison merges conditional assignment' \
+    "${_qmr_types}receiver = Model\n0 > 1 == (receiver := Parser())\nreceiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'immediate class body propagates external method mutation' \
+    "${_qmr_types}class Patch:\n    Parser.parse_file = Model.parse_file\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'generator first iterator remains eager and strong' \
+    "${_qmr_types}loads = (item for item in Model.parse_obj({'id': 1}))\n" 1 model
+  _qm_receiver_case 'class body ordinary config retains model type' \
+    "${_qmr_types}class Patch:\n    Model.model_config = {}\nModel.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'class body resolves old class name before publication' \
+    "${_qmr_types}class Model:\n    @classmethod\n    def parse_file(cls, path):\n        return path\n    captured = Model.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'initializer method replacement cannot retain plain proof' \
+    "${_qmr_types}class Changed:\n    def __init__(self):\n        self.parse_file = Model.parse_file\n    def parse_file(self, path):\n        return path\nChanged().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'initializer callback remains unsupported and uncertain' \
+    "${_qmr_types}class Changed:\n    def __init__(self):\n        self.install()\n    def install(self):\n        self.parse_file = Model.parse_file\n    def parse_file(self, path):\n        return path\nChanged().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'ordinary initializer data preserves plain proof' \
+    "${_qmr_types}class Safe:\n    def __init__(self, path):\n        self.path = path\n    def parse_file(self, path):\n        return path\nSafe('root').parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'deferred method mutation is not an immediate class effect' \
+    "${_qmr_types}class Patch:\n    def mutate(self):\n        Parser.parse_file = Model.parse_file\nParser().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'nested immediate class mutation reaches outer proof' \
+    "${_qmr_types}class Outer:\n    class Inner:\n        Parser.parse_file = Model.parse_file\nParser().parse_file('m.json')\n" 0 unknown
+}
+
 # Protects: reviewed expression/closure contexts preserve model policy boundaries.
 # Detects: execution/scope contexts missed by basic receiver classification.
 # Needs: real ast-grep/ruff, helper fixtures and UTF-8 source; no fixture imports.
@@ -496,6 +530,7 @@ t_case_pydantic_receiver_contexts() {
   fi
   _qm_receiver_review_contexts
   _qm_receiver_header_contexts
+  _qm_receiver_followup_contexts
 }
 
 t_case_quality_mandate() {

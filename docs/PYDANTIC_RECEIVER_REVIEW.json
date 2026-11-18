@@ -1,58 +1,64 @@
 {
   "schema_version": 1,
-  "source_commit": "223bb5eb1c4f1cc05dc5f5afc74c7acac0b40f04 + proposed reviewed-context successor",
+  "source_commit": "42cc915b23e9051703c54472cb711cf9689e08d0 + proposed frozen conservative boundary successor",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
-    "hooks/common/mandate_scan.py": "296d94a79561a8bb0c421980230b651dbc89a8012b9b1d9aad34ed156ef9f020",
+    "hooks/common/mandate_scan.py": "557d3148159d00080013cac2cec870018d05dc1690f1f43d84d8ef817eaa6b32",
     "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
     "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-    "tests/32-quality-mandate.t.sh": "fdf73f65ec45564a15a1a83663fa2c9042fc12b5b33edf56502b20dac7307fbf",
+    "tests/32-quality-mandate.t.sh": "eeb28e2f5a5da19f7412bc12dbfa946a7200b53848d0af6672a5069498e7b000",
     "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
     "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
     "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
     "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-    "docs/PYDANTIC_RECEIVER_REVIEW.md": "5b5a195d8965d051f484c9ad57ea0fd55939a135d51b1b781eba2b76805f07d0"
+    "docs/PYDANTIC_RECEIVER_REVIEW.md": "ffd260d9b9fb2f496000fc6fd147957b194906c89692231eb793f704b45ebf7d"
   },
   "author_evidence": {
     "platform": "Windows dtm-p1gen9 / Git Bash / CPython3.15.2",
     "red": "20 passed, 24 failed, 0 skipped",
-    "focused": "CURRENT296D/FDF7 source:137 basic+70 context assertions pass,207 total,zero failures/skips; separate exact receipts above",
-    "regression": "CURRENT296D/FDF7/DA70 source:541 passed,0 failed,14 existing documented raw-rule skips; both receiver selectors skip none",
-    "global_precommit": "PASS at frozen296D/FDF7/DA70; source hashes unchanged; nonblocking basedpyright/walrus advisories disclosed",
-    "static_checks": "Current exact-source Ruff format/check,mypy,ShellCheck all exit0; current logs bind separate receipts",
+    "focused": "CURRENT557D/EEB2/DA70:137 original+106 context assertions PASS,243total,0fail/skip",
+    "regression": "CURRENT557D/EEB2/DA70:577 passed,0 failed,14 existing documented raw-rule skips; both receiver selectors skip none",
+    "global_precommit": "CURRENT557D/EEB2/DA70 normal installed hook PASS; before/after source/test/runner hashes unchanged; existing nonblocking basedpyright and walrus advisories disclosed",
+    "static_checks": "CURRENT557D source Ruff format/check and mypy exit0; current EEB2/DA70 test/runner ShellCheck exit0; separate current receipts in logs",
     "linux": "UNVERIFIED at successor; exact-head Linux CI required",
     "logs": {
       "core137": {
-        "receipt": "git-guard-receiver-final-contexts-core.log",
+        "receipt": "git-guard-receiver-boundaries-core.log",
         "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee"
       },
-      "contexts70": {
-        "receipt": "git-guard-receiver-contexts-config-green.log",
-        "sha256": "7f108f31e9da575ca844edbd90dc42e070ae15bf97e01cce439f5cc0a331a1e7"
-      },
-      "regression": {
-        "receipt": "git-guard-receiver-final-contexts-regression.log",
-        "sha256": "2dd67e1cce3e23bc6c25374f2fdfbc13ca79db6dad0115cc9a50ac36e5be8c32"
+      "contexts106": {
+        "receipt": "git-guard-receiver-boundaries-green.log",
+        "sha256": "1e71cecec49a519c6abf29d337dfca3f0ed8ca844389b327c60179fa93491718"
       },
       "global_precommit": {
-        "receipt": "git-guard-receiver-contexts-global-precommit.log",
-        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b"
+        "receipt": "git-guard-receiver-boundaries-global-precommit.log",
+        "sha256": "4fff5b4ed34e5e5cccde44e664c42f0b6404b9f794ba60faa43d5fc9022137db",
+        "source_snapshot": "CURRENT557D/EEB2/DA70 frozen boundary successor"
       },
       "ruff-format": {
-        "receipt": "git-guard-receiver-contexts-final-ruff-format.log",
-        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3"
+        "receipt": "git-guard-receiver-boundaries-final-ruff-format.log",
+        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
+        "source_snapshot": "CURRENT557D/EEB2/DA70 frozen boundary successor"
       },
       "ruff-check": {
-        "receipt": "git-guard-receiver-contexts-final-ruff-check.log",
-        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
+        "receipt": "git-guard-receiver-boundaries-final-ruff-check.log",
+        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+        "source_snapshot": "CURRENT557D/EEB2/DA70 frozen boundary successor"
       },
       "mypy": {
-        "receipt": "git-guard-receiver-contexts-final-mypy.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        "receipt": "git-guard-receiver-boundaries-final-mypy.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_snapshot": "CURRENT557D/EEB2/DA70 frozen boundary successor"
       },
       "shellcheck": {
-        "receipt": "git-guard-receiver-contexts-final-shellcheck.log",
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        "receipt": "git-guard-receiver-boundaries-final-shellcheck.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_snapshot": "CURRENT557D/EEB2/DA70 frozen boundary successor"
+      },
+      "regression": {
+        "receipt": "git-guard-receiver-boundaries-regression.log",
+        "sha256": "c30c97a36c5387cb8677d7b6e3778e15e7252aff1c9d4057fa74122d661ae442",
+        "source_snapshot": "CURRENT557D/EEB2/DA70 frozen boundary successor"
       }
     },
     "mutation_red": "98 passed,7 failed,0 skipped on original source; intermediate115 passed,1 failed for deferred cls, then116 pass",
@@ -204,11 +210,61 @@
         "receipt": "git-guard-receiver-config-keywords-red.log",
         "sha256": "a5dce875dc103c9cab41be1a7dcac91eaf6311ef86b33b866ea217bcfad8ea48",
         "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+      },
+      "held42cc-core137": {
+        "receipt": "git-guard-receiver-final-contexts-core.log",
+        "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
+        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+      },
+      "held42cc-contexts70": {
+        "receipt": "git-guard-receiver-contexts-config-green.log",
+        "sha256": "7f108f31e9da575ca844edbd90dc42e070ae15bf97e01cce439f5cc0a331a1e7",
+        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+      },
+      "held42cc-regression": {
+        "receipt": "git-guard-receiver-final-contexts-regression.log",
+        "sha256": "2dd67e1cce3e23bc6c25374f2fdfbc13ca79db6dad0115cc9a50ac36e5be8c32",
+        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+      },
+      "held42cc-global_precommit": {
+        "receipt": "git-guard-receiver-contexts-global-precommit.log",
+        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+      },
+      "held42cc-ruff-format": {
+        "receipt": "git-guard-receiver-contexts-final-ruff-format.log",
+        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
+        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+      },
+      "held42cc-ruff-check": {
+        "receipt": "git-guard-receiver-contexts-final-ruff-check.log",
+        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+      },
+      "held42cc-mypy": {
+        "receipt": "git-guard-receiver-contexts-final-mypy.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+      },
+      "held42cc-shellcheck": {
+        "receipt": "git-guard-receiver-contexts-final-shellcheck.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_snapshot": "Held42cc source296D/FDF7/DA70; original207/541, not qualification of the boundary successor"
+      },
+      "followup-red": {
+        "receipt": "git-guard-receiver-followup-red.log",
+        "sha256": "fca14a90c300d748c19dddea53ef825a577aea8652d88cdcfaf0e7cd322a16c6",
+        "source_snapshot": "Read-only staged red controls on held42cc source296D; old reports retained"
+      },
+      "class-boundaries-red": {
+        "receipt": "git-guard-receiver-class-boundaries-red.log",
+        "sha256": "6cb105c818bbe07f19fbd7d0393a1d3f452d7ea7e02e2211be3562b9b957aff5",
+        "source_snapshot": "Read-only staged red controls on held42cc source296D; old reports retained"
       }
     },
-    "current_source_commit": "Pending signed source successor",
-    "current_source_sha256": "296d94a79561a8bb0c421980230b651dbc89a8012b9b1d9aad34ed156ef9f020",
-    "current_test_sha256": "fdf73f65ec45564a15a1a83663fa2c9042fc12b5b33edf56502b20dac7307fbf"
+    "current_source_commit": "Pending signed conservative-boundary successor",
+    "current_source_sha256": "557d3148159d00080013cac2cec870018d05dc1690f1f43d84d8ef817eaa6b32",
+    "current_test_sha256": "eeb28e2f5a5da19f7412bc12dbfa946a7200b53848d0af6672a5069498e7b000"
   },
   "rows": [
     {
@@ -222,10 +278,10 @@
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
-      "selector_sha256": "3a4731fcf4f0807c04adae7e8b84f32ccc79c3b9e7ca4b6194e8d6e53f9cf9d1",
+      "selector_sha256": "78def4505cf5492a4745e0aaa9edf9e5f40f70da0a9a118dc667bbb596910787",
       "disposition": "UNREVIEWED",
       "reviewer": null,
-      "scope": "70 real scanner assertions for expression/closure/target/control/class-body/BOM/header/annotation/config contexts; full test file binds helpers"
+      "scope": "106 actual scanner assertions: reviewed expression/closure/target/control/class-body/BOM/header/config contexts, deferred generators, event counts, chained comparisons, immediate class mutation/timing and initializer boundaries; full test file binds helpers"
     },
     {
       "selector": "t_case_rule_behaviour",
@@ -328,5 +384,26 @@
     "disposition": "Prior KEEP superseded for this successor by confirmed unhandled contexts; no approval carried forward",
     "receipt": "git-guard-final-root-review.json",
     "receipt_sha256": "f186dd2158649995d8ca2bac3df5cdd23bf2464a38016a9b0436201cb39921ad"
+  },
+  "boundaries_predecessor": {
+    "source_commit": "42cc915b23e9051703c54472cb711cf9689e08d0",
+    "disposition": "HELD: four reproduced generator/event-count/comparison/class-effect drops plus bounded class timing/initializer leads; no fresh KEEP was granted",
+    "previous_source_hashes": {
+      "hooks/common/mandate_scan.py": "296d94a79561a8bb0c421980230b651dbc89a8012b9b1d9aad34ed156ef9f020",
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "tests/32-quality-mandate.t.sh": "fdf73f65ec45564a15a1a83663fa2c9042fc12b5b33edf56502b20dac7307fbf",
+      "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+      "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": "5b5a195d8965d051f484c9ad57ea0fd55939a135d51b1b781eba2b76805f07d0"
+    },
+    "previous_selector_hashes": {
+      "t_case_pydantic_receiver_classification": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
+      "t_case_pydantic_receiver_contexts": "3a4731fcf4f0807c04adae7e8b84f32ccc79c3b9e7ca4b6194e8d6e53f9cf9d1",
+      "t_case_rule_behaviour": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a"
+    },
+    "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   }
 }

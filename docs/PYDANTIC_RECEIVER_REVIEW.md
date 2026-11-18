@@ -32,6 +32,15 @@ through local aliases, inheritance and deferred references. Final class-body
 bindings determine method proof; replaced methods and shadowed decorator names
 cannot retain a previous exemption.
 
+Binding events are counted individually even within one compound statement.
+Deferred generator bodies use capture safeguards; their first iterator remains
+eager. Chained comparisons merge conditional bindings. A class name is published
+after its immediate suite, separately from the future self/cls view in methods.
+Sensitive immediate class-suite mutations, including nested suites, invalidate
+enclosing plain proofs without copying class-local bindings back. Unsupported
+plain initializers with sensitive writes or opaque calls forfeit plain proof;
+simple data-only initialization and known model configuration retain precision.
+
 Conditional expressions and short-circuit operations merge binding evidence;
 comprehension assignment expressions account for their outer bindings. Lambdas
 use deferred capture rules while their defaults are visited at definition time.
@@ -60,7 +69,9 @@ Current source qualification and exact receipt hashes are in the
 137/471 results remain attached to their original source snapshots. Confirmed
 review defects in expression contexts supersede the previous whole-revision
 KEEP at source 365650 / metadata 223bb5; its receipt remains historical evidence,
-not approval of this successor. Recorded current results must name the exact
+not approval of this successor. The later 42cc source is also held after four
+further scope/effect findings; its 207/541 results remain source-specific
+historical evidence. Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted
 as newly qualified behavior.

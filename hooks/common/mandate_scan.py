@@ -1206,11 +1206,54 @@ def receiver_bound_names(node: ast.AST) -> Set[str]:
     return names
 
 
+def receiver_binding_events(node: ast.AST) -> Iterable[str]:
+    """Count actual scope writes, including multiple writes in one statement."""
+    children: List[ast.AST]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        yield node.name
+        if isinstance(node, ast.ClassDef):
+            children = [*node.decorator_list, *node.bases]
+            children.extend(keyword.value for keyword in node.keywords)
+        else:
+            children = [*node.decorator_list, *node.args.defaults]
+            children.extend(d for d in node.args.kw_defaults if d is not None)
+    elif isinstance(node, ast.Lambda):
+        children = [*node.args.defaults]
+        children.extend(d for d in node.args.kw_defaults if d is not None)
+    elif isinstance(node, (ast.Import, ast.ImportFrom)):
+        yield from (alias.asname or alias.name.split(".")[0] for alias in node.names)
+        return
+    elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+        yield node.id
+        return
+    else:
+        if isinstance(node, ast.ExceptHandler) and node.name:
+            yield node.name
+        if type(node).__name__ in {"MatchAs", "MatchStar", "MatchMapping"}:
+            name = getattr(node, "name", None) or getattr(node, "rest", None)
+            if isinstance(name, str):
+                yield name
+        if isinstance(
+            node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+        ):
+            children = [g.iter for g in node.generators]
+            children.extend(c for g in node.generators for c in g.ifs)
+            values = (
+                [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+            )
+            children.extend(value for value in values if value is not None)
+        else:
+            children = list(ast.iter_child_nodes(node))
+    for child in children:
+        if child is not None:
+            yield from receiver_binding_events(child)
+
+
 def receiver_rebound_names(nodes: Iterable[ast.AST]) -> Set[str]:
-    """Globals rebound in a scope are not stable proof inside deferred functions."""
+    """Rebound captures cannot retain their earlier plain receiver proof."""
     counts: Dict[str, int] = {}
     for node in nodes:
-        for name in receiver_bound_names(node):
+        for name in receiver_binding_events(node):
             counts[name] = counts.get(name, 0) + 1
     return {name for name, count in counts.items() if count > 1}
 
@@ -1265,14 +1308,18 @@ def receiver_target_mutation(node: ast.AST) -> Optional[Tuple[str, bool]]:
     return (name, member in RECEIVER_TYPE_MEMBERS) if name else None
 
 
-def receiver_mutated_names(nodes: Iterable[ast.AST]) -> Dict[str, bool]:
+def receiver_mutated_names(
+    nodes: Iterable[ast.AST], include_class_bodies: bool = False
+) -> Dict[str, bool]:
     """Find relevant mutations/aliases; the value marks type-proof invalidation."""
     pending = list(nodes)
     aliases: Dict[str, Set[str]] = {}
     mutated: Dict[str, bool] = {}
     while pending:
         node = pending.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or (
+            isinstance(node, ast.ClassDef) and not include_class_bodies
+        ):
             continue
         targets: Sequence[ast.AST] = ()
         if isinstance(node, (ast.Assign, ast.Delete)):
@@ -1456,6 +1503,18 @@ class PydanticReceivers(ast.NodeVisitor):
             shadowed.update(names)
         return frozenset(methods)
 
+    @staticmethod
+    def plain_initializer_supported(node: ast.ClassDef) -> bool:
+        for child in node.body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                child.name == "__init__"
+            ):
+                if receiver_mutated_names(child.body) or any(
+                    isinstance(part, ast.Call) for part in ast.walk(child)
+                ):
+                    return False
+        return True
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         for expression in [
             *node.decorator_list,
@@ -1474,7 +1533,12 @@ class PydanticReceivers(ast.NodeVisitor):
             not model_base
             or any(keyword.arg in {None, "metaclass"} for keyword in node.keywords)
         )
-        if node.decorator_list or uncertain_keywords or dynamic:
+        if (
+            node.decorator_list
+            or uncertain_keywords
+            or dynamic
+            or (not model_base and not self.plain_initializer_supported(node))
+        ):
             binding = UNKNOWN_RECEIVER
         elif model_base or all(base.kind == "plain" for base in bases):
             identity = f"class:{node.lineno}:{node.name}"
@@ -1489,14 +1553,25 @@ class PydanticReceivers(ast.NodeVisitor):
             )
         else:
             binding = UNKNOWN_RECEIVER
-        self.env[node.name] = binding
         previous = self.class_binding
         previous_outer = self.class_outer
         self.class_binding = binding
         self.class_outer = dict(self.env)
+        self.class_outer[node.name] = binding
         self.scoped(node.body, dict(self.env))
         self.class_binding = previous
         self.class_outer = previous_outer
+        mutations = receiver_mutated_names(node.body, include_class_bodies=True)
+        if mutations:
+            for name, value in list(self.env.items()):
+                if value.kind == "plain":
+                    self.env[name] = UNKNOWN_RECEIVER
+            for name, changes_type in mutations.items():
+                if changes_type:
+                    self.invalidate_binding(self.env, name, True)
+            if binding.kind == "plain":
+                binding = UNKNOWN_RECEIVER
+        self.env[node.name] = binding
 
     def deferred_bindings(
         self,
@@ -1579,13 +1654,16 @@ class PydanticReceivers(ast.NodeVisitor):
             local[argument.arg] = UNKNOWN_RECEIVER
         self.scoped([node.body], local)
 
-    def comprehension(self, node: ast.AST) -> None:
+    def comprehension(self, node: ast.AST, deferred: bool = False) -> None:
         previous = self.env
+        previous_class = self.class_binding
         local = dict(previous)
         for index, generator in enumerate(getattr(node, "generators", ())):
             self.visit(generator.iter)
             if index == 0:
-                local = dict(previous)
+                local = self.deferred_bindings()[1] if deferred else dict(previous)
+                if deferred:
+                    self.class_binding = None
             for name in receiver_bound_names(generator.target):
                 local[name] = UNKNOWN_RECEIVER
             self.env = local
@@ -1599,15 +1677,19 @@ class PydanticReceivers(ast.NodeVisitor):
         else:
             self.visit(getattr(node, "elt"))
         self.env = previous
-        for name in receiver_walrus_names(node):
-            before = previous.get(name, UNKNOWN_RECEIVER)
-            after = local.get(name, UNKNOWN_RECEIVER)
-            self.env[name] = before if before == after else UNKNOWN_RECEIVER
+        self.class_binding = previous_class
+        if not deferred:
+            for name in receiver_walrus_names(node):
+                before = previous.get(name, UNKNOWN_RECEIVER)
+                after = local.get(name, UNKNOWN_RECEIVER)
+                self.env[name] = before if before == after else UNKNOWN_RECEIVER
 
     visit_ListComp = comprehension
     visit_SetComp = comprehension
     visit_DictComp = comprehension
-    visit_GeneratorExp = comprehension
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self.comprehension(node, deferred=True)
 
     def visit_Delete(self, node: ast.Delete) -> None:
         for target in node.targets:
@@ -1646,6 +1728,14 @@ class PydanticReceivers(ast.NodeVisitor):
     def visit_BoolOp(self, node: ast.BoolOp) -> None:
         self.visit(node.values[0])
         for value in node.values[1:]:
+            before = dict(self.env)
+            branch = self.scoped([value], dict(before))
+            self.merge_bindings(before, branch)
+
+    def visit_Compare(self, node: ast.Compare) -> None:
+        self.visit(node.left)
+        self.visit(node.comparators[0])
+        for value in node.comparators[1:]:
             before = dict(self.env)
             branch = self.scoped([value], dict(before))
             self.merge_bindings(before, branch)
