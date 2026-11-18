@@ -41,9 +41,33 @@ enclosing plain proofs without copying class-local bindings back. Unsupported
 plain initializers with sensitive writes or opaque calls forfeit plain proof;
 simple data-only initialization and known model configuration retain precision.
 
+Annotations without assigned values preserve existing runtime bindings and
+method declarations, including the mutation and capture-event summaries.
+Multiple plain bases remain unsupported rather than
+unioning method names across an unproven resolution order. Class-comprehension
+bodies skip the class namespace, while the first iterator uses it immediately.
+Their lexical view shares mutation, rebinding and wildcard-import uncertainty
+with the other deferred visitors. Generator assignment expressions also merge
+their possible enclosing writes even when consumption is not known.
+
+Wildcard imports invalidate existing bindings and deferred captures. Calling a
+locally declared function or method whose syntactic body contains a sensitive
+write forfeits plain proofs; merely defining it does not execute that effect.
+This conservative name-based barrier does not infer arbitrary call graphs,
+external effects or aliased dynamic dispatch. Ordinary field writes do not
+activate it. No general runtime or alias-safety guarantee is claimed.
+Matching local calls also invalidate names actually written through declared
+`global` or `nonlocal` bindings. A declaration without a write is not an effect;
+name rebinding does not invalidate the previous object's unrelated aliases.
+
 Conditional expressions and short-circuit operations merge binding evidence;
 comprehension assignment expressions account for their outer bindings. Lambdas
 use deferred capture rules while their defaults are visited at definition time.
+Nested comprehensions keep the lambda's parameter scope rather than borrowing
+the enclosing class namespace; eager defaults still use that class namespace.
+Nested class bodies and method free names also skip enclosing class-local
+namespaces. Their base expressions remain eager in the immediate outer class;
+a nested class name is not inserted into the module's future bindings.
 Executable assignment, annotated-assignment, augmented-assignment and deletion
 targets are inspected. Class headers and source annotations are inspected too;
 annotation expressions are never evaluated by the scanner. Mutation uncertainty
@@ -71,7 +95,10 @@ review defects in expression contexts supersede the previous whole-revision
 KEEP at source 365650 / metadata 223bb5; its receipt remains historical evidence,
 not approval of this successor. The later 42cc source is also held after four
 further scope/effect findings; its 207/541 results remain source-specific
-historical evidence. Recorded current results must name the exact
+historical evidence. The e0d88 / 081be79 source and its 243/577 results are also
+held after annotation, inheritance, comprehension, import and called-effect
+findings. Its recorded root KEEP is historical and does not admit this successor.
+Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted
 as newly qualified behavior.

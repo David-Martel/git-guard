@@ -531,6 +531,119 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_review_contexts
   _qm_receiver_header_contexts
   _qm_receiver_followup_contexts
+  _qm_receiver_namespace_contexts
+  _qm_receiver_lambda_scope_contexts
+  _qm_receiver_annotation_effect_contexts
+  _qm_receiver_nested_class_contexts
+  _qm_receiver_declared_binding_contexts
+}
+
+# Protects: annotations and class/import namespaces cannot invent plain proof.
+# Detects: no-value annotations, inherited overrides and class-scope leakage.
+# Needs: real staged scanner, declared model/parser fixtures; no fixture imports.
+# Breadcrumb: hooks/common/mandate_scan.py AnnAssign, ClassDef and comprehensions.
+_qm_receiver_namespace_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'annotation-only preserves existing model' \
+    "${_qmr_types}receiver = Model\nreceiver: Parser\nreceiver.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'annotation-only preserves existing plain method' \
+    "${_qmr_types}class Child(Parser):\n    parse_file: object\nChild().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'multiple inheritance cannot borrow later plain proof' \
+    "${_qmr_types}class Left:\n    parse_file = Model.parse_file\nclass Child(Left, Parser):\n    pass\nChild().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'single-base plain inheritance remains supported' \
+    "${_qmr_types}class Child(Parser):\n    pass\nChild().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'multiple model bases retain known-model enforcement' \
+    "${_qmr_types}class Child(Model, Parser):\n    pass\nChild.parse_file('m.json')\n" 1 model
+  for _qmr_comp in \
+    "[Model.parse_file('m.json') for item in [0]]" \
+    "{Model.parse_file('m.json') for item in [0]}" \
+    "{item: Model.parse_file('m.json') for item in [0]}" \
+    "(Model.parse_file('m.json') for item in [0])"; do
+    _qm_receiver_case "class comprehension global model: $_qmr_comp" \
+      "${_qmr_types}class Scope:\n    Model = Parser\n    values = $_qmr_comp\n" 1 model
+  done
+  _qm_receiver_case 'class comprehension eager iterator sees class locals' \
+    "${_qmr_types}class Scope:\n    Model = Parser\n    values = [item for item in Model.parse_file('notes.md')]\n" 0 plain
+  _qm_receiver_case 'wildcard import invalidates earlier plain proof' \
+    "${_qmr_types}from external_models import *\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'wildcard import cannot retain deferred plain capture' \
+    "${_qmr_types}def load():\n    return Parser().parse_file('m.json')\nfrom external_models import *\n" 0 unknown
+  _qm_receiver_case 'wildcard strict ambiguity still blocks' \
+    "${_qmr_types}from external_models import *\nParser().parse_file('m.json')\n" 1 unknown 'mandate.pydantic_v1_ambiguous=block\n'
+  _qm_receiver_case 'generator walrus cannot retain enclosing plain binding' \
+    "${_qmr_types}receiver = Parser()\nloads = ((receiver := Model) for item in [0])\nnext(loads)\nreceiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'called method mutation cannot retain outer plain proof' \
+    "${_qmr_types}class Patch:\n    def mutate(self):\n        Parser.parse_file = Model.parse_file\nPatch().mutate()\nParser().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'called instance installer cannot retain plain method' \
+    "${_qmr_types}class Changed:\n    def install(self):\n        self.parse_file = Model.parse_file\n    def parse_file(self, path):\n        return path\nreceiver = Changed()\nreceiver.install()\nreceiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'class generator cannot restore proof before future star import' \
+    "${_qmr_types}class Scope:\n    loads = (Parser().parse_file('m.json') for item in [0])\nfrom external_models import *\nlist(Scope.loads)\n" 0 unknown
+  _qm_receiver_case 'class comprehension cannot restore proof after method mutation' \
+    "${_qmr_types}class Scope:\n    Parser.parse_file = Model.parse_file\n    values = [Parser().parse_file('m.json') for item in [0]]\n" 0 unknown
+}
+
+# Protects: lambda parameters override class/global names in nested expressions.
+# Detects: comprehension scope accidentally borrowing the enclosing class view.
+# Needs: staged scanner; real lexical fixtures and eager-default counterpart.
+# Breadcrumb: hooks/common/mandate_scan.py visit_Lambda and comprehension.
+_qm_receiver_lambda_scope_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'class lambda comprehension retains parameter scope' \
+    "${_qmr_types}class Scope:\n    load = lambda Model: [Model.parse_file('m.json') for item in [0]]\n" 0 unknown
+  _qm_receiver_case 'class lambda generator retains parameter scope' \
+    "${_qmr_types}class Scope:\n    load = lambda Model: (Model.parse_file('m.json') for item in [0])\n" 0 unknown
+  _qm_receiver_case 'class lambda comprehension still sees global model' \
+    "${_qmr_types}class Scope:\n    Model = Parser\n    load = lambda: [Model.parse_file('m.json') for item in [0]]\n" 1 model
+  _qm_receiver_case 'class lambda default still sees immediate class namespace' \
+    "${_qmr_types}class Scope:\n    Model = Parser\n    load = lambda value=Model.parse_file('notes.md'): value\n" 0 plain
+}
+
+# Protects: annotations without values do not become writes in effect scans.
+# Detects: false capture rebinding and false method/type mutation barriers.
+# Needs: staged scanner; declared model/parser and deferred-call controls.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_binding_events/mutated_names.
+_qm_receiver_annotation_effect_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'annotation-only method target does not mutate deferred parser' \
+    "${_qmr_types}Parser.parse_file: object\ndef load():\n    return Parser().parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'annotation-only bases target does not erase model ancestry' \
+    "${_qmr_types}Model.__bases__: tuple\ndef load():\n    return Model.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'annotation-only name does not rebind deferred parser' \
+    "${_qmr_types}receiver = Parser()\nload = lambda: receiver.parse_file('notes.md')\nreceiver: Model\n" 0 plain
+}
+
+# Protects: nested-class free names skip enclosing class-local namespaces.
+# Detects: class-body locals and nested publication leaking into method globals.
+# Needs: staged scanner, known model, plain classmethod and eager-header control.
+# Breadcrumb: hooks/common/mandate_scan.py visit_ClassDef lexical/deferred views.
+_qm_receiver_nested_class_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    @classmethod\n    def parse_file(cls, path):\n        return object\n'
+  _qm_receiver_case 'nested class method skips enclosing class-local model name' \
+    "${_qmr_types}class Outer:\n    Model = Parser\n    class Inner:\n        def load(self):\n            return Model.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'nested class body skips enclosing class-local model name' \
+    "${_qmr_types}class Outer:\n    Model = Parser\n    class Inner:\n        value = Model.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'nested class name is not published into module globals' \
+    "${_qmr_types}class Outer:\n    class Model:\n        @classmethod\n        def parse_file(cls, path):\n            return path\n        def load(self):\n            return Model.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'nested class base expression uses immediate outer class namespace' \
+    "${_qmr_types}class Outer:\n    Model = Parser\n    class Inner(Model.parse_file('notes.md')):\n        pass\n" 0 plain
+}
+
+# Protects: called global/nonlocal rebindings cannot preserve obsolete proof.
+# Detects: ignoring declared-name writes or treating them as object mutation.
+# Needs: staged scanner and no-write/config/unrelated-model counterparts.
+# Breadcrumb: hooks/common/mandate_scan.py declared-name summaries and visit_Call.
+_qm_receiver_declared_binding_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  _qm_receiver_case 'called global binding change cannot retain plain receiver' \
+    "${_qmr_types}receiver = Parser()\ndef change():\n    global receiver\n    receiver = Model\nchange()\nreceiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'called nonlocal binding change cannot retain plain receiver' \
+    "${_qmr_types}def outer():\n    receiver = Parser()\n    def change():\n        nonlocal receiver\n        receiver = Model\n    change()\n    return receiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'global declaration without write preserves plain receiver' \
+    "${_qmr_types}receiver = Parser()\ndef inspect():\n    global receiver\n    return receiver\ninspect()\nreceiver.parse_file('notes.md')\n" 0 plain
+  _qm_receiver_case 'called global receiver change preserves unrelated model' \
+    "${_qmr_types}receiver = Parser()\ndef change():\n    global receiver\n    receiver = Model\nchange()\nModel.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'global declaration and model config write preserve model type' \
+    "${_qmr_types}def configure():\n    global Model\n    Model.model_config = {}\nconfigure()\nModel.parse_file('m.json')\n" 1 model
 }
 
 t_case_quality_mandate() {
