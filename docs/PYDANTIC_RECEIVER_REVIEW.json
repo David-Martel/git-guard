@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "proposed lambda/decorator successor to28b1cb0b; actual source commit will be bound after signed publication",
+  "source_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
     "hooks/common/mandate_scan.py": "fd3a493245ee0f902358351796830f4a40443ac2291f11d6253d96f248ecf6ae",
@@ -20,7 +20,7 @@
     "global_precommit": "Actual current configured global hook exit0 at frozen FD3A/3987/4C0A; existing nonblocking type/style advisories retained.",
     "static_checks": "Isolated Ruff E,F/format, default mypy and ShellCheck exit0 on frozen successor.",
     "linux": "Unverified successor; exact new-head native/docker CI required.",
-    "current_source_commit": "proposed successor to28b1cb0b",
+    "current_source_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
     "current_source_sha256": "fd3a493245ee0f902358351796830f4a40443ac2291f11d6253d96f248ecf6ae",
     "current_test_sha256": "3987e1624fc7a747da791cf552c6148f15cc5d7f8c7c23c62b1ea91e66442358",
     "qualification": {
@@ -96,25 +96,37 @@
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "scope": "Fresh complete source9 binding required after lambda/decorator changes; prior approval preserved in predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "scope": "Actual full selector body declaration through first column-zero brace excluding newline, nine-file target context, meaningful RED/GREEN and940 category proof; no linecoverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7"
     },
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "2842504944eff360f9f950eea095d4c1be28da7debd298c1dd5f8d70da27fbd0",
-      "scope": "Fresh complete source9 binding required after lambda/decorator changes; prior approval preserved in predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "scope": "Actual full selector body declaration through first column-zero brace excluding newline, nine-file target context, meaningful RED/GREEN and940 category proof; no linecoverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7"
     },
     {
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "scope": "Fresh complete source9 binding required after lambda/decorator changes; prior approval preserved in predecessor.",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "scope": "Actual full selector body declaration through first column-zero brace excluding newline, nine-file target context, meaningful RED/GREEN and940 category proof; no linecoverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7"
     }
   ],
   "rule_reviews": [
@@ -122,19 +134,27 @@
       "selector": "mandate-pydantic-v1",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "scope": "KnownModel remains strong; proven local plain exemption and unresolved warning remain distinct. Existing genuine raw skips explicitly retained.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "",
-      "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
+      "scope": "KnownModel strong/provenplain clear/unresolved warning remain distinct, raw14skips explicit. Actual unchanged rule bytes verified.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7"
     },
     {
       "selector": "mandate-pydantic-v1-ambiguous",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "scope": "KnownModel remains strong; proven local plain exemption and unresolved warning remain distinct. Existing genuine raw skips explicitly retained.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "",
-      "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
+      "scope": "KnownModel strong/provenplain clear/unresolved warning remain distinct, raw14skips explicit. Actual unchanged rule bytes verified.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7"
     }
   ],
   "integration": {
@@ -236,8 +256,20 @@
     "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   },
   "independent_review": {
-    "disposition": "UNREVIEWED",
-    "scope": "Prior44A source review held after697023; current source9/selector3/rule2 need actual fresh independent dispositions at signed source commit."
+    "disposition": "KEEP",
+    "reviewer": "codex-python-closeout",
+    "reviewer_type": "independent-agent",
+    "date": "2026-11-18T06:13:44.005060+00:00",
+    "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+    "receipt": "git-guard-lambda-final-root-source-review.json",
+    "sha256": "920ae8104b53057561219a201f9afb6ddb8c5ddd34ebffa28c0eb173f6ad0d5c",
+    "scope": "ROOT_SOURCE_KEEP_ONLY_NOT_FINAL_ADMISSION at actual8fb; actual9committed/3selectors/2rules, complete35line production/13fixture/doc delta and56 resolver controls; independently verified author940 terminal/loghash evidence.",
+    "limits": [
+      "Root independently ran frozen56 resolver controls;940 four-category execution sourceauthor evidence, root checked all loghashes/terminals/recorded exits",
+      "Known source-local effects only; no arbitrary return/alias/dispatch solver or linecoverage guarantee",
+      "28b/root44A and allpriorholds preserved; no actual outside review yet/currentCI pending",
+      "Installed7136, releaseVERSION, globalconfig and foreignWIP unchanged"
+    ]
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -2163,58 +2195,103 @@
   },
   "source_reviews": [
     {
-      "source": "hooks/common/mandate_scan.py",
-      "source_sha256": "fd3a493245ee0f902358351796830f4a40443ac2291f11d6253d96f248ecf6ae",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:hooks/common/mandate_scan.py",
+      "selector_sha256": "fd3a493245ee0f902358351796830f4a40443ac2291f11d6253d96f248ecf6ae",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+      "disposition": "KEEP",
+      "scope": "Actual committed9source bytes and complete35line production/13fixture/doc successor delta inspected. Lambda own-bound names and saved/joined/restored rebound/mutation summary reuse function safeguards; known bare decorators apply after eager headers/classsuite in reverse order and feed future-capture summary. Data-only/uncalled/order/initialModel positives retained; decorator returns/arbitrary dispatch outside scope. Source-only not final admission."
     },
     {
-      "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
-      "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+      "disposition": "KEEP",
+      "scope": "Actual committed9source bytes and complete35line production/13fixture/doc successor delta inspected. Lambda own-bound names and saved/joined/restored rebound/mutation summary reuse function safeguards; known bare decorators apply after eager headers/classsuite in reverse order and feed future-capture summary. Data-only/uncalled/order/initialModel positives retained; decorator returns/arbitrary dispatch outside scope. Source-only not final admission."
     },
     {
-      "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
-      "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+      "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+      "disposition": "KEEP",
+      "scope": "Actual committed9source bytes and complete35line production/13fixture/doc successor delta inspected. Lambda own-bound names and saved/joined/restored rebound/mutation summary reuse function safeguards; known bare decorators apply after eager headers/classsuite in reverse order and feed future-capture summary. Data-only/uncalled/order/initialModel positives retained; decorator returns/arbitrary dispatch outside scope. Source-only not final admission."
     },
     {
-      "source": "tests/32-quality-mandate.t.sh",
-      "source_sha256": "3987e1624fc7a747da791cf552c6148f15cc5d7f8c7c23c62b1ea91e66442358",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:tests/32-quality-mandate.t.sh",
+      "selector_sha256": "3987e1624fc7a747da791cf552c6148f15cc5d7f8c7c23c62b1ea91e66442358",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+      "disposition": "KEEP",
+      "scope": "Actual committed9source bytes and complete35line production/13fixture/doc successor delta inspected. Lambda own-bound names and saved/joined/restored rebound/mutation summary reuse function safeguards; known bare decorators apply after eager headers/classsuite in reverse order and feed future-capture summary. Data-only/uncalled/order/initialModel positives retained; decorator returns/arbitrary dispatch outside scope. Source-only not final admission."
     },
     {
-      "source": "tests/27-rule-behaviour.t.sh",
-      "source_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:tests/27-rule-behaviour.t.sh",
+      "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+      "disposition": "KEEP",
+      "scope": "Actual committed9source bytes and complete35line production/13fixture/doc successor delta inspected. Lambda own-bound names and saved/joined/restored rebound/mutation summary reuse function safeguards; known bare decorators apply after eager headers/classsuite in reverse order and feed future-capture summary. Data-only/uncalled/order/initialModel positives retained; decorator returns/arbitrary dispatch outside scope. Source-only not final admission."
     },
     {
-      "source": "tests/run.sh",
-      "source_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:tests/run.sh",
+      "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+      "disposition": "KEEP",
+      "scope": "Actual committed9source bytes and complete35line production/13fixture/doc successor delta inspected. Lambda own-bound names and saved/joined/restored rebound/mutation summary reuse function safeguards; known bare decorators apply after eager headers/classsuite in reverse order and feed future-capture summary. Data-only/uncalled/order/initialModel positives retained; decorator returns/arbitrary dispatch outside scope. Source-only not final admission."
     },
     {
-      "source": "docs/QA_TOOLING.md",
-      "source_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:docs/QA_TOOLING.md",
+      "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+      "disposition": "KEEP",
+      "scope": "Actual committed9source bytes and complete35line production/13fixture/doc successor delta inspected. Lambda own-bound names and saved/joined/restored rebound/mutation summary reuse function safeguards; known bare decorators apply after eager headers/classsuite in reverse order and feed future-capture summary. Data-only/uncalled/order/initialModel positives retained; decorator returns/arbitrary dispatch outside scope. Source-only not final admission."
     },
     {
-      "source": "docs/RULES.md",
-      "source_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:docs/RULES.md",
+      "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+      "disposition": "KEEP",
+      "scope": "Actual committed9source bytes and complete35line production/13fixture/doc successor delta inspected. Lambda own-bound names and saved/joined/restored rebound/mutation summary reuse function safeguards; known bare decorators apply after eager headers/classsuite in reverse order and feed future-capture summary. Data-only/uncalled/order/initialModel positives retained; decorator returns/arbitrary dispatch outside scope. Source-only not final admission."
     },
     {
-      "source": "docs/PYDANTIC_RECEIVER_REVIEW.md",
-      "source_sha256": "4c0a6b961bb7bec689596aa199e93cdc309534d81a915fe049a4f8396f2d4b69",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
+      "selector_sha256": "4c0a6b961bb7bec689596aa199e93cdc309534d81a915fe049a4f8396f2d4b69",
+      "target_manifest_sha256": "8d8270dbcbbb69299b35dc740735b71fbfa867082d36542a8d653b37ee9d39e1",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T06:13:44.005060+00:00",
+      "reviewed_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+      "disposition": "KEEP",
+      "scope": "Actual committed9source bytes and complete35line production/13fixture/doc successor delta inspected. Lambda own-bound names and saved/joined/restored rebound/mutation summary reuse function safeguards; known bare decorators apply after eager headers/classsuite in reverse order and feed future-capture summary. Data-only/uncalled/order/initialModel positives retained; decorator returns/arbitrary dispatch outside scope. Source-only not final admission."
     }
   ],
   "lambda_decorator_predecessor": {
@@ -2556,5 +2633,52 @@
   "lambda_decorator_successor_mapping": {
     "receipt": "git-guard-receiver-lambda-decorator-binding-map.json",
     "sha256": "ea5b74ac20bbcc19d9a078ea2653e90125f0939eda9090da637a5d994851d4c2"
+  },
+  "metadata_successor_binding": {
+    "reviewed_source_commit": "8fb562b2ae055bfd1e4e90ca8176951cfac2b2d7",
+    "scope": "Sole JSON metadata successor. All9source bytes unchanged from actual reviewed source commit; actual outside review/currentCI/autopilot stillrequired.",
+    "rule_selector_map": {
+      "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    },
+    "source_map": {
+      "hooks/common/mandate_scan.py": {
+        "reviewed_source": "fd3a493245ee0f902358351796830f4a40443ac2291f11d6253d96f248ecf6ae",
+        "metadata_successor": "fd3a493245ee0f902358351796830f4a40443ac2291f11d6253d96f248ecf6ae"
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": {
+        "reviewed_source": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "metadata_successor": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": {
+        "reviewed_source": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "metadata_successor": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
+      },
+      "tests/32-quality-mandate.t.sh": {
+        "reviewed_source": "3987e1624fc7a747da791cf552c6148f15cc5d7f8c7c23c62b1ea91e66442358",
+        "metadata_successor": "3987e1624fc7a747da791cf552c6148f15cc5d7f8c7c23c62b1ea91e66442358"
+      },
+      "tests/27-rule-behaviour.t.sh": {
+        "reviewed_source": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "metadata_successor": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374"
+      },
+      "tests/run.sh": {
+        "reviewed_source": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "metadata_successor": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d"
+      },
+      "docs/QA_TOOLING.md": {
+        "reviewed_source": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "metadata_successor": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873"
+      },
+      "docs/RULES.md": {
+        "reviewed_source": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "metadata_successor": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b"
+      },
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": {
+        "reviewed_source": "4c0a6b961bb7bec689596aa199e93cdc309534d81a915fe049a4f8396f2d4b69",
+        "metadata_successor": "4c0a6b961bb7bec689596aa199e93cdc309534d81a915fe049a4f8396f2d4b69"
+      }
+    },
+    "root_review_receipt_sha256": "920ae8104b53057561219a201f9afb6ddb8c5ddd34ebffa28c0eb173f6ad0d5c"
   }
 }
