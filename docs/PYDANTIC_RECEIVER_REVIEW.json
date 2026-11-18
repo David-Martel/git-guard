@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_commit": "proposed inner-base successor to LOCALaa3; actualsignedsuccessorA to be boundinmetadataB",
+  "source_commit": "ea055bf290764c58407348baad92ef481a744b05",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
     "hooks/common/mandate_scan.py": "1b49bb02c7e80ad1ca75482de4562ed74ac75bcc0a6d2fe65b62b51dd0a25d5b",
@@ -20,7 +20,7 @@
     "global_precommit": "Actualcurrentglobalhook0 atfrozen1B/C2D/3E; onlyexistingnonblockingadvisories, no suppression.",
     "static_checks": "CurrentisolatedRuffE,F/format/defaultmypy/ShellCheck0.",
     "linux": "Unqualifiednewfinalhead; exactBnative/DockerCIrequired.",
-    "current_source_commit": "proposedinner-base local successor toaa3",
+    "current_source_commit": "ea055bf290764c58407348baad92ef481a744b05",
     "current_source_sha256": "1b49bb02c7e80ad1ca75482de4562ed74ac75bcc0a6d2fe65b62b51dd0a25d5b",
     "current_test_sha256": "c2d71cbcd414d94fdade6fa90168ae833a75e7dcb2a7e3beae76002b14d60130",
     "qualification": {
@@ -89,25 +89,37 @@
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "scope": "Freshactual9source context andcumulative3288delta afterown-indexsnapshotfix; no approval transferredfromLOCALaa3.",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "scope": "Root verified full selector declaration through first column-zero closing brace excluding newline; entire9source context includes delegated fixture helpers. Actual category/focus logs hash+terminal+recordedexits checked; no coverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05"
     },
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "dc8d78bf21cf49a1685699c7b07927ca7874cc2f3c8eeb546f53797b9f5f9121",
-      "scope": "Freshactual9source context andcumulative3288delta afterown-indexsnapshotfix; no approval transferredfromLOCALaa3.",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "scope": "Root verified full selector declaration through first column-zero closing brace excluding newline; entire9source context includes delegated fixture helpers. Actual category/focus logs hash+terminal+recordedexits checked; no coverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05"
     },
     {
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "scope": "Freshactual9source context andcumulative3288delta afterown-indexsnapshotfix; no approval transferredfromLOCALaa3.",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "scope": "Root verified full selector declaration through first column-zero closing brace excluding newline; entire9source context includes delegated fixture helpers. Actual category/focus logs hash+terminal+recordedexits checked; no coverage claim.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05"
     }
   ],
   "rule_reviews": [
@@ -115,19 +127,27 @@
       "selector": "mandate-pydantic-v1",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "scope": "Actual unchangedrulebytes retain knownModel strong/provenplain clear/unresolved warning; raw14skips explicit.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "",
-      "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
+      "scope": "Root reread unchanged strong/ambiguous rule definitions: known model strong, proven plain clear, unresolved warn; namespace/decorator/Config strong and14 raw-rule skips remain explicit.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05"
     },
     {
       "selector": "mandate-pydantic-v1-ambiguous",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "scope": "Actual unchangedrulebytes retain knownModel strong/provenplain clear/unresolved warning; raw14skips explicit.",
-      "disposition": "UNREVIEWED",
-      "reviewer": "",
-      "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
+      "scope": "Root reread unchanged strong/ambiguous rule definitions: known model strong, proven plain clear, unresolved warn; namespace/decorator/Config strong and14 raw-rule skips remain explicit.",
+      "disposition": "KEEP",
+      "reviewer": "codex-python-closeout",
+      "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05"
     }
   ],
   "integration": {
@@ -229,8 +249,20 @@
     "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   },
   "independent_review": {
-    "disposition": "UNREVIEWED",
-    "scope": "Root70 candidatecontrols notfinal9/3/2sourceapproval. ActualsignedlocalSourceA successor+fullcumulative3288delta needreview, thenJSONB. LOCALaa3 neverapproved."
+    "disposition": "KEEP",
+    "reviewer": "codex-python-closeout",
+    "reviewer_type": "independent-agent",
+    "date": "2026-11-18T08:08:06.787144+00:00",
+    "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+    "receipt": "git-guard-inner-base-root-source-review.json",
+    "sha256": "0c1765a30b3bc0884a7eb3f27b8f7c2dd4a3faa58350f48b841838d57a0d6983",
+    "scope": "Actual signedlocalSourceA ea0559Gitblobs/3selector/2rule; fullcumulativeremote3288quoted+innerbase delta read. Independentlyreconstructed F16B9targetmap, author1089/755/258 boundlogs verified, root70controls/2stdlib witnesses. SOURCEONLY_NOT_FINAL_ADMISSION.",
+    "limits": [
+      "1089 four-category and258 focus executions are author evidence; root independently checked boundlogs/summaries/recordedexitcodes.",
+      "Root70 independent direct resolver controls and2actualstdlibFakeBase runtime controls; initial abortedcontrolleroracles disclosed.",
+      "Prior3288/aa3 approvals untransferred; actualoutside review/currentheadCI/autopilot admission still required.",
+      "Installed7136/VERSION/globalconfig/foreignWIP unchanged."
+    ]
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -2156,58 +2188,103 @@
   },
   "source_reviews": [
     {
-      "source": "hooks/common/mandate_scan.py",
-      "source_sha256": "1b49bb02c7e80ad1ca75482de4562ed74ac75bcc0a6d2fe65b62b51dd0a25d5b",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:hooks/common/mandate_scan.py",
+      "selector_sha256": "1b49bb02c7e80ad1ca75482de4562ed74ac75bcc0a6d2fe65b62b51dd0a25d5b",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+      "disposition": "KEEP",
+      "scope": "Root read complete cumulative remote3288 production/test/documentation delta. Supported quoted roots use existing rebound guard after validated evidence. Class bases capture in evaluation order; recursive subscript owner captured before own index, existing effect revalidation applies own/later indexes/bases/keywords. Model ownership survives name-only writes; plain generic results unresolved; type effects lose proof; data/no-call controls and independent index findings retained. No arbitrary return/MRO/permutation solver. Actual signed local9 blobs/3 selector bodies/2 rules bound here; source-only."
     },
     {
-      "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
-      "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+      "disposition": "KEEP",
+      "scope": "Root read complete cumulative remote3288 production/test/documentation delta. Supported quoted roots use existing rebound guard after validated evidence. Class bases capture in evaluation order; recursive subscript owner captured before own index, existing effect revalidation applies own/later indexes/bases/keywords. Model ownership survives name-only writes; plain generic results unresolved; type effects lose proof; data/no-call controls and independent index findings retained. No arbitrary return/MRO/permutation solver. Actual signed local9 blobs/3 selector bodies/2 rules bound here; source-only."
     },
     {
-      "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
-      "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+      "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+      "disposition": "KEEP",
+      "scope": "Root read complete cumulative remote3288 production/test/documentation delta. Supported quoted roots use existing rebound guard after validated evidence. Class bases capture in evaluation order; recursive subscript owner captured before own index, existing effect revalidation applies own/later indexes/bases/keywords. Model ownership survives name-only writes; plain generic results unresolved; type effects lose proof; data/no-call controls and independent index findings retained. No arbitrary return/MRO/permutation solver. Actual signed local9 blobs/3 selector bodies/2 rules bound here; source-only."
     },
     {
-      "source": "tests/32-quality-mandate.t.sh",
-      "source_sha256": "c2d71cbcd414d94fdade6fa90168ae833a75e7dcb2a7e3beae76002b14d60130",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:tests/32-quality-mandate.t.sh",
+      "selector_sha256": "c2d71cbcd414d94fdade6fa90168ae833a75e7dcb2a7e3beae76002b14d60130",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+      "disposition": "KEEP",
+      "scope": "Root read complete cumulative remote3288 production/test/documentation delta. Supported quoted roots use existing rebound guard after validated evidence. Class bases capture in evaluation order; recursive subscript owner captured before own index, existing effect revalidation applies own/later indexes/bases/keywords. Model ownership survives name-only writes; plain generic results unresolved; type effects lose proof; data/no-call controls and independent index findings retained. No arbitrary return/MRO/permutation solver. Actual signed local9 blobs/3 selector bodies/2 rules bound here; source-only."
     },
     {
-      "source": "tests/27-rule-behaviour.t.sh",
-      "source_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:tests/27-rule-behaviour.t.sh",
+      "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+      "disposition": "KEEP",
+      "scope": "Root read complete cumulative remote3288 production/test/documentation delta. Supported quoted roots use existing rebound guard after validated evidence. Class bases capture in evaluation order; recursive subscript owner captured before own index, existing effect revalidation applies own/later indexes/bases/keywords. Model ownership survives name-only writes; plain generic results unresolved; type effects lose proof; data/no-call controls and independent index findings retained. No arbitrary return/MRO/permutation solver. Actual signed local9 blobs/3 selector bodies/2 rules bound here; source-only."
     },
     {
-      "source": "tests/run.sh",
-      "source_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:tests/run.sh",
+      "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+      "disposition": "KEEP",
+      "scope": "Root read complete cumulative remote3288 production/test/documentation delta. Supported quoted roots use existing rebound guard after validated evidence. Class bases capture in evaluation order; recursive subscript owner captured before own index, existing effect revalidation applies own/later indexes/bases/keywords. Model ownership survives name-only writes; plain generic results unresolved; type effects lose proof; data/no-call controls and independent index findings retained. No arbitrary return/MRO/permutation solver. Actual signed local9 blobs/3 selector bodies/2 rules bound here; source-only."
     },
     {
-      "source": "docs/QA_TOOLING.md",
-      "source_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:docs/QA_TOOLING.md",
+      "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+      "disposition": "KEEP",
+      "scope": "Root read complete cumulative remote3288 production/test/documentation delta. Supported quoted roots use existing rebound guard after validated evidence. Class bases capture in evaluation order; recursive subscript owner captured before own index, existing effect revalidation applies own/later indexes/bases/keywords. Model ownership survives name-only writes; plain generic results unresolved; type effects lose proof; data/no-call controls and independent index findings retained. No arbitrary return/MRO/permutation solver. Actual signed local9 blobs/3 selector bodies/2 rules bound here; source-only."
     },
     {
-      "source": "docs/RULES.md",
-      "source_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:docs/RULES.md",
+      "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+      "disposition": "KEEP",
+      "scope": "Root read complete cumulative remote3288 production/test/documentation delta. Supported quoted roots use existing rebound guard after validated evidence. Class bases capture in evaluation order; recursive subscript owner captured before own index, existing effect revalidation applies own/later indexes/bases/keywords. Model ownership survives name-only writes; plain generic results unresolved; type effects lose proof; data/no-call controls and independent index findings retained. No arbitrary return/MRO/permutation solver. Actual signed local9 blobs/3 selector bodies/2 rules bound here; source-only."
     },
     {
-      "source": "docs/PYDANTIC_RECEIVER_REVIEW.md",
-      "source_sha256": "3e9d1fc23dd073240a78dec5b0888ed9984af95da049f4aa4c6d729d54263681",
-      "disposition": "UNREVIEWED",
-      "reviewer": ""
+      "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
+      "selector_sha256": "3e9d1fc23dd073240a78dec5b0888ed9984af95da049f4aa4c6d729d54263681",
+      "target_manifest_sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "date": "2026-11-18T08:08:06.787144+00:00",
+      "reviewed_commit": "ea055bf290764c58407348baad92ef481a744b05",
+      "disposition": "KEEP",
+      "scope": "Root read complete cumulative remote3288 production/test/documentation delta. Supported quoted roots use existing rebound guard after validated evidence. Class bases capture in evaluation order; recursive subscript owner captured before own index, existing effect revalidation applies own/later indexes/bases/keywords. Model ownership survives name-only writes; plain generic results unresolved; type effects lose proof; data/no-call controls and independent index findings retained. No arbitrary return/MRO/permutation solver. Actual signed local9 blobs/3 selector bodies/2 rules bound here; source-only."
     }
   ],
   "lambda_decorator_predecessor": {
@@ -3420,5 +3497,57 @@
   "inner_base_successor_mapping": {
     "receipt": "git-guard-receiver-inner-base-final-binding-map.json",
     "sha256": "964967a67865897047134c0a0aa65ed2ce9ead6cec9a75ddf50c5071e4e0079c"
+  },
+  "metadata_successor_binding": {
+    "reviewed_source_commit": "ea055bf290764c58407348baad92ef481a744b05",
+    "scope": "SoleJSON metadataB; all9source unchangedfromactualreviewed localA. Publishentirelocalsourcehistory+Bonce, thenactualoutside/currentCI/autopilot; no approval transferredfromunreviewedaa3.",
+    "rule_selector_map": {
+      "mandate-pydantic-v1": "rule:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "mandate-pydantic-v1-ambiguous": "rule:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    },
+    "source_map": {
+      "hooks/common/mandate_scan.py": {
+        "reviewed_source": "1b49bb02c7e80ad1ca75482de4562ed74ac75bcc0a6d2fe65b62b51dd0a25d5b",
+        "metadata_successor": "1b49bb02c7e80ad1ca75482de4562ed74ac75bcc0a6d2fe65b62b51dd0a25d5b"
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": {
+        "reviewed_source": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "metadata_successor": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8"
+      },
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": {
+        "reviewed_source": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "metadata_successor": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7"
+      },
+      "tests/32-quality-mandate.t.sh": {
+        "reviewed_source": "c2d71cbcd414d94fdade6fa90168ae833a75e7dcb2a7e3beae76002b14d60130",
+        "metadata_successor": "c2d71cbcd414d94fdade6fa90168ae833a75e7dcb2a7e3beae76002b14d60130"
+      },
+      "tests/27-rule-behaviour.t.sh": {
+        "reviewed_source": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "metadata_successor": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374"
+      },
+      "tests/run.sh": {
+        "reviewed_source": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "metadata_successor": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d"
+      },
+      "docs/QA_TOOLING.md": {
+        "reviewed_source": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "metadata_successor": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873"
+      },
+      "docs/RULES.md": {
+        "reviewed_source": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "metadata_successor": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b"
+      },
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": {
+        "reviewed_source": "3e9d1fc23dd073240a78dec5b0888ed9984af95da049f4aa4c6d729d54263681",
+        "metadata_successor": "3e9d1fc23dd073240a78dec5b0888ed9984af95da049f4aa4c6d729d54263681"
+      }
+    },
+    "root_review_receipt_sha256": "0c1765a30b3bc0884a7eb3f27b8f7c2dd4a3faa58350f48b841838d57a0d6983",
+    "generated_target_manifest": {
+      "receipt": "git-guard-receiver-inner-base-final-target-manifest.json",
+      "sha256": "f16bc6e8da959d0d1dbfcc2554a3a82ba12b49bd5959080b168175d97368c73a",
+      "algorithm": "JSON path-to-LFsourceSHA256 map, sortedkeys/compactcomma-colon/ensure_ascii=True/UTF8noBOM/no trailingnewline; rootindependentlyreconstructed."
+    }
   }
 }
