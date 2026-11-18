@@ -1184,6 +1184,20 @@ RECEIVER_TYPE_MEMBERS = frozenset(
 )
 
 
+def receiver_annotation_root(annotation: Optional[ast.AST]) -> Optional[str]:
+    """Extract the root after value() has validated model/plain type evidence."""
+    while annotation is not None:
+        if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+            annotation = ast.parse(annotation.value, mode="eval").body
+        elif isinstance(annotation, (ast.Attribute, ast.Subscript)):
+            annotation = annotation.value
+        elif isinstance(annotation, ast.Call):
+            annotation = annotation.func
+        else:
+            return annotation.id if isinstance(annotation, ast.Name) else None
+    return None
+
+
 def receiver_bound_names(node: ast.AST) -> Set[str]:
     """Find bindings in this scope without borrowing nested function locals."""
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -1781,11 +1795,14 @@ class PydanticReceivers(ast.NodeVisitor):
                     PydanticReceivers.invalidate_binding(env, name, True)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        for expression in [
-            *node.decorator_list,
-            *node.bases,
-            *(keyword.value for keyword in node.keywords),
-        ]:
+        for expression in node.decorator_list:
+            self.visit(expression)
+        captured_bases = []
+        for base in node.bases:
+            self.visit(base)
+            captured_bases.append(self.value(base))
+        keywords = [keyword.value for keyword in node.keywords]
+        for expression in keywords:
             self.visit(expression)
         nested = self.class_binding is not None
         body_outer = (
@@ -1796,7 +1813,10 @@ class PydanticReceivers(ast.NodeVisitor):
         method_outer = (
             self.class_outer if nested and self.class_outer is not None else self.env
         )
-        bases = [self.value(base) for base in node.bases]
+        bases = [
+            self.revalidate_binding(binding, [*node.bases[index + 1 :], *keywords])
+            for index, binding in enumerate(captured_bases)
+        ]
         dynamic = any(
             receiver_bound_names(child) & {"__new__", "__getattr__", "__getattribute__"}
             for child in node.body
@@ -1907,10 +1927,12 @@ class PydanticReceivers(ast.NodeVisitor):
                 if annotation.kind in {"model", "plain"}
                 else annotation
             )
-            if (
-                isinstance(argument.annotation, ast.Name)
-                and argument.annotation.id in self.rebound
-            ):
+            annotation_name = (
+                receiver_annotation_root(argument.annotation)
+                if annotation.kind in {"model", "plain"}
+                else None
+            )
+            if annotation_name is not None and annotation_name in self.rebound:
                 local[argument.arg] = UNKNOWN_RECEIVER
         static = any(
             isinstance(d, ast.Name) and d.id == "staticmethod"

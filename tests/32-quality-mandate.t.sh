@@ -556,6 +556,80 @@ t_case_pydantic_receiver_contexts() {
   _qm_receiver_parameter_annotation_contexts
   _qm_receiver_annotated_store_order_contexts
   _qm_receiver_mixed_annotation_contexts
+  _qm_receiver_quoted_annotation_contexts
+  _qm_receiver_class_base_capture_contexts
+  _qm_receiver_quoted_root_controls
+  _qm_receiver_base_revalidation_controls
+}
+
+# Protects: Quoted root guards preserve generic ancestry and ordinary data.
+# Detects: Overbroad type-argument invalidation or malformed-string crashes.
+# Needs: staged scanner/current315compile fixtures; type-mutation input never runs.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_annotation_root/value/stable_binding.
+_qm_receiver_quoted_root_controls() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return "Parser"\n'
+  _qm_receiver_case 'quoted generic model ignores unrelated type argument rebind' \
+    "${_qmr_types}from pydantic import RootModel\nT=int\ndef load(receiver:'RootModel[T]'):\n    return receiver.parse_file('x')\nT=str\nanswer=load(RootModel[str]('x'))\n" 1 model
+  _qm_receiver_case 'quoted plain proof survives ordinary data write' \
+    "${_qmr_types}def load(receiver:'Parser'):\n    return receiver.parse_file('x')\nParser.label='notes'\nanswer=load(Parser())\n" 0 plain
+  _qm_receiver_case 'malformed quoted annotation remains unresolved' \
+    "${_qmr_types}def load(receiver:'???'):\n    return receiver.parse_file('x')\n" 0 unknown
+}
+
+# Protects: Captured bases separate later name writes from method/type effects.
+# Detects: Stale ancestry after a type mutation or erased captured class objects.
+# Needs: staged scanner/current315compile fixtures; type-mutation input never runs.
+# Breadcrumb: hooks/common/mandate_scan.py visit_ClassDef/revalidate_binding.
+_qm_receiver_base_revalidation_controls() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return "Parser"\n'
+  _qm_receiver_case 'captured model survives later keyword name rebind' \
+    "${_qmr_types}Receiver=Model\nclass Child(Receiver,extra=((Receiver:=Parser) and 'allow')):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+  _qm_receiver_case 'captured model loses proof after later base type mutation' \
+    "${_qmr_types}def alter():\n    Model.__bases__=(external,)\n    return object\nclass Child(Model,alter()):\n    pass\nanswer=Child().parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'captured model retains ancestry after method-only mutation' \
+    "${_qmr_types}def alter():\n    Model.parse_file=Parser.parse_file\n    return object\nclass Child(Model,alter()):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+}
+
+# Protects: Quoted annotation roots share existing capture invalidation.
+# Detects: Stale quoted/nested/namespace proof after name rebinding.
+# Needs: actual staged scanner, compile-valid315 fixtures; no imports/execution.
+# Breadcrumb: hooks/common/mandate_scan.py receiver_annotation_root/visit_FunctionDef.
+_qm_receiver_quoted_annotation_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return "Parser"\n'
+  _qm_receiver_case 'quoted plain annotation cannot survive later model rebind' \
+    "${_qmr_types}def load(receiver:'Parser'):\n    return receiver.parse_file('x')\nParser=Model\nanswer=load(Parser())\n" 0 unknown
+  _qm_receiver_case 'quoted model annotation cannot survive later parser rebind' \
+    "${_qmr_types}def load(receiver:'Model'):\n    return receiver.parse_file('x')\nModel=Parser\nanswer=load(Model())\n" 0 unknown
+  _qm_receiver_case 'stable quoted plain annotation remains plain' \
+    "${_qmr_types}def load(receiver:'Parser'):\n    return receiver.parse_file('x')\nanswer=load(Parser())\n" 0 plain
+  _qm_receiver_case 'stable quoted model annotation remains strong' \
+    "${_qmr_types}def load(receiver:'Model'):\n    return receiver.parse_file('x')\nanswer=load(Model())\n" 1 model
+  _qm_receiver_case 'unquoted rebound annotation retains existing uncertainty' \
+    "${_qmr_types}def load(receiver:Parser):\n    return receiver.parse_file('x')\nParser=Model\nanswer=load(Parser())\n" 0 unknown
+  _qm_receiver_case 'nested quoted annotation cannot retain rebound plain proof' \
+    "${_qmr_types}def load(receiver:\"'Parser'\"):\n    return receiver.parse_file('x')\nParser=Model\nanswer=load(Parser())\n" 0 unknown
+  _qm_receiver_case 'quoted namespace annotation cannot retain rebound model proof' \
+    "${_qmr_types}import pydantic as pd\ndef load(receiver:'pd.BaseModel'):\n    return receiver.parse_file('x')\nclass Namespace:\n    BaseModel=Parser\npd=Namespace\nanswer=load(pd.BaseModel())\n" 0 unknown
+}
+
+# Protects: Class bases retain evidence captured at each expression.
+# Detects: Later name rebinding inventing or discarding model ancestry.
+# Needs: actual staged scanner, compile-valid315 fixtures; no imports/execution.
+# Breadcrumb: hooks/common/mandate_scan.py visit_ClassDef/revalidate_binding.
+_qm_receiver_class_base_capture_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nclass Parser:\n    @classmethod\n    def parse_file(cls,path):\n        return "Parser"\n'
+  _qm_receiver_case 'class base captures plain before later name rebind' \
+    "${_qmr_types}Receiver=Parser\nclass Child(Receiver,(Receiver:=Model) and object):\n    pass\nanswer=Child().parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'class base captures model before later name rebind' \
+    "${_qmr_types}Receiver=Model\nclass Child(Receiver,(Receiver:=Parser) and object):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+  _qm_receiver_case 'stable single plain base remains plain' \
+    "${_qmr_types}class Child(Parser):\n    pass\nanswer=Child().parse_file('x')\n" 0 plain
+  _qm_receiver_case 'stable single model base remains strong' \
+    "${_qmr_types}class Child(Model):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
+  _qm_receiver_case 'later base mutator invalidates captured plain proof' \
+    "${_qmr_types}Receiver=Parser\ndef install():\n    Parser.parse_file=Model.parse_file\n    return object\nclass Child(Receiver,install()):\n    pass\nanswer=Child().parse_file('x')\n" 0 unknown
+  _qm_receiver_case 'later base name call preserves captured model object' \
+    "${_qmr_types}Receiver=Model\ndef change():\n    global Receiver\n    Receiver=Parser\n    return object\nclass Child(Receiver,change()):\n    pass\nanswer=Child().parse_file('x')\n" 1 model
 }
 
 # Protects: Both observed mixed parameter annotation orders retain evidence.

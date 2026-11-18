@@ -31,6 +31,14 @@ uncertain. Relevant method or type changes invalidate plain receiver proof
 through local aliases, inheritance and deferred references. Final class-body
 bindings determine method proof; replaced methods and shadowed decorator names
 cannot retain a previous exemption.
+Quoted annotations use the same rebinding guard as the supported unquoted
+evidence root. Nested strings and namespace roots cannot preserve stale proof;
+unrelated generic type arguments do not determine the receiver's model ancestry.
+Malformed quoted expressions remain unresolved. Each class base is captured when
+its expression is visited, then revalidated against later base and keyword
+effects. A later name-only write does not change the captured object; relevant
+method or type mutations retain the existing conservative proof loss. This does
+not infer arbitrary factory returns, MRO proxies or multiple-inheritance order.
 
 Binding events are counted individually even within one compound statement.
 Deferred generator bodies use capture safeguards; their first iterator remains
@@ -185,6 +193,9 @@ KEEP is historical and does not admit the current successor.
 Source 8fb562b2 / metadata daf7ce9f and its 940 checks remain held after
 annotated-target binding, unpacked-store order and parameter/return annotation
 order findings. Its root source KEEP920AE retains only its recorded scope.
+Source 518eabb9 / metadata 3288b309 and its 1,010 checks remain held after
+quoted-annotation capture and delayed class-base resolution findings. Its
+root source KEEP6DE508 retains only its recorded scope.
 Recorded current results must name the exact
 source and tests, with new selector bindings and fresh independent dispositions.
 Existing raw-rule skips retain their documented reasons; they are not counted
