@@ -343,6 +343,52 @@ _qm_receiver_settings_namespace() {
     'import pydantic_settings as settings\nsettings.parse_file("m.json")\n' 0 unknown
 }
 
+# Protects: expression/deferred/control contexts cannot silently clear model calls.
+# Detects: missed target/default execution, conditional binds and stale methods.
+# Needs: actual staged scanner, UTF-8 BOM bytes and owned Git fixtures only.
+# Breadcrumb: hooks/common/mandate_scan.py receiver visitors and UTF-8 decoding.
+_qm_receiver_review_contexts() {
+  _qmr_types='from pydantic import BaseModel\nclass Model(BaseModel):\n    id: int = 1\nclass Parser:\n    def parse_file(self, path):\n        return path\n'
+  for _qmr_operator in and or; do
+    _qm_receiver_case "$_qmr_operator walrus merges receiver paths" \
+      "${_qmr_types}receiver = Model\ncondition ${_qmr_operator} (receiver := Parser())\nreceiver.parse_file('m.json')\n" 0 unknown
+  done
+  _qm_receiver_case 'conditional expression merges receiver paths' \
+    "${_qmr_types}receiver = Model\n(receiver := Parser()) if condition else None\nreceiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'comprehension walrus cannot retain outer plain proof' \
+    "${_qmr_types}receiver = Parser()\n[(receiver := Model) for item in items]\nreceiver.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'comprehension stable model binding remains strong' \
+    "${_qmr_types}receiver = Model\n[(receiver := Model) for item in items]\nreceiver.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'lambda capture observes later name rebound' \
+    "${_qmr_types}receiver = Parser()\nload = lambda: receiver.parse_file('m.json')\nreceiver = Model\n" 0 unknown
+  _qm_receiver_case 'lambda capture observes later method replacement' \
+    "${_qmr_types}load = lambda: Parser.parse_file('m.json')\nParser.parse_file = Model.parse_file\n" 0 unknown
+  _qm_receiver_case 'lambda default executes known model call' \
+    "${_qmr_types}load = lambda value=Model.parse_file('m.json'): value\n" 1 model
+  _qm_receiver_case 'lambda local binding does not weaken global model' \
+    "${_qmr_types}load = lambda: (Model := Parser())\ndef probe():\n    return Model.parse_file('m.json')\n" 1 model
+  for _qmr_target in 'cache[Model.parse_obj(payload).id] = 1' 'cache[Model.parse_obj(payload).id]: int = 1' 'cache[Model.parse_obj(payload).id] += 1' 'del cache[Model.parse_obj(payload).id]'; do
+    _qm_receiver_case "executable target $_qmr_target" \
+      "${_qmr_types}cache = {}\npayload = {'id': 1}\n${_qmr_target}\n" 1 model
+  done
+  _qm_receiver_case 'loop mutation cannot retain plain method proof' \
+    "${_qmr_types}for item in range(1):\n    Parser.parse_file = Model.parse_file\nParser.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'with mutation cannot retain plain method proof' \
+    "${_qmr_types}with manager:\n    Parser.parse_file = Model.parse_file\nParser.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'known model loop header remains strong before base write' \
+    "${_qmr_types}for item in Model.parse_obj({'id': 1}):\n    Model.__bases__ = external_bases\n" 1 model
+  _qm_receiver_case 'class body replacement removes declared method proof' \
+    "${_qmr_types}class Changed:\n    def parse_file(self, path):\n        return path\n    parse_file = Model.parse_file\nChanged().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'class body replacement removes inherited method proof' \
+    "${_qmr_types}class Changed(Parser):\n    parse_file = Model.parse_file\nChanged().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'class local decorator shadow cannot establish plain proof' \
+    "${_qmr_types}class Changed:\n    classmethod = lambda method: Model.parse_file\n    @classmethod\n    def parse_file(path):\n        return path\nChanged().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'class body constructor replacement cannot establish type' \
+    "${_qmr_types}class Changed:\n    __new__ = lambda cls: Model()\n    def parse_file(self, path):\n        return path\nChanged().parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'BOM encoded model retains strong finding' \
+    '\0357\0273\0277from pydantic import BaseModel\nclass Model(BaseModel):\n    pass\nModel.parse_file("m.json")\n' 1 model
+}
+
 _qm_receiver_modes() {
   _qmr_repo="$(_qm_repo)"; _qmr_log="$GG_T_TMPROOT/receiver-modes.log"
   _qm_put "$_qmr_repo" src/model.py 'marker = 1\n'
@@ -414,6 +460,42 @@ t_case_pydantic_receiver_classification() {
   _qm_receiver_modes
   _qm_receiver_snapshot_case model
   _qm_receiver_snapshot_case plain
+}
+
+# Protects: declared headers/annotations retain known legacy model findings.
+# Detects: custom visitors dropping calls outside executable statement bodies.
+# Needs: real scanner/source fixtures; annotations are scanned, never evaluated.
+# Breadcrumb: hooks/common/mandate_scan.py class/function/annotated visitors.
+_qm_receiver_header_contexts() {
+  _qmr_model='from pydantic import BaseModel\nclass Model(BaseModel):\n    id: int = 1\n'
+  _qm_receiver_case 'class base expression retains known model finding' \
+    "${_qmr_model}class Child(Model.parse_obj({'id': 1}).__class__):\n    pass\n" 1 model
+  _qm_receiver_case 'variable annotation retains known model finding' \
+    "${_qmr_model}value: Model.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'argument annotation retains known model finding' \
+    "${_qmr_model}def probe(value: Model.parse_file('m.json')):\n    return value\n" 1 model
+  _qm_receiver_case 'return annotation retains known model finding' \
+    "${_qmr_model}def probe() -> Model.parse_file('m.json'):\n    return None\n" 1 model
+  _qm_receiver_case 'ordinary model class config keyword retains strong type' \
+    "${_qmr_model}class Configured(Model, extra='allow'):\n    pass\nConfigured.parse_file('m.json')\n" 1 model
+  _qm_receiver_case 'explicit metaclass remains uncertain' \
+    "${_qmr_model}class Configured(Model, metaclass=opaque_factory):\n    pass\nConfigured.parse_file('m.json')\n" 0 unknown
+  _qm_receiver_case 'unpacked class options may contain a metaclass' \
+    "${_qmr_model}class Configured(Model, **options):\n    pass\nConfigured.parse_file('m.json')\n" 0 unknown
+}
+
+# Protects: reviewed expression/closure contexts preserve model policy boundaries.
+# Detects: execution/scope contexts missed by basic receiver classification.
+# Needs: real ast-grep/ruff, helper fixtures and UTF-8 source; no fixture imports.
+# Breadcrumb: hooks/common/mandate_scan.py receiver visitors and class inventory.
+t_case_pydantic_receiver_contexts() {
+  t_begin '32 receiver expression and closure review contexts'
+  if ! gg_has_astgrep || ! command -v ruff >/dev/null 2>&1; then
+    t_skip 'receiver contexts need actual ast-grep and ruff'
+    return 0
+  fi
+  _qm_receiver_review_contexts
+  _qm_receiver_header_contexts
 }
 
 t_case_quality_mandate() {

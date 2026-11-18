@@ -1,53 +1,57 @@
 {
   "schema_version": 1,
-  "source_commit": "365650fb4dc8fa5dea0447d2909cd85353730c23",
+  "source_commit": "223bb5eb1c4f1cc05dc5f5afc74c7acac0b40f04 + proposed reviewed-context successor",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
-    "hooks/common/mandate_scan.py": "c128bc3f38288be55d903101309e5eb89d72028b5b1897ca68f8a6875d510f5c",
+    "hooks/common/mandate_scan.py": "296d94a79561a8bb0c421980230b651dbc89a8012b9b1d9aad34ed156ef9f020",
     "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
     "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-    "tests/32-quality-mandate.t.sh": "3d8b1f4057ec14fa63797bb23251298e4cb1c33ca2c88727a517ebc4d9904587",
+    "tests/32-quality-mandate.t.sh": "fdf73f65ec45564a15a1a83663fa2c9042fc12b5b33edf56502b20dac7307fbf",
     "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
-    "tests/run.sh": "a22ed361c90cfde6b358ec5c39ae701edd11d9a2e99b50018264f71ee6a5beb7",
+    "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
     "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
     "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-    "docs/PYDANTIC_RECEIVER_REVIEW.md": "f45aa35e0fa5f0e9abce0155914df29da0b21e3528580b590076270dfeb77fc7"
+    "docs/PYDANTIC_RECEIVER_REVIEW.md": "5b5a195d8965d051f484c9ad57ea0fd55939a135d51b1b781eba2b76805f07d0"
   },
   "author_evidence": {
     "platform": "Windows dtm-p1gen9 / Git Bash / CPython3.15.2",
     "red": "20 passed, 24 failed, 0 skipped",
-    "focused": "CURRENT C128/3D8B source:137 passed,0 failed,0 skipped; logs.focused binds exact current receipt",
-    "regression": "CURRENT C128/3D8B source:471 passed,0 failed,14 documented existing raw-rule skips; new receiver selector did not skip",
-    "global_precommit": "PASS, no mutation; nonblocking basedpyright and walrus-style warnings",
-    "static_checks": "Ruff format unchanged, E/F/I check PASS, mypy PASS, ShellCheck warning-severity PASS",
-    "linux": "Pending actual exact-head CI; no Linux pass inferred from Windows receipts",
+    "focused": "CURRENT296D/FDF7 source:137 basic+70 context assertions pass,207 total,zero failures/skips; separate exact receipts above",
+    "regression": "CURRENT296D/FDF7/DA70 source:541 passed,0 failed,14 existing documented raw-rule skips; both receiver selectors skip none",
+    "global_precommit": "PASS at frozen296D/FDF7/DA70; source hashes unchanged; nonblocking basedpyright/walrus advisories disclosed",
+    "static_checks": "Current exact-source Ruff format/check,mypy,ShellCheck all exit0; current logs bind separate receipts",
+    "linux": "UNVERIFIED at successor; exact-head Linux CI required",
     "logs": {
-      "focused": {
-        "receipt": "git-guard-receiver-settings-green.log",
+      "core137": {
+        "receipt": "git-guard-receiver-final-contexts-core.log",
         "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee"
       },
+      "contexts70": {
+        "receipt": "git-guard-receiver-contexts-config-green.log",
+        "sha256": "7f108f31e9da575ca844edbd90dc42e070ae15bf97e01cce439f5cc0a331a1e7"
+      },
       "regression": {
-        "receipt": "git-guard-receiver-settings-regression-windows.log",
-        "sha256": "cd9deec00950ff6a3fa4e4193a5f6d824015c1a4e55ac26b64f35cd1834b8579"
+        "receipt": "git-guard-receiver-final-contexts-regression.log",
+        "sha256": "2dd67e1cce3e23bc6c25374f2fdfbc13ca79db6dad0115cc9a50ac36e5be8c32"
       },
       "global_precommit": {
-        "receipt": "git-guard-receiver-final-global-precommit.log",
+        "receipt": "git-guard-receiver-contexts-global-precommit.log",
         "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b"
       },
       "ruff-format": {
-        "receipt": "git-guard-receiver-final-ruff-format.log",
+        "receipt": "git-guard-receiver-contexts-final-ruff-format.log",
         "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3"
       },
       "ruff-check": {
-        "receipt": "git-guard-receiver-final-ruff-check.log",
+        "receipt": "git-guard-receiver-contexts-final-ruff-check.log",
         "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
       },
       "mypy": {
-        "receipt": "git-guard-receiver-final-mypy.log",
+        "receipt": "git-guard-receiver-contexts-final-mypy.log",
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       "shellcheck": {
-        "receipt": "git-guard-receiver-final-shellcheck.log",
+        "receipt": "git-guard-receiver-contexts-final-shellcheck.log",
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       }
     },
@@ -130,68 +134,122 @@
         "receipt": "git-guard-receiver-settings-red.log",
         "sha256": "8c38623e802d6a1e8b1da16abc8f7f86d1ed122d9d82e7dc1bf64e534ec1fc98",
         "source_snapshot": "Preserved57139 scanner/3D8B settings-red test snapshot;133 passed/4 failed"
+      },
+      "previous-current-focused": {
+        "receipt": "git-guard-receiver-settings-green.log",
+        "sha256": "ea1d50e562ee690494b61be0acf19269c75d9c3d9ae2d7301e83950672985cee",
+        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+      },
+      "previous-current-regression": {
+        "receipt": "git-guard-receiver-settings-regression-windows.log",
+        "sha256": "cd9deec00950ff6a3fa4e4193a5f6d824015c1a4e55ac26b64f35cd1834b8579",
+        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+      },
+      "previous-current-global_precommit": {
+        "receipt": "git-guard-receiver-final-global-precommit.log",
+        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+      },
+      "previous-current-ruff-format": {
+        "receipt": "git-guard-receiver-final-ruff-format.log",
+        "sha256": "7688ae71c60af2e4266827abb3678cc2145655f587daf33dfa649dbac2c619c3",
+        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+      },
+      "previous-current-ruff-check": {
+        "receipt": "git-guard-receiver-final-ruff-check.log",
+        "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+      },
+      "previous-current-mypy": {
+        "receipt": "git-guard-receiver-final-mypy.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+      },
+      "previous-current-shellcheck": {
+        "receipt": "git-guard-receiver-final-shellcheck.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_snapshot": "Superseded C128/3D8B source365650/metadata223bb5; not qualification of this successor"
+      },
+      "contexts-red": {
+        "receipt": "git-guard-receiver-contexts-red.log",
+        "sha256": "f62d1caa961e8a9531bff9fed30803d5037d1ebb5977db14c5ff613652bda8d4",
+        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+      },
+      "contexts-focused-red": {
+        "receipt": "git-guard-receiver-contexts-focused-red.log",
+        "sha256": "dca474231ec24f71c26720155636d72df233841289081940ed2865893a5ddffc",
+        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+      },
+      "contexts-closure-red": {
+        "receipt": "git-guard-receiver-contexts-closure-red.log",
+        "sha256": "a3f2c84ed8d6f95ce2cab9803ae0010f469ce9eb43fd70d9dbf98c6b5b8fe0d2",
+        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+      },
+      "contexts-green": {
+        "receipt": "git-guard-receiver-contexts-green.log",
+        "sha256": "f0097d638c90700a28cfe12e1bf185428d4f5fa1fcd166631995859b2bba5df7",
+        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+      },
+      "headers-red": {
+        "receipt": "git-guard-receiver-headers-red.log",
+        "sha256": "09d846f877ebd346465604f985f9bfd380c47c4025059a206a30988db408596f",
+        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+      },
+      "contexts-final-green": {
+        "receipt": "git-guard-receiver-contexts-final-green.log",
+        "sha256": "9f4cdce3657bbccd02d3072c6a03fb0d86a31a07a0a145c3af1dbd29a69f9566",
+        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
+      },
+      "config-keywords-red": {
+        "receipt": "git-guard-receiver-config-keywords-red.log",
+        "sha256": "a5dce875dc103c9cab41be1a7dcac91eaf6311ef86b33b866ea217bcfad8ea48",
+        "source_snapshot": "Read-only staged prototype diagnostics before final296D; results and source snapshots remain historical, not final-source qualification"
       }
     },
-    "current_source_commit": "365650fb4dc8fa5dea0447d2909cd85353730c23",
-    "current_source_sha256": "c128bc3f38288be55d903101309e5eb89d72028b5b1897ca68f8a6875d510f5c",
-    "current_test_sha256": "3d8b1f4057ec14fa63797bb23251298e4cb1c33ca2c88727a517ebc4d9904587"
+    "current_source_commit": "Pending signed source successor",
+    "current_source_sha256": "296d94a79561a8bb0c421980230b651dbc89a8012b9b1d9aad34ed156ef9f020",
+    "current_test_sha256": "fdf73f65ec45564a15a1a83663fa2c9042fc12b5b33edf56502b20dac7307fbf"
   },
   "rows": [
     {
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
-      "scope": "137 actual scanner assertions: models/plain/unknown, explicit method/type mutations versus normal fields, aliases/deferred scopes/decorator shadows, settings module namespaces and divergent Git snapshots; full test-file hash binds helpers",
-      "reviewer_type": "independent-agent",
-      "reviewed_date": "2026-11-17",
-      "reviewed_source": "365650fb4dc8fa5dea0447d2909cd85353730c23",
-      "review_rationale": "Known model legacy calls retain strong policy, proven custom parser calls clear, unknown receivers warn; mutation kind preserves model ancestry across normal fields while invalidating affected plain method/type proofs. Source-bound staged/range/index census and raw candidate/rule controls verified; imported modules are not executed.",
-      "review_receipt": "git-guard-final-root-review.json",
-      "review_receipt_sha256": "f186dd2158649995d8ca2bac3df5cdd23bf2464a38016a9b0436201cb39921ad"
+      "disposition": "UNREVIEWED",
+      "reviewer": null,
+      "scope": "Original137 real scanner assertions including type/mutation/data/namespace distinctions and both selected-Git-snapshot divergence directions; full test file binds helpers"
+    },
+    {
+      "selector": "t_case_pydantic_receiver_contexts",
+      "source": "tests/32-quality-mandate.t.sh",
+      "selector_sha256": "3a4731fcf4f0807c04adae7e8b84f32ccc79c3b9e7ca4b6194e8d6e53f9cf9d1",
+      "disposition": "UNREVIEWED",
+      "reviewer": null,
+      "scope": "70 real scanner assertions for expression/closure/target/control/class-body/BOM/header/annotation/config contexts; full test file binds helpers"
     },
     {
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
-      "scope": "Existing raw-rule matrix plus method-name candidate and v2 negative control; no receiver type claim",
-      "reviewer_type": "independent-agent",
-      "reviewed_date": "2026-11-17",
-      "reviewed_source": "365650fb4dc8fa5dea0447d2909cd85353730c23",
-      "review_rationale": "Known model legacy calls retain strong policy, proven custom parser calls clear, unknown receivers warn; mutation kind preserves model ancestry across normal fields while invalidating affected plain method/type proofs. Source-bound staged/range/index census and raw candidate/rule controls verified; imported modules are not executed.",
-      "review_receipt": "git-guard-final-root-review.json",
-      "review_receipt_sha256": "f186dd2158649995d8ca2bac3df5cdd23bf2464a38016a9b0436201cb39921ad"
+      "disposition": "UNREVIEWED",
+      "reviewer": null,
+      "scope": "Raw candidate matrix including legacy-call positive and v2 negative; no ownership inference or qualification of14 existing skipped raw-rule controls"
     }
   ],
   "rule_reviews": [
     {
       "selector": "mandate-pydantic-v1",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
-      "scope": "Strong syntax constructs retained; legacy call candidates classified by receiver evidence, ambiguity opt-out cannot remove known-model enforcement",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "reviewer_type": "independent-agent",
-      "reviewed_date": "2026-11-17",
-      "reviewed_source": "365650fb4dc8fa5dea0447d2909cd85353730c23",
-      "review_rationale": "Known model legacy calls retain strong policy, proven custom parser calls clear, unknown receivers warn; mutation kind preserves model ancestry across normal fields while invalidating affected plain method/type proofs. Source-bound staged/range/index census and raw candidate/rule controls verified; imported modules are not executed.",
-      "review_receipt": "git-guard-final-root-review.json",
-      "review_receipt_sha256": "f186dd2158649995d8ca2bac3df5cdd23bf2464a38016a9b0436201cb39921ad"
+      "scope": "Strong syntax constructs retained; legacy call candidates classified by receiver evidence, ambiguity opt-out cannot remove known-model enforcement",
+      "disposition": "UNREVIEWED",
+      "reviewer": null
     },
     {
       "selector": "mandate-pydantic-v1-ambiguous",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
-      "scope": "Existing dictionary/copy candidates and unresolved legacy model-method receivers; default WARN unchanged",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "reviewer_type": "independent-agent",
-      "reviewed_date": "2026-11-17",
-      "reviewed_source": "365650fb4dc8fa5dea0447d2909cd85353730c23",
-      "review_rationale": "Known model legacy calls retain strong policy, proven custom parser calls clear, unknown receivers warn; mutation kind preserves model ancestry across normal fields while invalidating affected plain method/type proofs. Source-bound staged/range/index census and raw candidate/rule controls verified; imported modules are not executed.",
-      "review_receipt": "git-guard-final-root-review.json",
-      "review_receipt_sha256": "f186dd2158649995d8ca2bac3df5cdd23bf2464a38016a9b0436201cb39921ad"
+      "scope": "Existing dictionary/copy candidates and unresolved legacy model-method receivers; default WARN unchanged",
+      "disposition": "UNREVIEWED",
+      "reviewer": null
     }
   ],
   "integration": {
@@ -234,22 +292,41 @@
     }
   },
   "historical_metadata_correction": "The rejected255629 register accidentally shared a mutable PowerShell hash-map object with its predecessor map. This successor restores each old source map from the actual immutable commit JSON and verifies all9 hashes against that commit blobs. Prior commits and receipts remain preserved; no review disposition is carried over.",
-  "partial_semantic_review": {
-    "reviewer": "codex-python-closeout",
-    "source_sha256": "c128bc3f38288be55d903101309e5eb89d72028b5b1897ca68f8a6875d510f5c",
-    "scope": "Root read member-kind/namespace deltas and independently executed7 resolver controls; not whole-PR/selector/CI/deployment approval",
-    "receipt": "git-guard-successor-root-controls.json",
-    "receipt_sha256": "7603471177223e3c5bbc6fe327f82e3ce0e9b5dc4c475f3abda00eff342c888a",
-    "disposition": "KEEP_DELTA_ONLY"
+  "metadata_documentation_scope": "Source/test/registration changes require fresh9source/3selector/2rule independent review; no old KEEP or hash binding silently carried over",
+  "contexts_predecessor": {
+    "source_commit": "223bb5eb1c4f1cc05dc5f5afc74c7acac0b40f04",
+    "production_commit": "365650fb4dc8fa5dea0447d2909cd85353730c23",
+    "disposition": "SUPERSEDED after confirmed expression/closure/target/control/class-body/BOM review defects; previous root KEEP applies only to its original snapshot",
+    "previous_source_hashes": {
+      "hooks/common/mandate_scan.py": "c128bc3f38288be55d903101309e5eb89d72028b5b1897ca68f8a6875d510f5c",
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "tests/32-quality-mandate.t.sh": "3d8b1f4057ec14fa63797bb23251298e4cb1c33ca2c88727a517ebc4d9904587",
+      "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "tests/run.sh": "a22ed361c90cfde6b358ec5c39ae701edd11d9a2e99b50018264f71ee6a5beb7",
+      "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": "f45aa35e0fa5f0e9abce0155914df29da0b21e3528580b590076270dfeb77fc7"
+    },
+    "previous_selector_hashes": {
+      "t_case_pydantic_receiver_classification": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
+      "t_case_rule_behaviour": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a"
+    },
+    "review_receipt": "git-guard-final-root-review.json",
+    "review_receipt_sha256": "f186dd2158649995d8ca2bac3df5cdd23bf2464a38016a9b0436201cb39921ad",
+    "review_findings": [
+      "https://github.com/David-Martel/git-guard/pull/129#discussion_r4606806249",
+      "https://github.com/David-Martel/git-guard/pull/129#discussion_r4606806259",
+      "https://github.com/David-Martel/git-guard/pull/129#discussion_r4606806265",
+      "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6964149422"
+    ]
   },
-  "metadata_documentation_scope": "Production/tests at365650; this metadata successor updates only completed-QA prose in PYDANTIC_RECEIVER_REVIEW.md plus this register. All current9 hashes below bind the reviewed working snapshot; no production/test changes.",
-  "independent_review": {
+  "historical_independent_review": {
     "reviewer": "codex-python-closeout",
-    "disposition": "KEEP bounded source revision, two selectors and two rules",
     "source_commit": "365650fb4dc8fa5dea0447d2909cd85353730c23",
+    "metadata_commit": "223bb5eb1c4f1cc05dc5f5afc74c7acac0b40f04",
+    "disposition": "Prior KEEP superseded for this successor by confirmed unhandled contexts; no approval carried forward",
     "receipt": "git-guard-final-root-review.json",
-    "receipt_sha256": "f186dd2158649995d8ca2bac3df5cdd23bf2464a38016a9b0436201cb39921ad",
-    "limits": "Windows137 focused/471 broader with14 existing raw-rule skips; current-head Linux CI and actual independent outside-family review required. Global hook nonblocking type/style advisories remain disclosed. No installed-hook change or whole-program type inference claim.",
-    "integration": "Current-head Linux CI, actual outside-family review and merge-autopilot admission remain required; no release or installation authorization inferred"
+    "receipt_sha256": "f186dd2158649995d8ca2bac3df5cdd23bf2464a38016a9b0436201cb39921ad"
   }
 }

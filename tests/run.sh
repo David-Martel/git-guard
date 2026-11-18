@@ -147,6 +147,7 @@ t_case_panic_set
 t_case_silent_failures
 t_case_quality_mandate
 t_case_pydantic_receiver_classification
+t_case_pydantic_receiver_contexts
 t_case_attribution
 t_case_attribution_claude
 t_case_identity_cli
