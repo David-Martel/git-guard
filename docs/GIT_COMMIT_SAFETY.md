@@ -49,6 +49,19 @@
   deliberate human-emergency escape hatch is `GIT_GUARD=0`.
 - A chained PowerShell/bash command does **not** stop on a hook failure unless you check
   exit codes / output between steps. Always inspect the commit/push result.
+- **A push that ran git-guard prints `git-guard pre-push <version>: <n> ref(s) checked`.**
+  No such line means no git-guard pre-push ran: the host or repo is not covered. Stop
+  and check it with `git-guard doctor --require-installed --repo .` before pushing again.
+
+## Is this host covered?
+
+Push only from a host and repo where git-guard's hooks run. A hook cannot report
+that it is missing, so check with `git-guard doctor --require-installed --repo <repo>`
+(add `--wsl` on Windows). It exits non-zero and prints
+`git-guard doctor: NOT COVERED (n failures)` when the hooks will not run. Pushes from
+bare repositories are refused: use `git worktree add`, or `preserve/*` for custody.
+The per-host procedure is in [`FLEET_ROLLOUT.md`](FLEET_ROLLOUT.md) (installed at
+`~/.local/share/git-guard/current/docs/FLEET_ROLLOUT.md`).
 
 ## SAFE SEQUENCE — branch-protected repo (PR-only + signed)
 

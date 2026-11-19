@@ -31,11 +31,17 @@ function check(name, fn) {
 // Git always pipes ssh stdin/stdout, so stderr is the only stream that can
 // carry a terminal. Default to an attached terminal; Node reports a missing
 // one as undefined, not false, so the headless form mirrors that.
-function invoke(env, args, execute = () => ({ status: 0 }), { terminal = true } = {}) {
+// The wrapper reads the filesystem only to find Git's bundled ssh.exe. `exists` names the
+// paths the stub reports present; none by default, so Windows OpenSSH is the fallback.
+function fsStub(exists) {
+  return { existsSync(file) { return exists.includes(file); } };
+}
+function invoke(env, args, execute = () => ({ status: 0 }), { terminal = true, exists = [] } = {}) {
   let actual;
   const messages = [];
   const sandbox = {
     require(name) {
+      if (name === 'node:fs') return fsStub(exists);
       assert.equal(name, 'node:child_process');
       return {
         spawnSync(file, argv, options) {
@@ -60,19 +66,26 @@ function invoke(env, args, execute = () => ({ status: 0 }), { terminal = true } 
   // Cross-context arrays/objects have distinct prototypes; compare plain data.
   return { actual: JSON.parse(JSON.stringify(actual)), messages, exit };
 }
-check('interactive_hides_without_restricting_prompt_or_lifetime', () => {
+// Connect and keepalive bounds only end a dead connect or a dead link; they never cut a live
+// transfer or a prompt, so every invocation gets them. A stalled link otherwise hung an
+// interactive fetch forever (dtm-p1gen7, 2026-11-11).
+const boundOptions = [
+  '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
+];
+check('interactive_keeps_prompt_and_lifetime_but_bounds_dead_links', () => {
   const result = invoke({}, ['git@host', "git-upload-pack 'repo name.git'"]);
   assert.equal(result.actual.options.windowsHide, true);
   assert.equal(result.actual.options.stdio, 'inherit');
   assert.equal(result.actual.options.timeout, undefined);
-  assert.deepEqual(result.actual.argv, ['git@host', "git-upload-pack 'repo name.git'"]);
+  assert.deepEqual(result.actual.argv, [...boundOptions, 'git@host', "git-upload-pack 'repo name.git'"]);
+  assert.ok(!result.actual.argv.includes('BatchMode=yes'));
   assert.equal(result.exit, 0);
 });
 check('ci_alone_retains_interactive_options', () => {
   const result = invoke({ CI: 'true', GIT_TERMINAL_PROMPT: '1' }, ['host']);
   assert.equal(result.actual.options.windowsHide, true);
   assert.equal(result.actual.options.timeout, undefined);
-  assert.deepEqual(result.actual.argv, ['host']);
+  assert.deepEqual(result.actual.argv, [...boundOptions, 'host']);
 });
 check('explicit_noninteractive_has_existing_fleet_bounds', () => {
   const result = invoke({ GIT_TERMINAL_PROMPT: '0' }, ['host', 'command']);
@@ -83,9 +96,6 @@ check('explicit_noninteractive_has_existing_fleet_bounds', () => {
     '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3', 'host', 'command',
   ]);
 });
-const boundOptions = [
-  '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
-];
 check('missing_terminal_non_pack_command_gets_ssh_bounds_only', () => {
   const result = invoke({ CI: 'true', GIT_TERMINAL_PROMPT: '1' }, ['host'], undefined, { terminal: false });
   assert.equal(result.actual.options.timeout, undefined);
@@ -139,13 +149,65 @@ check('real_child_roundtrips_arguments_and_exit_status', () => {
     '-e', 'require("node:fs").writeFileSync(process.argv[1],JSON.stringify(process.argv.slice(2)));process.exit(23)',
     '--', output, ...argv,
   ], options));
-  assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), args);
+  assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), [...boundOptions, ...args]);
   assert.equal(result.exit, 23);
 });
 check('split_pack_command_preserves_git_encoded_fragment', () => {
   const result = invoke({}, ['-p', '443', 'host', 'git-upload-pack', "'owner/repo.git'"]);
-  assert.deepEqual(result.actual.argv, ['-p', '443', 'host', "git-upload-pack 'owner/repo.git'"]);
+  assert.deepEqual(result.actual.argv, [...boundOptions, '-p', '443', 'host', "git-upload-pack 'owner/repo.git'"]);
   assert.equal(result.actual.file, 'C:\\Windows\\System32\\OpenSSH\\ssh.exe');
+});
+// Windows OpenSSH 9.5p2 and 10.4.0.0p1 hung after git-upload-pack from an sshd session,
+// while Git's bundled OpenSSH finished in about 1s (dtm-p1gen7, dtm-super-nuc, 2026-11-11).
+// These pin which client runs: the bundled one when present, Windows OpenSSH otherwise
+// or for remote hosts that need the Windows ssh-agent pipe.
+const windowsSsh = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe';
+const defaultGitSsh = 'C:\\Program Files\\Git\\usr\\bin\\ssh.exe';
+const fetchArgs = ['-o', 'SendEnv=GIT_PROTOCOL', '-p', '22', 'git@github.com', "git-upload-pack 'owner/repo.git'"];
+check('bundled_git_ssh_from_git_exec_path_is_preferred', () => {
+  for (const runtime of ['mingw64', 'ucrt64', 'clangarm64']) {
+    const result = invoke({ GIT_EXEC_PATH: `D:/Tools/Git/${runtime}/libexec/git-core` }, fetchArgs, undefined,
+      { exists: ['D:\\Tools\\Git\\usr\\bin\\ssh.exe', defaultGitSsh] });
+    assert.equal(result.actual.file, 'D:\\Tools\\Git\\usr\\bin\\ssh.exe', runtime);
+    assert.deepEqual(result.actual.argv, [...boundOptions, ...fetchArgs], runtime);
+  }
+});
+check('bundled_git_ssh_default_install_is_used_without_git_exec_path', () => {
+  const result = invoke({}, fetchArgs, undefined, { exists: [defaultGitSsh] });
+  assert.equal(result.actual.file, defaultGitSsh);
+});
+check('windows_openssh_is_the_fallback_when_no_bundled_client_exists', () => {
+  const result = invoke({ GIT_EXEC_PATH: 'D:/Tools/Git/mingw64/libexec/git-core' }, fetchArgs, undefined,
+    { exists: [] });
+  assert.equal(result.actual.file, windowsSsh);
+});
+check('windows_ssh_hosts_keep_windows_openssh_for_named_remotes_only', () => {
+  const env = { GIT_GUARD_WINDOWS_SSH_HOSTS: 'corp.example; Agent.Example,other' };
+  const exists = [defaultGitSsh];
+  for (const host of ['corp.example', 'git@agent.example', 'AGENT.EXAMPLE']) {
+    const result = invoke(env, ['-p', '22', host, "git-upload-pack 'r.git'"], undefined, { exists });
+    assert.equal(result.actual.file, windowsSsh, host);
+  }
+  const unnamed = invoke(env, fetchArgs, undefined, { exists });
+  assert.equal(unnamed.actual.file, defaultGitSsh);
+  const every = invoke({ GIT_GUARD_WINDOWS_SSH_HOSTS: '*' }, fetchArgs, undefined, { exists });
+  assert.equal(every.actual.file, windowsSsh);
+});
+check('destination_host_skips_option_values', () => {
+  // An option value that equals a listed host must not be read as the destination.
+  const exists = [defaultGitSsh];
+  for (const argv of [
+    ['-p', 'corp.example', 'github.com', "git-upload-pack 'r.git'"],
+    ['-4', '-o', 'corp.example', 'github.com', "git-upload-pack 'r.git'"],
+    ['-46p', 'corp.example', 'github.com', "git-upload-pack 'r.git'"],
+    ['-oProxyJump=corp.example', 'github.com', "git-upload-pack 'r.git'"],
+  ]) {
+    const result = invoke({ GIT_GUARD_WINDOWS_SSH_HOSTS: 'corp.example' }, argv, undefined, { exists });
+    assert.equal(result.actual.file, defaultGitSsh, JSON.stringify(argv));
+  }
+  const listed = invoke({ GIT_GUARD_WINDOWS_SSH_HOSTS: 'corp.example' },
+    ['-46', '--', 'git@corp.example', "git-upload-pack 'r.git'"], undefined, { exists });
+  assert.equal(listed.actual.file, windowsSsh);
 });
 // Hand-encoded Git remote-shell fragments. Stripping quotes must fail both
 // transport forms, including apostrophes and harmless command substitutions.
@@ -219,7 +281,7 @@ check('spawn_error_and_signal_do_not_become_success', () => {
 // 300000ms first-response timer is shortened, at the sandbox timer boundary.
 // The default bound outlasts a child's startup on a loaded or CPU-capped runner; only the
 // silent-server case needs it shorter than startup.
-function invokeAsync(env, args, execute, { firstResponseMs = 2000 } = {}) {
+function invokeAsync(env, args, execute, { firstResponseMs = 2000, exists = [] } = {}) {
   return new Promise((resolve, reject) => {
     let actual;
     let exitCode;
@@ -243,6 +305,7 @@ function invokeAsync(env, args, execute, { firstResponseMs = 2000 } = {}) {
     Object.defineProperty(sandboxProcess, 'exitCode', { get: () => exitCode, set(value) { exitCode = value; } });
     const sandbox = {
       require(name) {
+        if (name === 'node:fs') return fsStub(exists);
         assert.equal(name, 'node:child_process');
         return {
           spawnSync() { throw new Error('no-terminal pack command took the synchronous path'); },
@@ -327,6 +390,15 @@ checkAsync('missing_terminal_exit_status_and_spawn_error_propagate', async () =>
     spawn(path.join(process.env.GG_T_TMPROOT, 'missing-ssh-executable'), argv, options));
   assert.equal(failed.exit, 1);
   assert.ok(failed.messages.some(message => /ENOENT/.test(message)), JSON.stringify(failed.messages));
+});
+checkAsync('missing_terminal_pack_command_uses_bundled_git_ssh', async () => {
+  // The sshd-session hang was in exactly this headless path, so it must select the bundled client.
+  const result = await invokeAsync({ GIT_EXEC_PATH: 'C:/Program Files/Git/ucrt64/libexec/git-core' },
+    ['git@github.com', "git-upload-pack 'owner/repo.git'"], (_file, _argv, options) =>
+      inertChild('process.stdout.write("x")', options),
+    { exists: ['C:\\Program Files\\Git\\usr\\bin\\ssh.exe'] });
+  assert.equal(result.actual.file, 'C:\\Program Files\\Git\\usr\\bin\\ssh.exe');
+  assert.equal(result.exit, 0);
 });
 (async () => {
   for (const [name, fn] of asyncChecks) {
@@ -462,6 +534,24 @@ Assert-Equal (Get-FileHash $gitConfig).Hash $configHash 'batch predecessor Git c
 $again = & $script -SourceRoot $source -BinDirectory $bin -Apply
 Assert-Equal $again.Status 'Current' 'batch predecessor repeat install'
 Assert-Equal @(Get-ChildItem -LiteralPath $bin).Count 2 'batch predecessor no backup/extra files'
+# known_keepalive_baseline_upgrades_without_config_or_acl_change
+# Exact predecessor bytes from 72afac0 (#112), which bounded every call but always ran
+# Windows OpenSSH; hosts that installed it must still upgrade to bundled-ssh selection.
+$keepaliveBaseline = Join-Path $env:GG_ROOT 'tests/fixtures/windows-ssh-wrapper-keepalive-baseline.js'
+Assert-Equal (Get-FileHash $keepaliveBaseline).Hash '86C729FBEE1CA7F8D2A6A394FF95D086EB9931E8426F7C1E9FC3781162781E5C' 'keepalive predecessor fixture pin'
+[IO.File]::WriteAllBytes($js, [IO.File]::ReadAllBytes($keepaliveBaseline))
+$keepaliveBaselineHash = (Get-FileHash $js).Hash
+$plan = & $script -SourceRoot $source -BinDirectory $bin
+Assert-Equal $plan.Status 'Planned' 'keepalive predecessor plan'
+Assert-Equal (Get-FileHash $js).Hash $keepaliveBaselineHash 'keepalive predecessor plan must not write'
+$upgraded = & $script -SourceRoot $source -BinDirectory $bin -Apply
+Assert-Equal $upgraded.Status 'Installed' 'keepalive predecessor upgrade'
+Assert-Equal (Get-FileHash $js).Hash (Get-FileHash (Join-Path $adapter 'git-ssh-wrapper.js')).Hash 'keepalive predecessor installed JS'
+Assert-Equal (Get-Acl -LiteralPath $js).Sddl $acl 'keepalive predecessor ACL'
+Assert-Equal (Get-FileHash $gitConfig).Hash $configHash 'keepalive predecessor Git config unchanged'
+$again = & $script -SourceRoot $source -BinDirectory $bin -Apply
+Assert-Equal $again.Status 'Current' 'keepalive predecessor repeat install'
+Assert-Equal @(Get-ChildItem -LiteralPath $bin).Count 2 'keepalive predecessor no backup/extra files'
 # unknown_launcher_is_preserved_and_refused
 [IO.File]::WriteAllText($js, $legacyJs, [Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText($cmd, 'unique launcher work')

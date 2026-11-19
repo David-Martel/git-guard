@@ -136,6 +136,7 @@ t_case_structured_data_encoding
 t_case_warn
 t_case_autofix
 t_case_precommit
+t_case_precommit_staged_names
 t_case_prepush
 t_case_backends
 t_case_rule_integrity
@@ -151,6 +152,7 @@ t_case_identity_cli
 t_case_identity_verify
 t_case_identity_hooks
 t_case_identity_worker
+t_case_native_no_interpreter
 t_case_secret_scan
 t_case_cache_staleness
 t_case_powershell
@@ -167,6 +169,11 @@ t_case_install_verify_before_flip
 t_case_install_native_links
 t_case_install_native_config_acl
 t_case_doctor_hooks_resolution
+t_case_doctor_timeout_prereq
+t_case_doctor_coverage
+t_case_prepush_content_and_bare
+t_case_install_rotates_legacy_hooks
+t_case_precommit_provider_old_git
 t_case_lfs_prepush
 t_case_fleet_versions
 t_case_reserved_path_safety
@@ -185,6 +192,7 @@ t_case_prepush_provider_git_env_fail_closed
 t_case_precommit_submodules
 t_case_posix_tool_path
 t_case_secret_scan_diff_parsing
+t_case_workflow_fork_guard
 "
 
 # --- ORPHAN GUARD: every defined case must be listed above -------------------

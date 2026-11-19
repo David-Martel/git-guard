@@ -32,11 +32,15 @@ validate_gitlinks() (
     submodule_block "nesting under '${prefix%/}' exceeds 16 levels; use an explicit repository gate that qualifies immutable snapshots."
   fi
   cd "$repo" || submodule_block "worktree '${prefix%/}' is unreadable."
-  links="$(git -c core.quotePath=false ls-tree -r --format='%(objectmode) %(objectname) %(path)' "$commit")" ||
+  # The default record is "<mode> SP <type> SP <sha> TAB <path>", with the
+  # path C-quoted exactly as `--format=%(path)` quotes it. `--format` itself
+  # needs git 2.36, and Ubuntu 22.04 ships 2.34, where it refused every push.
+  links="$(git -c core.quotePath=false ls-tree -r "$commit")" ||
     submodule_block "listing for '${prefix:-.}' failed at $commit."
   while IFS= read -r line; do
     [ "${line%% *}" = 160000 ] || continue
-    rest="${line#* }"; sha="${rest%% *}"; path="${rest#* }"; shown="$prefix$path"
+    rest="${line#* }"; rest="${rest#* }"
+    sha="${rest%%	*}"; path="${rest#*	}"; shown="$prefix$path"
     case "$path" in \"*)
       submodule_block "path $path needs quoting; rename it or use an explicit repository gate."
     ;; esac
@@ -145,8 +149,9 @@ if [ "$stage" = pre-push ]; then
   [ -n "$submodule_policy" ] ||
     submodule_policy="$(git config --get gitGuard.precommitSubmodules 2>/dev/null)" || submodule_policy=validate
   if [ "$submodule_policy" != validate ]; then
-    tree_modes="$(git ls-tree -r --format='%(objectmode)' "$head")" || exit 1
-    if printf '%s\n' "$tree_modes" | grep -qx 160000; then
+    # Plain records, not --format (git 2.36+); the mode is the first field.
+    tree_records="$(git ls-tree -r "$head")" || exit 1
+    if printf '%s\n' "$tree_records" | grep -q '^160000 '; then
       printf 'git-guard BLOCK: pre-commit pre-push submodule policy is %s, so submodule-backed source is refused; use an explicit repository gate that qualifies immutable snapshots, or set gitGuard.precommitSubmodules=validate.\n' "$submodule_policy" >&2
       exit 1
     fi

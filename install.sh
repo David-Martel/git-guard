@@ -125,17 +125,81 @@ ln_symlink() {  # $1 target, $2 linkname — portable, idempotent
   echo "  linked: $lnk -> $tgt"
 }
 
+# vnc_dead_state STATE: 0 when a process state letter means terminated. Z is a zombie
+# (exited, not yet reaped: under a container PID 1 that does not reap orphans, a
+# grandchild timeout killed stays Z); X is EXIT_DEAD, the instant while its parent reaps
+# it (x on older kernels). R, S, D and the rest are alive, and so is an empty state that
+# could not be read (fail closed). Counting Z, and then X, as a survivor refused a
+# working timeout (autopilot review of #119; vigil-utils #1503/#1505 found X).
+vnc_dead_state() {
+  case "$1" in Z|X|x) return 0 ;; *) return 1 ;; esac
+}
+
+# vnc_alive PID: 0 when PID is a process that is still running. kill -0 also succeeds for
+# a zombie, so the state from /proc/PID/stat (else ps) decides.
+vnc_alive() {
+  kill -0 "$1" 2>/dev/null || return 1
+  if [ -r "/proc/$1/stat" ]; then
+    vnc_state="$(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -c1)"
+  else
+    vnc_state="$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ' | cut -c1)"
+  fi
+  ! vnc_dead_state "$vnc_state"
+}
+
+# verify_native_containment: timeout(1) accepts -k and, at the deadline, stops a child
+# AND its descendant (the process group), as identity.sh gg_verify_native relies on.
+verify_native_containment() {
+  timeout -k 1 5 true >/dev/null 2>&1 || return 1
+  vnc_dir="$(mktemp -d "${TMPDIR:-/tmp}/gg-vnc.XXXXXX")" || return 1
+  # shellcheck disable=SC2016  # the $! and $1 belong to the generated script
+  printf '#!/bin/sh\nsleep 60 &\necho $! > "$1/gc"\nsleep 60\n' > "$vnc_dir/tree"
+  chmod +x "$vnc_dir/tree"
+  timeout -k 1 1 "$vnc_dir/tree" "$vnc_dir" </dev/null >/dev/null 2>&1
+  vnc_rc=$?
+  sleep 1
+  vnc_gc="$(cat "$vnc_dir/gc" 2>/dev/null || :)"
+  vnc_ok=1
+  [ "$vnc_rc" -eq 124 ] || [ "$vnc_rc" -eq 137 ] || vnc_ok=0
+  if [ -z "$vnc_gc" ]; then vnc_ok=0
+  elif vnc_alive "$vnc_gc"; then kill "$vnc_gc" 2>/dev/null; vnc_ok=0
+  fi
+  rm -rf "$vnc_dir"
+  [ "$vnc_ok" = 1 ]
+}
+
 native_link_error() {
   echo "git-guard install: native Windows symlink required at '$1'; refusing a copied file/directory." >&2
   echo "  Enable Windows Developer Mode or grant native symlink privileges, then retry." >&2
 }
 
-backup_once() {  # $1 path -> back up to <path>.pre-git-guard-backup, once
-  p="$1"; bk="${p}.pre-git-guard-backup"
-  if [ -e "$p" ] && [ ! -L "$p" ] && [ ! -e "$bk" ]; then
+# Where a real (non-link) $1 is moved aside: <path>.pre-git-guard-backup, or,
+# when that already holds an earlier original, <path>.pre-git-guard-backup.<UTC
+# timestamp>. A backup is never overwritten or deleted. Why: a stale real
+# ~/.git-hooks next to an existing backup used to be left in place (or refused
+# on Windows), so the host kept running a legacy pre-push (Carbon, 2026-11-05).
+backup_dest() {
+  bd="$1.pre-git-guard-backup"
+  if [ -e "$bd" ] || [ -L "$bd" ]; then
+    bd_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    bd="$1.pre-git-guard-backup.$bd_stamp"
+    bd_n=1
+    while [ -e "$bd" ] || [ -L "$bd" ]; do
+      bd="$1.pre-git-guard-backup.$bd_stamp.$bd_n"
+      bd_n=$((bd_n + 1))
+    done
+  fi
+  printf '%s' "$bd"
+}
+
+backup_once() {  # $1 path [$2 destination] -> move a real $1 aside (see backup_dest)
+  p="$1"; bk="${2:-}"
+  if [ -e "$p" ] && [ ! -L "$p" ]; then
+    [ -n "$bk" ] || bk="$(backup_dest "$p")"
     run "mv \"$p\" \"$bk\"" && echo "  backed up: $p -> $bk"
   fi
 }
+HOOKS_BACKUP_DEST=""
 
 # Snapshot only the four links/files this installer may replace. Native links
 # are copied before promotion so rollback needs atomic renames, not fresh
@@ -147,8 +211,11 @@ snapshot_windows_link() {
     cp -P "$snapshot_path" "$WINDOWS_LINK_TRANSACTION/$snapshot_key" || return 2
   elif [ -f "$snapshot_path" ]; then
     cp -p "$snapshot_path" "$WINDOWS_LINK_TRANSACTION/$snapshot_key" || return 2
-  elif [ -d "$snapshot_path" ] && [ "$snapshot_key" = "hooks" ] && [ ! -e "$snapshot_path.pre-git-guard-backup" ]; then
-    : > "$WINDOWS_LINK_TRANSACTION/$snapshot_key.directory"
+  elif [ -d "$snapshot_path" ] && [ "$snapshot_key" = "hooks" ]; then
+    # The marker records where backup_once will move the directory, so a
+    # rollback moves that exact copy back, timestamped or not.
+    HOOKS_BACKUP_DEST="$(backup_dest "$snapshot_path")"
+    printf '%s\n' "$HOOKS_BACKUP_DEST" > "$WINDOWS_LINK_TRANSACTION/$snapshot_key.directory" || return 2
   elif [ -e "$snapshot_path" ]; then
     echo "git-guard install: refusing to replace unexpected non-link directory/type at '$snapshot_path'." >&2
     return 2
@@ -174,9 +241,11 @@ restore_windows_link() {
   if [ -L "$WINDOWS_LINK_TRANSACTION/$restore_key" ] || [ -f "$WINDOWS_LINK_TRANSACTION/$restore_key" ]; then
     mv -T "$WINDOWS_LINK_TRANSACTION/$restore_key" "$restore_path" || return 2
   elif [ -f "$WINDOWS_LINK_TRANSACTION/$restore_key.directory" ]; then
+    restore_backup="$(cat "$WINDOWS_LINK_TRANSACTION/$restore_key.directory")" || return 2
+    [ -n "$restore_backup" ] || restore_backup="$restore_path.pre-git-guard-backup"
     [ ! -L "$restore_path" ] || rm -f "$restore_path" || return 2
     if [ ! -e "$restore_path" ]; then
-      mv "$restore_path.pre-git-guard-backup" "$restore_path" || return 2
+      mv "$restore_backup" "$restore_path" || return 2
     fi
   elif [ -f "$WINDOWS_LINK_TRANSACTION/$restore_key.absent" ]; then
     if [ -L "$restore_path" ] || [ -f "$restore_path" ]; then
@@ -310,9 +379,24 @@ qa_verify_materialized_tree() {
     return 2
   fi
   rm -f /tmp/gg-verify-err.$$
-  # A candidate using bounded attestation must prove offline runtime and actual
-  # OS containment before promotion. Old releases have no such prerequisite.
+  # A candidate using bounded attestation must prove its runtime and actual OS
+  # containment before promotion. Old releases have no such prerequisite. A release
+  # with the native runner proves it on POSIX hosts (timeout stops a whole process
+  # tree, git-guard #118) and needs no Python there; Windows still proves the worker.
+  identity_native=0
   if [ -f "$t/hooks/common/identity.sh" ] &&
+     grep -q 'gg_native_runner()' "$t/hooks/common/identity.sh"; then
+    case "$(uname -s 2>/dev/null || :)" in
+      MINGW*|MSYS*|CYGWIN*|Windows_NT) ;;
+      *) identity_native=1 ;;
+    esac
+  fi
+  if [ "$identity_native" = 1 ]; then
+    if ! verify_native_containment; then
+      echo 'git-guard install: VERIFY FAILED — timeout(1) with -k that stops a whole process tree is required for signature verification; current is untouched.' >&2
+      return 2
+    fi
+  elif [ -f "$t/hooks/common/identity.sh" ] &&
      grep -q 'identity_worker.py' "$t/hooks/common/identity.sh"; then
     identity_worker="$t/hooks/common/identity_worker.py"
     if [ ! -f "$identity_worker" ] || ! command -v uv >/dev/null 2>&1; then
@@ -338,6 +422,13 @@ qa_verify_materialized_tree() {
     return 2
   fi
   rm -f /tmp/gg-verify-err.$$
+  # qa_gate.sh sources its interpreter rule; a release that does must carry it.
+  if grep -q 'qa_python.sh' "$t/hooks/common/qa_gate.sh" 2>/dev/null; then
+    if [ ! -f "$t/hooks/common/qa_python.sh" ] || ! sh -n "$t/hooks/common/qa_python.sh"; then
+      echo 'git-guard install: VERIFY FAILED — qa_gate.sh needs hooks/common/qa_python.sh, which is missing or malformed.' >&2
+      return 2
+    fi
+  fi
   # Old releases have no framework dispatcher. A release that references it
   # must carry the helper before current can be changed, including re-use of
   # an existing materialized version directory.
@@ -446,7 +537,7 @@ if [ "$DEV_SYMLINK" = "1" ]; then
   echo "  mode: --dev-symlink (LEGACY, live checkout — see header comment)"
   qa_verify_materialized_tree "$GG_ROOT" || exit 2
   begin_windows_link_transaction || exit 2
-  backup_once "$HOME_HOOKS"
+  backup_once "$HOME_HOOKS" "$HOOKS_BACKUP_DEST"
   ln_symlink "$GG_HOOKS" "$HOME_HOOKS" || { if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then exit 2; fi; }
   DOCS_SRC="$GG_DOCS"
   RULES_LOCAL_TARGET="$GG_HOOKS/common/qa-gate.conf.local"
@@ -480,6 +571,9 @@ else
   fi
   begin_windows_link_transaction || exit 2
   flip_current "$VER_DIR" || exit 2
+  # A real ~/.git-hooks (a pre-git-guard or legacy copy) must be moved aside:
+  # `ln -sfn` would otherwise plant the link INSIDE it and leave it in use.
+  backup_once "$HOME_HOOKS" "$HOOKS_BACKUP_DEST"
   ln_symlink "$STORE_ROOT/current/hooks" "$HOME_HOOKS" || { if [ "$WINDOWS_NATIVE_LINKS" = "1" ]; then exit 2; fi; }
   DOCS_SRC="$STORE_ROOT/current/docs"
   RULES_LOCAL_TARGET="$STORE_ROOT/current/hooks/common/qa-gate.conf.local"

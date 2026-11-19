@@ -16,3 +16,4 @@ tools/windows/git-ssh-wrapper.cmd text eol=lf
 tools/windows/git-ssh-wrapper.js text eol=lf
 tests/fixtures/windows-ssh-wrapper-push-baseline.js text eol=lf
 tests/fixtures/windows-ssh-wrapper-batch-baseline.js text eol=lf
+tests/fixtures/windows-ssh-wrapper-keepalive-baseline.js text eol=lf
