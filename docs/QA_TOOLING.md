@@ -160,6 +160,15 @@ near-zero-false-positive, AND (c) it is fast. Otherwise it **WARNs**. This keeps
 ~40 naked WIP repos committing while still hard-failing real, fast, configured
 errors. The default blocking surface is deliberately NARROW.
 
+**Staged names reach every check whole.** `qa_gate.sh` reads the staged list with
+`git diff --cached --name-only -z` and passes it to each tool split on newlines only,
+with globbing off (`qa_ifs_lines`). Under the default IFS, `src/my bad.rs` reached
+ast-grep as `src/my` and `bad.rs`, so a BLOCK-trio violation in it was committed, and
+the JSON/YAML validators skipped such files. A name with a newline cannot be carried
+in that list. With an extension a check reads (`.rs`, `.py`, `.sh`, `.json`, `.yml`
+and so on), it BLOCKs (rename the file). With any other extension it is reported as
+unchecked (WARN).
+
 | Check | Trigger (staged files) | Tool | Default | Notes |
 |---|---|---|---|---|
 | secret-scan | added lines (any file) | `secret_scan.sh` | **BLOCK** | MVC; added-lines-only |
@@ -902,7 +911,10 @@ does not read, so nothing is reported twice.
   temporary tree; the working tree is never read.
 - **pre-push**, through `hooks/pre-push`, only for a pushed commit that carries
   `.git-guard/mandate-baseline.json` (the debt register below). A repo without
-  one pushes exactly as before and the scanner prints nothing.
+  one pushes exactly as before and the scanner prints nothing. `mandate_scan.sh`
+  makes that selection in sh and git alone (`mandate_pushed_baselines`), so such a
+  push runs no interpreter and probes for none (git-guard #118); a ref list git
+  cannot resolve is a TOOL ERROR (exit 2), never a pass.
 - **Directly**, from a repo whose own hooks replace git-guard's (vigil-utils,
   vigil-spark): `sh <git-guard>/hooks/common/mandate_scan.sh --staged`, or
   `--range origin/main..HEAD` in CI. `qa.enabled=off` does not switch it off;
@@ -1235,6 +1247,11 @@ also accepted, pinned at SHA256
 `0B718434D540C476C5581BD8354E4D5A6D1A67EB2E8AD06FC5541F2238FBFA82`. Its
 byte-authentic [fixture](../tests/fixtures/windows-ssh-wrapper-batch-baseline.js)
 comes from commit `70946f0` (#84).
+The predecessor that bounded every call but always ran Windows OpenSSH (#112) is
+also accepted, pinned at SHA256
+`86C729FBEE1CA7F8D2A6A394FF95D086EB9931E8426F7C1E9FC3781162781E5C`. Its
+byte-authentic [fixture](../tests/fixtures/windows-ssh-wrapper-keepalive-baseline.js)
+comes from commit `72afac0`.
 The script checks source syntax in a hidden, shell-free Node child with a 10s
 execution limit, at most 1s for post-kill reaping and at most 1s for output drain,
 before opening targets. Cleanup and pipe reads never use an unbounded wait.
@@ -1256,15 +1273,32 @@ a missing child-launch option; it does not establish that this wrapper caused
 the fleet's reported Git Bash popups or hide a console created by its caller.
 The option follows Node's
 [child-process contract](https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options).
-Interactive calls, meaning stderr is a terminal and `GIT_TERMINAL_PROMPT` is not
-`0`, retain prompts and have no added timeout or SSH options. `CI` alone does not
-change this behavior.
+Every call gets `ConnectTimeout=15`, `ServerAliveInterval=30` and
+`ServerAliveCountMax=3`. They end only a dead connect or a peer that stops answering,
+never a live transfer or a prompt; without them a stalled link hung an interactive
+fetch forever (dtm-p1gen7, 2026-11-11). Interactive calls, meaning stderr is a terminal
+and `GIT_TERMINAL_PROMPT` is not `0`, otherwise retain prompts and have no added
+timeout. `CI` alone does not change this behavior.
+
+The wrapper runs Git for Windows' bundled OpenSSH (`<git-root>\usr\bin\ssh.exe`) when
+it exists. It finds `<git-root>` from the `GIT_EXEC_PATH` that Git sets for the
+child (`<git-root>/<mingw64|ucrt64|clangarm64>/libexec/git-core`), then tries
+`C:\Program Files\Git`, and falls back to Windows OpenSSH
+(`C:\Windows\System32\OpenSSH\ssh.exe`). From an sshd session, Windows OpenSSH
+9.5p2 and 10.4.0.0p1 both left `git ls-remote` hanging after upload-pack until it
+was killed at 45s, while the bundled OpenSSH 10.6p1 returned in about 1s
+(dtm-p1gen7 and dtm-super-nuc, 2026-11-11). The bundled client cannot use the
+Windows `ssh-agent` named pipe. For a remote that needs that agent, list its host
+in `GIT_GUARD_WINDOWS_SSH_HOSTS` (separated by commas, semicolons or spaces,
+case-insensitive; `*` selects every host) to keep Windows OpenSSH for it. The
+host is the first argument that is neither an option nor an option's value,
+without any `user@` prefix. A Git for Windows install that chose the external
+OpenSSH option has no bundled client, so it keeps using Windows OpenSSH.
 
 Git always pipes the SSH child's stdin and stdout, so stderr is the only stream
 that can be a terminal. When stderr is not a terminal (a scheduler, an agent's
 sshd session, a GUI client, Git Bash's mintty) and `GIT_TERMINAL_PROMPT` is not
-`0`, the wrapper adds `ConnectTimeout=15`, `ServerAliveInterval=30` and
-`ServerAliveCountMax=3`, never `BatchMode`, so askpass and passphrase prompts
+`0`, the wrapper still never adds `BatchMode`, so askpass and passphrase prompts
 keep working. For a pack command (`git-upload-pack`, `git-upload-archive`,
 `git-receive-pack`) it also bounds the wait for the server's first byte at
 300000ms (5min). A Git server always speaks first: upload-pack and
@@ -1904,3 +1938,79 @@ and `7A1D59EF7BDC1ABE8DC9F65488FCAAFBB994E1B1854BD01062A2786B910E0157`;
 the installer raw file pin is
 `9E430B7B3F19E150614BD36F1E7AA057D8060D7D27D95CA403E26A9BB78BB442`.
 The unchanged worker-only selector/target bindings above remain applicable.
+
+### Native POSIX route (git-guard #118)
+
+With the native runner, POSIX hosts no longer use the worker or uv for signature
+verification, so two bindings above changed and await an independent review:
+
+- `WorkerTests::test_install_runtime_failure_prevents_promotion_gate` now extracts
+  `verify_native_containment` with the gate. On POSIX it asserts the gate admits a
+  candidate with no uv and no `identity_worker.py`, run from a directory with hostile
+  `.python-version` and `uv.toml`, and refuses (`VERIFY FAILED`, `timeout(1) with -k`)
+  when `timeout` cannot bound a process tree. The Windows assertions are unchanged.
+- `test_identity_deadline_discards_partial_attestation` is unchanged. The native
+  route's timeout message now reads "signature query exceeded its Ns deadline", so the
+  test's `deadline` assertion holds on both routes.
+
+Author execution, not an independent review: on Linux (GNU timeout 9.1, uv container)
+the unfixed head failed both tests exactly as CI did (`deadline` missing;
+`verify_native_containment: not found`), and the fixed head passed all 10 worker
+tests. On Windows the worker suite passed with its one POSIX-only skip.
+
+## Workflow fork guards (category 37)
+
+Run `sh tests/run.sh workflow_fork_guard` with Python and PyYAML to exercise the
+[actual checker and its boundary controls](../tests/37-workflow-fork-guard.t.sh).
+The existing [suite runner](../tests/run.sh) also selects this category in CI.
+Without PyYAML the category reports a skip; that is not executed qualification.
+
+For `pull_request` and `workflow_call`, every self-hosted job, secret-reading
+job and reusable-workflow call requires the exact job-level fork guard in the
+test header. Reusable calls are treated as potentially privileged even without
+`runs-on` or explicit secrets. Their descendants are not downloaded or resolved.
+Locally scanned called workflows are checked independently because their `github` context comes
+from the caller, as documented by [GitHub's reusable-workflow reference](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
+`issue_comment`, `workflow_run`, `pull_request_review` and
+`pull_request_review_comment` are refused when either self-hosted jobs or reusable
+calls are present; the PR-only guard cannot restrict those events. GitHub documents
+both [review events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review)
+and [review-comment events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review_comment)
+on PR merge refs, including fork events delivered to the base repository.
+
+Secret expressions in the workflow's own `env` count for each runnable job.
+This conservatively ignores job/step overrides rather than attempting expression
+or dataflow evaluation. The caller's workflow environment is not propagated to
+the callee. Ordinary hosted jobs without secret expressions remain unguarded;
+push-only workflows retain their existing behavior. See GitHub's
+[workflow environment reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#env).
+
+Secret detection scans actual scalar strings recursively, preserving their
+boundaries rather than joining serialized YAML fields. A `secrets` token outside
+expression literals is matched case-insensitively, following the official
+[context-name parser](https://github.com/actions/languageservices/blob/4043eda158e16579cc5fb1b0b07a4bce2a76f0b5/expressions/src/parser.ts#L242).
+Single-quoted literals and doubled apostrophe escapes follow GitHub's
+[expression literal syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#literals);
+`}}` inside a literal does not end the expression. Quoted words such as
+`${{ 'secrets' }}` are deliberately accepted because they read no context.
+
+In the scanned PR/workflow-call jobs, missing delimiters, unterminated literals,
+double-quoted literals, nested openers outside literals and empty expressions
+are policy errors, including in already-guarded jobs or after an earlier secret
+read. All scalar strings and expressions are consumed before deciding guards.
+This bounded lexical check does not evaluate expressions or validate their full
+grammar. Other bare-token false positives, such as `${{ inputs.secrets }}`, remain
+conservative; structural YAML keys retain their existing case-sensitive handling.
+
+Tuple members produced by PyYAML's `!!pairs`/`!!omap` constructors are inspected
+like lists. Uninspectable non-JSON values, including sets that have discarded
+mapping values, bytes and date objects, are refused; `None`, booleans, integers
+and floats contain no expression text. Whether GitHub accepts these tagged
+workflow forms is unverified. The fixtures protect this checker's inspection and
+fail-closed contract, not GitHub schema acceptance. A job-level `secrets:` key
+cannot bypass scanning of malformed inputs, and workflow-call environment
+templates receive the same validation before job guards.
+
+The [hash-bound review register](WORKFLOW_FORK_GUARD_REVIEW.json) records the new
+selector groups, failing-first evidence and mutation results. This static test
+does not qualify a deployed runner, dispatch workflows or replace required CI.

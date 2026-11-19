@@ -1,7 +1,51 @@
 const { spawn, spawnSync } = require('node:child_process');
+const { existsSync } = require('node:fs');
 
-const sshExe = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe';
+const windowsSsh = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe';
 const args = process.argv.slice(2);
+
+// ssh(1) options that take a value; the first other argument is the destination.
+const valueOptions = new Set('BbcDEeFIiJLlmOoPpQRSWw');
+function destinationHost(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--') return (argv[i + 1] ?? '').replace(/^.*@/, '').toLowerCase();
+    if (arg.length > 1 && arg.startsWith('-')) {
+      for (let j = 1; j < arg.length; j++) {
+        if (valueOptions.has(arg[j])) {
+          if (j === arg.length - 1) i++;
+          break;
+        }
+      }
+      continue;
+    }
+    return arg.replace(/^.*@/, '').toLowerCase();
+  }
+  return '';
+}
+
+// Windows OpenSSH (9.5p2 and 10.4.0.0p1) hung after git-upload-pack when no console was
+// attached (sshd sessions), while Git for Windows' bundled OpenSSH finished in about 1s
+// (dtm-p1gen7, dtm-super-nuc, 2026-11-11). Prefer the bundled client and fall back to
+// Windows OpenSSH. The bundled client cannot reach the Windows ssh-agent pipe, so remote
+// hosts named in GIT_GUARD_WINDOWS_SSH_HOSTS (separated by commas, semicolons or spaces;
+// '*' for every host) keep Windows OpenSSH.
+function selectSsh(env, host) {
+  const windowsHosts = String(env.GIT_GUARD_WINDOWS_SSH_HOSTS ?? '')
+    .split(/[\s,;]+/).map(name => name.toLowerCase()).filter(Boolean);
+  if (windowsHosts.includes('*') || (host && windowsHosts.includes(host))) return windowsSsh;
+  const roots = [];
+  // Git sets GIT_EXEC_PATH to <git-root>/<mingw64|ucrt64|clangarm64>/libexec/git-core.
+  const match = /^(.+)[\\/][^\\/]+[\\/]libexec[\\/]git-core[\\/]?$/i.exec(env.GIT_EXEC_PATH ?? '');
+  if (match) roots.push(match[1].replace(/\//g, '\\'));
+  roots.push('C:\\Program Files\\Git');
+  for (const root of roots) {
+    const candidate = `${root}\\usr\\bin\\ssh.exe`;
+    if (existsSync(candidate)) return candidate;
+  }
+  return windowsSsh;
+}
+const sshExe = selectSsh(process.env, destinationHost(args));
 const packCommands = new Set(['git-upload-pack', 'git-upload-archive', 'git-receive-pack']);
 
 if (args.length > 1) {
@@ -22,15 +66,16 @@ const isPack = args.length > 1
   && /^(git-upload-pack|git-upload-archive|git-receive-pack)[ \t]/.test(args[args.length - 1]);
 
 // Optional Windows adapter contract/tests: docs/QA_TOOLING.md, tests/33-windows-ssh-adapter.t.sh.
-// Keep interactive prompts/arguments unchanged. CI alone does not opt into BatchMode.
+// Keep interactive prompts and lifetime unchanged. CI alone does not opt into BatchMode.
 const options = { stdio: 'inherit', windowsHide: true };
 // Git pipes ssh stdin/stdout, so stderr is the only stream that can be a terminal.
 // Without one, nothing can answer or interrupt a stalled child (git-guard #90).
 const promptDisabled = process.env.GIT_TERMINAL_PROMPT === '0';
 const terminal = process.stderr.isTTY === true;
-if (promptDisabled || !terminal) {
-  args.unshift('-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3');
-}
+// Connect and keepalive bounds end only a dead connect or a dead link; they never cut a
+// live transfer or a prompt, so every invocation gets them. Without them a stalled link
+// hung an interactive-terminal fetch forever (dtm-p1gen7, 2026-11-11).
+args.unshift('-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3');
 if (promptDisabled) {
   args.unshift('-o', 'BatchMode=yes');
   // Push SSH stays open during local pre-push QA. Allow a finite, provisional

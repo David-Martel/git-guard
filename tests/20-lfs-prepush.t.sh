@@ -68,7 +68,7 @@ t_case_lfs_prepush() {
   # Use real transport executables on MSYS, not user launchers whose own
   # lookup fails in the deliberately restricted PATH. These are the closure
   # used by pre-push and its identity/preservation/hygiene helpers.
-  for tool in git sh cat mktemp rm printf dirname env awk grep sed cut tr sort wc uname date sleep find head tail; do
+  for tool in git sh cat mktemp rm printf dirname env awk grep sed cut tr sort wc uname date sleep find head tail timeout; do
     tp="$(command -v "$tool" 2>/dev/null)"
     if gg_is_windows; then
       case "$tool" in
