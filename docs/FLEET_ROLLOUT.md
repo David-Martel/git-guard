@@ -106,6 +106,15 @@ Delete the scratch repo afterwards. Never use a real credential for this.
 - **Custody of unreviewed work** goes to `preserve/<name>` or
   `refs/preserve/<name>` with a `Preserve-Of: <ref-or-sha>` trailer on every new
   commit. That route is secret-scanned and allowed from bare repositories too.
+- **Deleting branches from a bare mirror.** A push whose every ref is a
+  deletion (`git push <remote> :<branch>`) publishes no commits, so it is
+  allowed from a bare repository and prints the receipt. A push that deletes
+  one ref and updates another is still refused as a bare push. The mandate's
+  `--pre-push` mode also runs in a bare repository: it reads only the pushed
+  commits. Tests: `t_case_prepush_content_and_bare` in
+  [`tests/40-prepush-content-and-bare.t.sh`](../tests/40-prepush-content-and-bare.t.sh)
+  and `t_case_quality_mandate_bare_prepush` in
+  [`tests/32-quality-mandate.t.sh`](../tests/32-quality-mandate.t.sh).
 
 ## 5. What pre-push re-checks
 

@@ -530,6 +530,27 @@ def repo_root(start: Path) -> Path:
     return Path(out)
 
 
+def push_root(start: Path) -> Path:
+    """Where --pre-push runs git: the work tree, or a bare repository's git dir.
+
+    A bare mirror has no work tree, so `rev-parse --show-toplevel` exits 128 and
+    every push from it, even one that only deletes refs, was a TOOL ERROR. The
+    pre-push path reads only pushed commits (cat-file, ls-tree, show), never the
+    work tree, so the git dir serves as well.
+    """
+    bare = git(start, "rev-parse", "--is-bare-repository").decode().strip()
+    if bare != "true":
+        return repo_root(start)
+    out = (
+        git(start, "rev-parse", "--absolute-git-dir")
+        .decode("utf-8", "surrogateescape")
+        .strip()
+    )
+    if not out:
+        raise MandateError("cannot locate the bare repository's git dir")
+    return Path(out)
+
+
 def head_sha(repo: Path) -> str:
     done = run(["git", "rev-parse", "--verify", "-q", "HEAD"], cwd=repo, tool="git")
     sha = done.stdout.decode().strip()
@@ -2054,7 +2075,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         list_rules()
         return Outcome.PASSED
     try:
-        repo = repo_root(Path.cwd())
+        # --pre-push reads only pushed commits, so it also runs in a bare
+        # repository; every other mode scans the index or a work tree.
+        repo = push_root(Path.cwd()) if args.pre_push else repo_root(Path.cwd())
         pushed: List[str] = []
         if args.pre_push:
             # Nothing to check -> touch nothing (no config read, no tool probe):

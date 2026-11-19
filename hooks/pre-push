@@ -143,11 +143,32 @@ if [ -x "$git_guard_hook_dir/common/preserve.sh" ] && [ ! -t 0 ]; then
   fi
 fi
 
+# git_guard_delete_only FILE — true iff FILE lists at least one ref and every
+# ref is a deletion (local object ID all zeros, any hash length). A deletion
+# publishes no commits, so no content check has anything to scan.
+git_guard_delete_only() {
+  awk 'NF == 0 { next }
+       { n++ }
+       NF != 4 || $2 !~ /^0+$/ { bad = 1 }
+       END { exit (n > 0 && !bad) ? 0 : 1 }' "$1"
+}
+
 # A bare repository has no worktree, so the repo's declared pre-push checks
 # cannot run against the pushed source (the provider dispatch below needs one).
 # Refuse here with the supported routes rather than let a provider fail with a
 # misleading message. preserve/* custody pushes were already let through above.
+# A delete-only push publishes nothing, so it is let through (a bare mirror
+# pruning its remote's branches); a push that also updates any ref is refused.
 if [ "$(git rev-parse --is-bare-repository 2>/dev/null)" = true ]; then
+  if [ -z "$git_guard_stdin" ] && [ ! -t 0 ] &&
+     git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)"; then
+    trap 'rm -f "$git_guard_stdin"' EXIT
+    git_guard_read_refs
+  fi
+  if [ -n "$git_guard_stdin" ] && git_guard_delete_only "$git_guard_stdin"; then
+    git_guard_receipt
+    exit 0
+  fi
   printf '%s\n' \
     "git-guard BLOCK: this push comes from a bare repository. git-guard runs the repo's" \
     "pre-push checks in a worktree, and a bare repository has none." \
