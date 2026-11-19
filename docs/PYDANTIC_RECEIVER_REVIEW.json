@@ -1,172 +1,78 @@
 {
   "schema_version": 1,
-  "source_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+  "source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2",
   "hash_normalization": "UTF-8 source with CRLF normalized to LF; selector declaration through closing brace, excluding trailing newline",
   "source_hashes": {
-    "hooks/common/mandate_scan.py": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
+    "hooks/common/mandate_scan.py": "a89b66dd4f2d1185758bf5c2e2c598e7be684912ef4a0c6f8014719237890008",
     "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
     "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-    "tests/32-quality-mandate.t.sh": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
+    "tests/32-quality-mandate.t.sh": "09bf438930078513f9a4005cb12b3542fccb8bafec79abff455429329e746381",
     "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
     "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
     "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
-    "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-    "docs/PYDANTIC_RECEIVER_REVIEW.md": "c150bfa29f3ec4b65d2b239c1f168331fe55a97bec77b0573de708422fa1a83a"
+    "docs/RULES.md": "96234a2a235273ce882ee3e45c141c48baafed444ab7f44f41eb9b34448e7e4c",
+    "docs/PYDANTIC_RECEIVER_REVIEW.md": "d2c85dfe280c6ed167f94be188c0af76cbd250145cda7ffbe82c0bd5043c09c0"
   },
   "author_evidence": {
-    "platform": "Windows dtm-p1gen9 / Git Bash / CPython3.15.2",
-    "focused": "1172 current receiver assertions,0failures/skips; separate375-preservation assertions pass.",
-    "regression": "1506PASS/0FAIL/14existing raw skips; four documented categories,actual exits0. Not whole-repository or line coverage.",
-    "global_precommit": "Actual normal global hook exit0; existing basedpyright/use-walrus advisories disclosed.",
-    "static_checks": "Current isolated Ruff E,F/format,mypy,ShellCheck exit0 with source guards.",
-    "linux": "Successor unqualified; final metadata-head native/Docker CI required.",
-    "current_source_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-    "current_source_sha256": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
-    "current_test_sha256": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
-    "qualification": {
-      "receipt": "git-guard-receiver-descriptor-hash-qualified-qualification.json",
-      "sha256": "472c8e2b15e45efcfd29f8272936859857bd746d3a354a8938d9272eaa2d0541"
+    "platform": "Windows DTM-P1GEN9 / maintained Git Bash / qualified CPython3.15.2",
+    "current_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2",
+    "current_source_sha256": "a89b66dd4f2d1185758bf5c2e2c598e7be684912ef4a0c6f8014719237890008",
+    "current_test_sha256": "09bf438930078513f9a4005cb12b3542fccb8bafec79abff455429329e746381",
+    "focused": "Actual366/0/0 private maintained focus; exact labels/actualexits0; source EC4/tests09BF/docEA62. D2 doc-only successor uses separate175bridge.",
+    "regression": "Actual1699/0/0 private full preservation; rootexactunique labels/footer,rootouter0 andguard/resource/cleanup verification. Historical EC4 only; does not qualify A89B, native4, coverage, fleet or whole-new176.",
+    "global_precommit": "Actual normal signed d42 successor commit exit0 with no bypass; unresolved basedpyright/use-walrus advisories and preserved-worktree diagnostic disclosed; NOT warnings-free completed QA.",
+    "static_checks": "A89B exact three-hunk type/control-flow successor: standard basedpyright 0errors/0warnings with failing positive control, Ruffformat/E,F/mypy/ShellCheck author receipts; 18 independently re-executed extracted real parser/main old/new inert equivalence controls and comprehension executable bytecode invariance. Not a current full1699/native/outside attestation.",
+    "linux": "PENDING fresh exact metadataB head CI/native qualification; historical publicC848 check success does not qualify SourceA/B.",
+    "sourceA": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/source-a-standard-type-fix-adoption/receipt.json",
+      "sha256": "7af27fff83b8d9c390bd48786117f6189b851aefd1625edcdc2a0c3cd96cd7d2",
+      "scope": "Actual signedlocal d42 one-scanner successor only; normal hooks/advisories; no public push."
     },
     "logs": {
-      "rules": {
-        "category": "rules",
-        "process_exit": 0,
-        "passed": 112,
-        "failed": 0,
-        "skipped": 14,
-        "receipt": "git-guard-receiver-descriptor-hash-qualified-rules.log",
-        "sha256": "2fc2499bbff9961a5ca234dc07e4261e9952e9fa255dd9a0c9fa9201ff519e0a"
+      "focused366": {
+        "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-consumer-qualification/qualification.json",
+        "sha256": "471db2846bfd2c752107a8551bf7d730b8b85f31bbcbb5c8315a0d336d9196f3",
+        "scope": "Actual private366 only, sourceEC4/tests09BF/docEA62"
       },
-      "core": {
-        "category": "core",
-        "process_exit": 0,
-        "passed": 137,
-        "failed": 0,
-        "skipped": 0,
-        "receipt": "git-guard-receiver-descriptor-hash-qualified-core.log",
-        "sha256": "78b348105c0c30505ccc3d1c90e77eaabeee5ac33457207f57a5653a8326ba09"
-      },
-      "quality": {
-        "category": "quality",
-        "process_exit": 0,
-        "passed": 222,
-        "failed": 0,
-        "skipped": 0,
-        "receipt": "git-guard-receiver-descriptor-hash-qualified-quality.log",
-        "sha256": "c993ddfbb570bc6d4be37679553aa4fc05f27e49f040009760a2ed2efb6148a4"
-      },
-      "contexts": {
-        "category": "contexts",
-        "process_exit": 0,
-        "passed": 1035,
-        "failed": 0,
-        "skipped": 0,
-        "receipt": "git-guard-receiver-descriptor-hash-qualified-contexts.log",
-        "sha256": "85dadde4a5e36a2613bc19f702351999b66a8001d848756e71235a61ef4417d9"
+      "full1699": {
+        "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-consumer-qualification/full-qualification/root-postrun-readback.json",
+        "sha256": "9eb92c451f1cdffd51b12ccbc040106431c1d3ae387337b4cede8e9a274f503f",
+        "scope": "Actual private1699 only; zero2998/176/tool/EAD mismatches; owned workload resources, no hardRAM/performance/native claim."
       }
-    },
-    "static": {
-      "source_hashes": {
-        "hooks/common/mandate_scan.py": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
-        "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-        "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-        "tests/32-quality-mandate.t.sh": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
-        "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
-        "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
-        "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
-        "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-        "docs/PYDANTIC_RECEIVER_REVIEW.md": "c150bfa29f3ec4b65d2b239c1f168331fe55a97bec77b0573de708422fa1a83a"
-      },
-      "sources_equal_before_after": true,
-      "runs": [
-        {
-          "check": "format",
-          "command": [
-            "uv",
-            "run",
-            "--no-project",
-            "ruff",
-            "format",
-            "--isolated",
-            "--check",
-            "hooks/common/mandate_scan.py"
-          ],
-          "process_exit": 0,
-          "receipt": "git-guard-receiver-descriptor-hash-qualified-format.log",
-          "sha256": "fd2299c9f1c6dc869070883e281051bfe93aacf66c1a3b0069f45b4aa410ca50"
-        },
-        {
-          "check": "lint",
-          "command": [
-            "uv",
-            "run",
-            "--no-project",
-            "ruff",
-            "check",
-            "--isolated",
-            "--select",
-            "E,F",
-            "hooks/common/mandate_scan.py"
-          ],
-          "process_exit": 0,
-          "receipt": "git-guard-receiver-descriptor-hash-qualified-lint.log",
-          "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
-        },
-        {
-          "check": "mypy",
-          "command": [
-            "uv",
-            "run",
-            "--no-project",
-            "mypy",
-            "--no-error-summary",
-            "hooks/common/mandate_scan.py"
-          ],
-          "process_exit": 0,
-          "receipt": "git-guard-receiver-descriptor-hash-qualified-mypy.log",
-          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        },
-        {
-          "check": "shellcheck",
-          "command": [
-            "C:/Program Files/Git/bin/bash.exe",
-            "-c",
-            ". tools/posix-tool-path.sh; gg_posix_tool_path; shellcheck tests/32-quality-mandate.t.sh tests/27-rule-behaviour.t.sh tests/run.sh"
-          ],
-          "process_exit": 0,
-          "receipt": "git-guard-receiver-descriptor-hash-qualified-shellcheck.log",
-          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        }
-      ],
-      "global_precommit": {
-        "receipt": "git-guard-receiver-descriptor-hash-precommit.log",
-        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
-        "process_exit": 0,
-        "advisories": "Existing basedpyright/use-walrus advisories; not warning-free."
-      }
-    },
-    "normal_global_precommit": {
-      "receipt": "git-guard-receiver-descriptor-hash-precommit.log",
-      "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
-      "process_exit": 0,
-      "advisories": "Existing basedpyright/use-walrus advisories; not warning-free."
     },
     "passive_coverage": {
-      "receipt": "git-guard-receiver-passive-coverage-qualification.json",
-      "sha256": "f31eed73057aa4767abb1ee55bcc5d09ac76bf526ea3d4d8c3eff0e2aaac80d0",
-      "root_review": {
-        "receipt": "git-guard-passive-coverage/root-measurement-review.json",
-        "sha256": "fa24ec671c3cb77feed04641b2aaad289cf811ac5259cde58d300a80da2ea732"
-      },
-      "whole_module_line_percent": 91.90891472868218,
-      "whole_module_branch_percent": 85.58648111332008,
-      "whole_module_combined_percent": 89.8371335504886,
-      "excluded_lines": 0,
-      "scope": "EntirechangedPythonmandate_scan.py denominator; not wholeBash/projector fleetcoverage. Same1506/0/14underpassiveprofile,557parallelinputsretained; before/after source9+HEAD/index/refs equal. Native472qualification waspre-profile/unmeasured, separately preserved."
+      "disposition": "PENDING",
+      "minimum_whole_module_line_percent": 85,
+      "minimum_whole_module_branch_percent": 85,
+      "required_excluded_lines": 0,
+      "actual_line_percent": null,
+      "actual_branch_percent": null,
+      "actual_excluded_lines": null,
+      "waiver129": false
     },
-    "current_postprofile_intake": {
-      "receipt": "git-guard-receiver-descriptor-hash-qualified-postprofile-pr-intake.json",
-      "sha256": "54e34f4059e112e13daea27159c084978b5ef1db18e168119aa76314d0f1dbc9"
+    "qa_advisories": {
+      "status": "STANDARD_TYPE_FIX_REVIEWED_OTHER_ADVISORIES_NOT_GLOBAL_QA_CLEAN",
+      "qa_warnings_free": false,
+      "reported": [
+        "Normal signed d42 commit hook reported non-blocking basedpyright and use-walrus advisories; exact commit.stderr.log preserved. No warnings-free QA assertion."
+      ],
+      "standard_type_fix": "Three prior standard errors resolved in A89B with scoped evidence; optional recommended612warnings/walrus84infos were broader historical diagnostics, not current all-QA metrics."
+    },
+    "qualified_snapshot": {
+      "scanner_sha256": "ec4c87e99ebc8af1f1d3ada7c3860972cad3ebd5acddb8a1727164982beaea24",
+      "test_sha256": "09bf438930078513f9a4005cb12b3542fccb8bafec79abff455429329e746381",
+      "review_doc_sha256_at_run": "ea62 prior doc",
+      "current_A89B_full_or_native_qualification": false
+    },
+    "source_successor_type_delta": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/source-a-standard-type-fix-proposal/peer-review/review.json",
+      "sha256": "c24ef71f6c03bd6cc3c7f09be103da94654fcd661c316a1657d483784a0aa23e",
+      "scope": "C24EF exact A89B three-hunk static/type/control-flow delta KEEP ONLY; 18 real extracted old/new inert parser/main equivalence controls and comprehension executable bytecode invariance. No whole-module/9-source/outside/full/native approval."
+    },
+    "source_successor_type_controls": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/source-a-standard-type-fix-proposal/qualification.json",
+      "sha256": "0d5001854efb038703fa804bc3ba6e6c2206ada8ff5097524a85a16cc3cdbf69",
+      "scope": "Author standard typecheck plus failing positive control and bounded inert controls; exact A89B scope only."
     }
   },
   "rows": [
@@ -174,37 +80,40 @@
       "selector": "t_case_pydantic_receiver_classification",
       "source": "tests/32-quality-mandate.t.sh",
       "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "t_case_pydantic_receiver_contexts",
       "source": "tests/32-quality-mandate.t.sh",
-      "selector_sha256": "9435e17335af92e3dedad28bf2e253a6315518327fe22ecf8598d957d4e5e483",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "selector_sha256": "ec060095fe756f0e184d8a94868cfe7df999d2ffcfde82c73e1ce025985e6fce",
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "t_case_rule_behaviour",
       "source": "tests/27-rule-behaviour.t.sh",
       "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     }
   ],
   "rule_reviews": [
@@ -212,33 +121,44 @@
       "selector": "mandate-pydantic-v1",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval.",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "disposition": "UNREVIEWED",
+      "reviewer": "unassigned",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc"
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "mandate-pydantic-v1-ambiguous",
       "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval.",
-      "disposition": "KEEP",
-      "reviewer": "codex-python-closeout",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "disposition": "UNREVIEWED",
+      "reviewer": "unassigned",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc"
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     }
   ],
   "integration": {
     "installed_release_unchanged": true,
     "merge_route": "merge autopilot; high-risk two independent approvals including outside Codex family",
-    "deployment": "Supported installer only after reviewed integration and installer-plan review"
+    "deployment": "Supported installer only after reviewed integration and installer-plan review",
+    "current_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2",
+    "publication": "LOCAL_SIGNED_SOURCE_A_ONLY_NO_PUSH",
+    "current_phase": "PROVISIONAL_METADATA_B_UNAPPLIED",
+    "native_four_categories": "PENDING_EXACT_METADATA_B_HEAD",
+    "line_AND_branch85_excluded0": "PENDING_NO_WAIVER129",
+    "current_head_CI": "PENDING_EXACT_METADATA_B_HEAD",
+    "outside_family_source_approval": "PENDING_NO_VERDICT",
+    "merge": "PENDING_AUTOPILOT_AND_REQUIRED_REVIEWS",
+    "install": "PENDING_NO_INSTALLED_ROUTE_CHANGE"
   },
   "predecessor": {
     "source_commit": "a1fa86ccea62c287113e07fb10d83edea5d3a863",
@@ -334,15 +254,24 @@
     "review_comment": "https://github.com/David-Martel/git-guard/pull/129#issuecomment-6965343660"
   },
   "independent_review": {
-    "disposition": "KEEP_SOURCE_ONLY",
-    "reviewer": "codex-python-closeout",
-    "reviewer_type": "independent-agent",
-    "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-    "root_source_review": {
-      "receipt": "git-guard-descriptor-hash-root-source-review.json",
-      "sha256": "3be6c5a6c3541627ffdf8a44b315672023df3afd7f9331eaf602b2995a37266c"
+    "disposition": "NO_VERDICT_TIMEOUT",
+    "scope": "Latest whole-module/wrapper assigned review timed out with no provider result; no source KEEP/FIX or completion/cost claimed.",
+    "reviewed_commit": null,
+    "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2",
+    "attempt": {
+      "receipt": "git-guard-final-source-review/operator-consumer-successor/final-assembly-preparation/final-capsule/review-output/terminal.json",
+      "sha256": "3c96a14d76e35db7ba595450d77ee64bbca7080a1858d6ebe79b33077675373e",
+      "scope": "Original9EF isolated review600s timeout; immutable HOLD. Historical EC4/09BF/D2 snapshot; A89B later type/control-flow successor was not reviewed by this attempt. No provider verdict."
     },
-    "scope": "Actual signedSourceA9/3/2rootKEEP; native1506/profile1506 andwholePythonmodule91.91line85.59branch accepted. Finalmetadatahead/currentCI/outsidefamily/autopilot admission pending. No release/deployment approval."
+    "semantic_disposition": {
+      "receipt": "git-guard-final-source-review/operator-consumer-successor/final-assembly-preparation/final-capsule/root-semantic-disposition.json",
+      "sha256": "1e85c6fc0bf07abc49e258932bcd466e211f8f9476fe38dc35215e917b7b40ec",
+      "scope": "Root records executionHOLD/NO_VERDICT; no current source approval"
+    },
+    "worker_return": 124,
+    "actual_child_exit": null,
+    "provider_result": null,
+    "reported_cost_usd": null
   },
   "namespace_predecessor": {
     "source_hashes": {
@@ -2269,102 +2198,111 @@
   "source_reviews": [
     {
       "selector": "source:hooks/common/mandate_scan.py",
-      "selector_sha256": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "selector_sha256": "a89b66dd4f2d1185758bf5c2e2c598e7be684912ef4a0c6f8014719237890008",
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
       "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
       "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "source:tests/32-quality-mandate.t.sh",
-      "selector_sha256": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "selector_sha256": "09bf438930078513f9a4005cb12b3542fccb8bafec79abff455429329e746381",
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "source:tests/27-rule-behaviour.t.sh",
       "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "source:tests/run.sh",
       "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "source:docs/QA_TOOLING.md",
       "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "source:docs/RULES.md",
-      "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "selector_sha256": "96234a2a235273ce882ee3e45c141c48baafed444ab7f44f41eb9b34448e7e4c",
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     },
     {
       "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
-      "selector_sha256": "c150bfa29f3ec4b65d2b239c1f168331fe55a97bec77b0573de708422fa1a83a",
-      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
-      "reviewer": "codex-python-closeout",
-      "reviewer_type": "independent-agent",
-      "date": "2026-11-18T15:03:39.862072+00:00",
-      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
-      "disposition": "KEEP",
-      "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      "selector_sha256": "d2c85dfe280c6ed167f94be188c0af76cbd250145cda7ffbe82c0bd5043c09c0",
+      "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
+      "reviewer": "unassigned",
+      "reviewer_type": "unassigned",
+      "date": "",
+      "reviewed_commit": "",
+      "disposition": "UNREVIEWED",
+      "scope": "Actual signed SourceA-successor-d42 byte/hash binding only. Current A89B whole9source/3selector/2rule independent source approval pending; bounded static/test/doc receipts are separate, not global KEEP. Native4/lineANDbranch85/zeroexclusions/currentheadCI/merge/install pending.",
+      "target_source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2"
     }
   ],
   "lambda_decorator_predecessor": {
@@ -5590,14 +5528,37 @@
     "held_unsigned_predecessor": "423e430b56c13ac186386a7efc723181ec7026c08540d0d6277225829714b644"
   },
   "metadata_successor_binding": {
-    "reviewed_source_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+    "phase": "PROVISIONAL_SOURCE_A_FACTS_PENDING_REVIEW_NATIVE_COVERAGE",
+    "source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2",
+    "metadata_commit": null,
     "source_signature": "G",
-    "root_source_review": {
-      "receipt": "git-guard-descriptor-hash-root-source-review.json",
-      "sha256": "3be6c5a6c3541627ffdf8a44b315672023df3afd7f9331eaf602b2995a37266c"
+    "source_signature_evidence": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/source-a-standard-type-fix-adoption/receipt.json",
+      "sha256": "7af27fff83b8d9c390bd48786117f6189b851aefd1625edcdc2a0c3cd96cd7d2",
+      "scope": "Actual signedlocalSourceA; exactonefile/all9; no push. SignatureG is actual postcommit readback fact, not a new signing operation."
     },
-    "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+    "target_manifest_sha256": "e8a69f21cb4fe1bcc7b0863fce4c854987798b3f365c19545dc08f33ee43e280",
     "source_files_unchanged": {
+      "hooks/common/mandate_scan.py": "a89b66dd4f2d1185758bf5c2e2c598e7be684912ef4a0c6f8014719237890008",
+      "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+      "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+      "tests/32-quality-mandate.t.sh": "09bf438930078513f9a4005cb12b3542fccb8bafec79abff455429329e746381",
+      "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+      "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+      "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+      "docs/RULES.md": "96234a2a235273ce882ee3e45c141c48baafed444ab7f44f41eb9b34448e7e4c",
+      "docs/PYDANTIC_RECEIVER_REVIEW.md": "d2c85dfe280c6ed167f94be188c0af76cbd250145cda7ffbe82c0bd5043c09c0"
+    },
+    "stable_rule_id_to_source": {
+      "mandate-pydantic-v1": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
+      "mandate-pydantic-v1-ambiguous": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    },
+    "whole_source_review_disposition": "NO_VERDICT_TIMEOUT",
+    "scope": "JSON-only B proposal refers to actualSourceA-successor; no invented Bcommit, metadata selfhash, whole9 review, coverage or native waiver. Exact Bhead native/CI and independent outside-family review remain pending."
+  },
+  "operator_consumer_predecessor": {
+    "source_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+    "source_hashes": {
       "hooks/common/mandate_scan.py": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
       "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
       "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
@@ -5608,10 +5569,496 @@
       "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
       "docs/PYDANTIC_RECEIVER_REVIEW.md": "c150bfa29f3ec4b65d2b239c1f168331fe55a97bec77b0573de708422fa1a83a"
     },
-    "stable_rule_id_to_source": {
-      "mandate-pydantic-v1": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
-      "mandate-pydantic-v1-ambiguous": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+    "author_evidence": {
+      "platform": "Windows dtm-p1gen9 / Git Bash / CPython3.15.2",
+      "focused": "1172 current receiver assertions,0failures/skips; separate375-preservation assertions pass.",
+      "regression": "1506PASS/0FAIL/14existing raw skips; four documented categories,actual exits0. Not whole-repository or line coverage.",
+      "global_precommit": "Actual normal global hook exit0; existing basedpyright/use-walrus advisories disclosed.",
+      "static_checks": "Current isolated Ruff E,F/format,mypy,ShellCheck exit0 with source guards.",
+      "linux": "Successor unqualified; final metadata-head native/Docker CI required.",
+      "current_source_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "current_source_sha256": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
+      "current_test_sha256": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
+      "qualification": {
+        "receipt": "git-guard-receiver-descriptor-hash-qualified-qualification.json",
+        "sha256": "472c8e2b15e45efcfd29f8272936859857bd746d3a354a8938d9272eaa2d0541"
+      },
+      "logs": {
+        "rules": {
+          "category": "rules",
+          "process_exit": 0,
+          "passed": 112,
+          "failed": 0,
+          "skipped": 14,
+          "receipt": "git-guard-receiver-descriptor-hash-qualified-rules.log",
+          "sha256": "2fc2499bbff9961a5ca234dc07e4261e9952e9fa255dd9a0c9fa9201ff519e0a"
+        },
+        "core": {
+          "category": "core",
+          "process_exit": 0,
+          "passed": 137,
+          "failed": 0,
+          "skipped": 0,
+          "receipt": "git-guard-receiver-descriptor-hash-qualified-core.log",
+          "sha256": "78b348105c0c30505ccc3d1c90e77eaabeee5ac33457207f57a5653a8326ba09"
+        },
+        "quality": {
+          "category": "quality",
+          "process_exit": 0,
+          "passed": 222,
+          "failed": 0,
+          "skipped": 0,
+          "receipt": "git-guard-receiver-descriptor-hash-qualified-quality.log",
+          "sha256": "c993ddfbb570bc6d4be37679553aa4fc05f27e49f040009760a2ed2efb6148a4"
+        },
+        "contexts": {
+          "category": "contexts",
+          "process_exit": 0,
+          "passed": 1035,
+          "failed": 0,
+          "skipped": 0,
+          "receipt": "git-guard-receiver-descriptor-hash-qualified-contexts.log",
+          "sha256": "85dadde4a5e36a2613bc19f702351999b66a8001d848756e71235a61ef4417d9"
+        }
+      },
+      "static": {
+        "source_hashes": {
+          "hooks/common/mandate_scan.py": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
+          "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+          "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+          "tests/32-quality-mandate.t.sh": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
+          "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+          "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+          "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+          "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+          "docs/PYDANTIC_RECEIVER_REVIEW.md": "c150bfa29f3ec4b65d2b239c1f168331fe55a97bec77b0573de708422fa1a83a"
+        },
+        "sources_equal_before_after": true,
+        "runs": [
+          {
+            "check": "format",
+            "command": [
+              "uv",
+              "run",
+              "--no-project",
+              "ruff",
+              "format",
+              "--isolated",
+              "--check",
+              "hooks/common/mandate_scan.py"
+            ],
+            "process_exit": 0,
+            "receipt": "git-guard-receiver-descriptor-hash-qualified-format.log",
+            "sha256": "fd2299c9f1c6dc869070883e281051bfe93aacf66c1a3b0069f45b4aa410ca50"
+          },
+          {
+            "check": "lint",
+            "command": [
+              "uv",
+              "run",
+              "--no-project",
+              "ruff",
+              "check",
+              "--isolated",
+              "--select",
+              "E,F",
+              "hooks/common/mandate_scan.py"
+            ],
+            "process_exit": 0,
+            "receipt": "git-guard-receiver-descriptor-hash-qualified-lint.log",
+            "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+          },
+          {
+            "check": "mypy",
+            "command": [
+              "uv",
+              "run",
+              "--no-project",
+              "mypy",
+              "--no-error-summary",
+              "hooks/common/mandate_scan.py"
+            ],
+            "process_exit": 0,
+            "receipt": "git-guard-receiver-descriptor-hash-qualified-mypy.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "check": "shellcheck",
+            "command": [
+              "C:/Program Files/Git/bin/bash.exe",
+              "-c",
+              ". tools/posix-tool-path.sh; gg_posix_tool_path; shellcheck tests/32-quality-mandate.t.sh tests/27-rule-behaviour.t.sh tests/run.sh"
+            ],
+            "process_exit": 0,
+            "receipt": "git-guard-receiver-descriptor-hash-qualified-shellcheck.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "global_precommit": {
+          "receipt": "git-guard-receiver-descriptor-hash-precommit.log",
+          "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+          "process_exit": 0,
+          "advisories": "Existing basedpyright/use-walrus advisories; not warning-free."
+        }
+      },
+      "normal_global_precommit": {
+        "receipt": "git-guard-receiver-descriptor-hash-precommit.log",
+        "sha256": "8a0e7dd4f53e6e6c74bca464c8b3d98c64203569614fb8955c6527a2ca3b730b",
+        "process_exit": 0,
+        "advisories": "Existing basedpyright/use-walrus advisories; not warning-free."
+      },
+      "passive_coverage": {
+        "receipt": "git-guard-receiver-passive-coverage-qualification.json",
+        "sha256": "f31eed73057aa4767abb1ee55bcc5d09ac76bf526ea3d4d8c3eff0e2aaac80d0",
+        "root_review": {
+          "receipt": "git-guard-passive-coverage/root-measurement-review.json",
+          "sha256": "fa24ec671c3cb77feed04641b2aaad289cf811ac5259cde58d300a80da2ea732"
+        },
+        "whole_module_line_percent": 91.90891472868218,
+        "whole_module_branch_percent": 85.58648111332008,
+        "whole_module_combined_percent": 89.8371335504886,
+        "excluded_lines": 0,
+        "scope": "EntirechangedPythonmandate_scan.py denominator; not wholeBash/projector fleetcoverage. Same1506/0/14underpassiveprofile,557parallelinputsretained; before/after source9+HEAD/index/refs equal. Native472qualification waspre-profile/unmeasured, separately preserved."
+      },
+      "current_postprofile_intake": {
+        "receipt": "git-guard-receiver-descriptor-hash-qualified-postprofile-pr-intake.json",
+        "sha256": "54e34f4059e112e13daea27159c084978b5ef1db18e168119aa76314d0f1dbc9"
+      }
     },
-    "scope": "SoleJSON metadata successor; production9sourcebytes/selectors/rulehashes unchanged from reviewed signedSourceA. No regenerated review digests or self-referential metadata commit."
+    "source_reviews": [
+      {
+        "selector": "source:hooks/common/mandate_scan.py",
+        "selector_sha256": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1.yml",
+        "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "source:rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+        "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "source:tests/32-quality-mandate.t.sh",
+        "selector_sha256": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "source:tests/27-rule-behaviour.t.sh",
+        "selector_sha256": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "source:tests/run.sh",
+        "selector_sha256": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "source:docs/QA_TOOLING.md",
+        "selector_sha256": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "source:docs/RULES.md",
+        "selector_sha256": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "source:docs/PYDANTIC_RECEIVER_REVIEW.md",
+        "selector_sha256": "c150bfa29f3ec4b65d2b239c1f168331fe55a97bec77b0573de708422fa1a83a",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      }
+    ],
+    "rows": [
+      {
+        "selector": "t_case_pydantic_receiver_classification",
+        "source": "tests/32-quality-mandate.t.sh",
+        "selector_sha256": "c6660504659d2356b47da939cb6b9d52c982e86115d78a54b51b8f06ecd5c2c9",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "t_case_pydantic_receiver_contexts",
+        "source": "tests/32-quality-mandate.t.sh",
+        "selector_sha256": "9435e17335af92e3dedad28bf2e253a6315518327fe22ecf8598d957d4e5e483",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      },
+      {
+        "selector": "t_case_rule_behaviour",
+        "source": "tests/27-rule-behaviour.t.sh",
+        "selector_sha256": "f47ea5f6def134a95750dcb663efb345d7bbd72a71a22a7a7a9726478c323a5a",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer": "codex-python-closeout",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+        "disposition": "KEEP",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval."
+      }
+    ],
+    "rule_reviews": [
+      {
+        "selector": "mandate-pydantic-v1",
+        "source": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
+        "source_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval.",
+        "disposition": "KEEP",
+        "reviewer": "codex-python-closeout",
+        "selector_sha256": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc"
+      },
+      {
+        "selector": "mandate-pydantic-v1-ambiguous",
+        "source": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml",
+        "source_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "scope": "Source-only exactsignedA; fullfiniteF4delta+root32runtimecontrols/native1506+measuredscanner91.91line85.59branch reviewed. FinalB/currentCI/outside/autopilot admission pending; no deployment/release approval.",
+        "disposition": "KEEP",
+        "reviewer": "codex-python-closeout",
+        "selector_sha256": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+        "reviewer_type": "independent-agent",
+        "date": "2026-11-18T15:03:39.862072+00:00",
+        "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc"
+      }
+    ],
+    "independent_review": {
+      "disposition": "KEEP_SOURCE_ONLY",
+      "reviewer": "codex-python-closeout",
+      "reviewer_type": "independent-agent",
+      "reviewed_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "root_source_review": {
+        "receipt": "git-guard-descriptor-hash-root-source-review.json",
+        "sha256": "3be6c5a6c3541627ffdf8a44b315672023df3afd7f9331eaf602b2995a37266c"
+      },
+      "scope": "Actual signedSourceA9/3/2rootKEEP; native1506/profile1506 andwholePythonmodule91.91line85.59branch accepted. Finalmetadatahead/currentCI/outsidefamily/autopilot admission pending. No release/deployment approval."
+    },
+    "metadata_successor_binding": {
+      "reviewed_source_commit": "94407c2daed676ac87d435818c70a566e579cafc",
+      "source_signature": "G",
+      "root_source_review": {
+        "receipt": "git-guard-descriptor-hash-root-source-review.json",
+        "sha256": "3be6c5a6c3541627ffdf8a44b315672023df3afd7f9331eaf602b2995a37266c"
+      },
+      "target_manifest_sha256": "ca4a35e5ac2617278b127100158cb902760a5f9a690c29ac60ccea02a5f9a20e",
+      "source_files_unchanged": {
+        "hooks/common/mandate_scan.py": "4c861eb9655dba7bd0a0c4f48360cb67a0eca00c31036436f8fad9a767174811",
+        "rules-examples/mandate/python/mandate-pydantic-v1.yml": "75fc9bd8e82e6ea32a967d6f06984b5a2c28e061d229e9554bbbe61577b42fb8",
+        "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml": "c932b33d48d25b234bbc5b98ad3e4516b3fb80719ed908044141489e2c26b3f7",
+        "tests/32-quality-mandate.t.sh": "869c3c199624c5eda3c5f98bde6cdcd600ce9f9842dd118bf8e9634393731cfb",
+        "tests/27-rule-behaviour.t.sh": "34f9988d08b8adf10624b13f4ec5a4bc41c335d96177603e02fd7dac3c981374",
+        "tests/run.sh": "da70a8603fe3ae2efc86ecfb77a2fcc1bf6d765ddf4705f4a4de29fb100ea61d",
+        "docs/QA_TOOLING.md": "47303980496650cca61586d460219c6439d95fd7870c40b4bd30cdaed3ea2873",
+        "docs/RULES.md": "41394fcb30676f02dac3105aa3acd200a73942d1ccbdd3543946c01f97accd6b",
+        "docs/PYDANTIC_RECEIVER_REVIEW.md": "c150bfa29f3ec4b65d2b239c1f168331fe55a97bec77b0573de708422fa1a83a"
+      },
+      "stable_rule_id_to_source": {
+        "mandate-pydantic-v1": "rules-examples/mandate/python/mandate-pydantic-v1.yml",
+        "mandate-pydantic-v1-ambiguous": "rules-examples/mandate/python/mandate-pydantic-v1-ambiguous.yml"
+      },
+      "scope": "SoleJSON metadata successor; production9sourcebytes/selectors/rulehashes unchanged from reviewed signedSourceA. No regenerated review digests or self-referential metadata commit."
+    },
+    "metadata_commit": "c848dc166c1a4917113e66a928a7ae93ecff3b9e",
+    "metadata_file_sha256": "392bf4cfd0043f9ca42c09c43a90f8e0436f7ffaaac9251d59076c43b465586d",
+    "disposition": "HISTORICAL_HELD_SUPERSEDED_NOT_CURRENT_APPROVAL",
+    "scope": "Prior94407 source/current392BF metadata rows retained verbatim; no old KEEP,1506/native/profile or coverage value transferred to SourceA-successor-d42."
+  },
+  "operator_consumer_evidence": {
+    "source_commit": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2",
+    "source9_map_sha256": "b214b068bd53aefb98ad2d5d403a820bd86d59103a0ca5c630a0ac2c703b1c32",
+    "source_code_static": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-mode-proposal/actual-consumer-proposal/lifecycle-correction/closure-review/review.json",
+      "sha256": "14a9ff4bea97160398c08a6bfd7dd6e639ef301551c0b028fcedde20302c2daf",
+      "scope": "14A9 exacttwo-method lifecycle delta staticKEEP/reused observations only; not whole9/newruntime/global approval"
+    },
+    "test_doc_static": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-mode-proposal/maintained-fixture-proposal/code-review/review.json",
+      "sha256": "15024fc5f72b880dbc107b2eb9f8ff08196a8158df8834434af41999c21dc37b",
+      "scope": "15024 exact46rows/3helpers/13+7 contracts and priorEA62 doc, no whole9source verdict"
+    },
+    "current_doc": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-consumer-full-doc-proposal/code-review/review.json",
+      "sha256": "f0b14863b6231c89cc2607c6e66f319688de7196b871ab82cad7a7761fb98223",
+      "scope": "F0B currentD2 prose-only KEEP,175continuity, no full-new176 result transfer"
+    },
+    "helper_reviews": [
+      {
+        "selector": "_qm_receiver_protocol_consumer_contexts",
+        "source": "tests/32-quality-mandate.t.sh",
+        "source_sha256": "09bf438930078513f9a4005cb12b3542fccb8bafec79abff455429329e746381",
+        "body_sha256": "df782a86ec0d638864097058b024cb04c446f6fa2f439296484612f108987c1d",
+        "first_lf": 3000,
+        "last_lf": 3047,
+        "hash_normalization": "CRLF to LF; exact recorded inclusive LF range including final LF",
+        "recorded_disposition": "KEEP_EXACT_MAINTAINED_INSERTION",
+        "review": {
+          "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-mode-proposal/maintained-fixture-proposal/code-review/review.json",
+          "sha256": "15024fc5f72b880dbc107b2eb9f8ff08196a8158df8834434af41999c21dc37b",
+          "scope": "Exact46 rows/three helper bodies plus cohesive13/7 contracts; prior private bytes, not complete SourceA9/3/2 approval"
+        },
+        "source_commit_binding": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2",
+        "reviewed_commit": null,
+        "source_commit_binding_is_byte_identity_only": true
+      },
+      {
+        "selector": "_qm_receiver_protocol_modes_contract",
+        "source": "tests/32-quality-mandate.t.sh",
+        "source_sha256": "09bf438930078513f9a4005cb12b3542fccb8bafec79abff455429329e746381",
+        "body_sha256": "08d96e3e4f323930702350d1aaa618b0702fab0f5fbf34ec06aff7a39e39a221",
+        "first_lf": 3055,
+        "last_lf": 3132,
+        "hash_normalization": "CRLF to LF; exact recorded inclusive LF range including final LF",
+        "recorded_disposition": "KEEP_EXACT_MAINTAINED_INSERTION",
+        "review": {
+          "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-mode-proposal/maintained-fixture-proposal/code-review/review.json",
+          "sha256": "15024fc5f72b880dbc107b2eb9f8ff08196a8158df8834434af41999c21dc37b",
+          "scope": "Exact46 rows/three helper bodies plus cohesive13/7 contracts; prior private bytes, not complete SourceA9/3/2 approval"
+        },
+        "source_commit_binding": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2",
+        "reviewed_commit": null,
+        "source_commit_binding_is_byte_identity_only": true
+      },
+      {
+        "selector": "_qm_receiver_protocol_lifecycle_contract",
+        "source": "tests/32-quality-mandate.t.sh",
+        "source_sha256": "09bf438930078513f9a4005cb12b3542fccb8bafec79abff455429329e746381",
+        "body_sha256": "5177b376c04444ef3a9eb44d6abd3e673d5efd6338ac91e83521ac0cfd5ee0a5",
+        "first_lf": 3141,
+        "last_lf": 3268,
+        "hash_normalization": "CRLF to LF; exact recorded inclusive LF range including final LF",
+        "recorded_disposition": "KEEP_EXACT_MAINTAINED_INSERTION",
+        "review": {
+          "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-mode-proposal/maintained-fixture-proposal/code-review/review.json",
+          "sha256": "15024fc5f72b880dbc107b2eb9f8ff08196a8158df8834434af41999c21dc37b",
+          "scope": "Exact46 rows/three helper bodies plus cohesive13/7 contracts; prior private bytes, not complete SourceA9/3/2 approval"
+        },
+        "source_commit_binding": "d42ca6c286b869617ff65e3b84bb5c4997e8f7b2",
+        "reviewed_commit": null,
+        "source_commit_binding_is_byte_identity_only": true
+      }
+    ],
+    "doc_apply": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-consumer-full-doc-apply/receipt.json",
+      "sha256": "4d11ab3d6dff29c691f2c04960b7a8d4ed5c6f3031d7c308aec6dde95a3bc0f5",
+      "scope": "ExactEA62\u2192D2 private doc-only apply andsource9/176 continuity"
+    },
+    "qualified_archive": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-consumer-full-doc-proposal/qualified-source176.tar",
+      "sha256": "33c5af44e08aa5e09554901a6d749b163ce2617a08969a8ee9f7f6bdc18ea736",
+      "scope": "33C5 historical EC4/09BF/EA62 qualified176 archive. Historical EA62-to-D2 doc-only bridge preserved175 other files at that transition; the later A89B scanner delta changes one additional file. Against current d42/A89B/09BF/D2,174 archive members are byte-identical and scanner plus review document differ. No old1699 qualification transfer to A89B."
+    },
+    "doc175_bridge": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/operator-consumer-full-doc-proposal/continuity.json",
+      "sha256": "28775b4e0b34d84d60563afdffddee0f68354769262b00777552062b686a93b4",
+      "scope": "Historical EA62-to-D2 private doc-only snapshot: other175 were unchanged at that transition. Current d42 also contains the later separately reviewed A89B scanner delta, so this historical175 bridge does not assert current175/archive equality or current full/native qualification."
+    },
+    "outside_timeout_diagnosis": {
+      "receipt": "git-guard-review-timeout-diagnosis/diagnosis.json",
+      "sha256": "e421a236d265a4facf31e238bfc89f8caeb898e5d5ba89826e1f833a1989a2ce",
+      "scope": "UNKNOWN cause/no Readprogress orAPIcost evidence; no auth/configvalues read"
+    },
+    "observable_followup": {
+      "receipt": "git-guard-observable-review-proposal/proposal-seal.json",
+      "sha256": "b6bd82e5a68748656b88abf6f59bea768ca457c2f28d3fa7ace30ba84568d751",
+      "scope": "Preparation-only parser/design; no provider inputs/bridge/runtime approval or new model call"
+    },
+    "pending": [
+      "Fresh entire A89B module/wrapper and source9/3selector/2rule approval",
+      "Nativefourcategories on exactmetadataBstate",
+      "Wholemodule lineANDbranch>=85 with0exclusions/no129waiver",
+      "CurrentheadCI andrequiredoutside-familyreviews",
+      "Publication/autopilotmerge/installeradmission",
+      "Resolvehookadvisories before anywarnings-freeQAclaim"
+    ],
+    "source_successor_type_delta": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/source-a-standard-type-fix-proposal/peer-review/review.json",
+      "sha256": "c24ef71f6c03bd6cc3c7f09be103da94654fcd661c316a1657d483784a0aa23e",
+      "scope": "Exact A89B type/control-flow delta KEEP ONLY. Historical14A9 was EC4 lifecycle delta, not A89B full source approval."
+    },
+    "source_successor_commit": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/source-a-standard-type-fix-adoption/receipt.json",
+      "sha256": "7af27fff83b8d9c390bd48786117f6189b851aefd1625edcdc2a0c3cd96cd7d2",
+      "scope": "Actual signed d42 parent1AE, exact one scanner change, nine committed bindings/working176 checked; Git LF blobs and working CRLF domains explicit; foreign tree states exact."
+    },
+    "historical_source_A": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/draft-source-a-handoff/receipt.json",
+      "sha256": "adbb00984e2b7cbcc8a6886d17a8028fd27c00b21f21c335a0cde4fc662e9eb0",
+      "scope": "Historical signed1AE EC4 firstSourceA, superseded by d42 A89B; prior evidence preserved."
+    },
+    "provisional_1AE_metadata_draft": {
+      "receipt": "git-guard-field-call-boundary/descriptor-graft-repair/deferred-and-unresolved-repair/draft-metadata-b-proposal/proposal.json",
+      "sha256": "c741e80bff04fa3f81b7f25a0fb056ce74451e0521bf5e21aeb9bc4c257dd239",
+      "scope": "Historical UNAPPLIED1AE provisional draft retained unchanged; not current approval."
+    }
   }
 }
