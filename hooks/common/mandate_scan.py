@@ -4322,7 +4322,7 @@ class PydanticReceivers(ast.NodeVisitor):
         previous_opaque = self.namespace_opaque
         previous_globals = self.namespace_globals
         previous_horizon = self.deferred_horizon
-        generators = list(getattr(node, "generators", ()))
+        generators: list[ast.comprehension] = list(getattr(node, "generators", ()))
         if generators:
             self.visit(generators[0].iter)
             # All forms acquire the first iterator now, including GeneratorExp.
@@ -6004,13 +6004,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 return Outcome.PASSED
         if args.pre_push:
             return pre_push(repo, pushed)
+        changed_selection: tuple[dict[str, set[int]], str] | None = None
         # Policy comes from the snapshot being scanned: the index for staged
         # content and index-based counts, otherwise the named commit.
         if args.staged:
             snapshot, changes, export = INDEX, staged_changes(repo), "index"
+            changed_selection = changes, export
         elif args.range:
             head, changes = range_changes(repo, args.range)
             snapshot, export = head, head
+            changed_selection = changes, export
         elif args.check_baseline:
             snapshot = verify_commit(repo, args.rev or "HEAD")
         else:
@@ -6021,7 +6024,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             debug("mandate.enabled=off")
             return Outcome.PASSED
         tools = resolve_tools(repo)
-        if args.staged or args.range:
+        if changed_selection is not None:
+            changes, export = changed_selection
             return changed_mode(repo, changes, export, policy, tools)
         if args.all:
             return all_mode(repo, args.rev, policy, tools)
