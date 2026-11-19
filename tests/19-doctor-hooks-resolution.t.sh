@@ -113,3 +113,36 @@ t_case_doctor_hooks_resolution() {
   done
   git -C "$GG_ROOT" worktree prune -v >/dev/null 2>&1
 }
+
+# timeout(1) with -k bounds the pre-push mandate on every platform and, on POSIX, the
+# identity query (#119). A host without a usable one refuses every push with a TOOL ERROR,
+# so doctor must report it at install or update time instead of at the first push (team
+# lead ruling, 2026-11-14, before the v0.2.23 rollout).
+t_case_doctor_timeout_prereq() {
+  t_begin "19 doctor: a missing or unusable timeout -k fails loudly"
+  fake_home="$(mktemp -d "$GG_T_TMPROOT/fakehome19t.XXXXXX")"
+  stub="$(mktemp -d "$GG_T_TMPROOT/stub19t.XXXXXX")"
+  # Positive control: the host's own timeout passes, so the FAIL below is the stub's doing.
+  doctor_out="$(HOME="$fake_home" sh "$GG_ROOT/bin/git-guard" doctor 2>&1)"
+  doctor_rc=$?
+  if [ "$doctor_rc" = 0 ] && printf '%s\n' "$doctor_out" | grep -q '\[ok\] *timeout'; then
+    t_ok "doctor reports a working timeout -k as [ok] and exits 0"
+  else
+    t_fail "doctor with the host's timeout: rc=$doctor_rc, no [ok] timeout line: $doctor_out"
+  fi
+  # A timeout that rejects -k (BSD-like) stands in for a missing or unusable one.
+  printf '#!/bin/sh\necho "timeout: illegal option -- k" >&2\nexit 125\n' > "$stub/timeout"
+  chmod +x "$stub/timeout"
+  for mode in "" --require-installed; do
+    # shellcheck disable=SC2086  # $mode is empty or one word on purpose
+    doctor_out="$(HOME="$fake_home" PATH="$stub:$PATH" sh "$GG_ROOT/bin/git-guard" doctor $mode 2>&1)"
+    doctor_rc=$?
+    if [ "$doctor_rc" != 0 ] \
+      && printf '%s\n' "$doctor_out" | grep -q '\[FAIL\] timeout .*coreutils' \
+      && printf '%s\n' "$doctor_out" | grep -q 'NOT COVERED'; then
+      t_ok "doctor ${mode:-(plain)} fails with the remedy when timeout -k is unusable (rc=$doctor_rc)"
+    else
+      t_fail "doctor ${mode:-(plain)} with an unusable timeout: rc=$doctor_rc, output: $doctor_out"
+    fi
+  done
+}

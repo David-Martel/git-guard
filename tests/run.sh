@@ -136,6 +136,7 @@ t_case_structured_data_encoding
 t_case_warn
 t_case_autofix
 t_case_precommit
+t_case_precommit_staged_names
 t_case_prepush
 t_case_backends
 t_case_rule_integrity
@@ -169,6 +170,7 @@ t_case_install_verify_before_flip
 t_case_install_native_links
 t_case_install_native_config_acl
 t_case_doctor_hooks_resolution
+t_case_doctor_timeout_prereq
 t_case_doctor_coverage
 t_case_prepush_content_and_bare
 t_case_install_rotates_legacy_hooks
