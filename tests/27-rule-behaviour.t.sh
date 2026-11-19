@@ -297,6 +297,11 @@ fn f() {}'
   _rb_row mandate/python/mandate-pydantic-v1.yml src/m.py \
     'from pydantic.v1 import BaseModel' \
     'from pydantic import BaseModel, field_validator'
+  # Method-name candidates need category 32's receiver-aware policy checks.
+  # This row proves candidate discovery, not that an arbitrary receiver is a model.
+  _rb_row mandate/python/mandate-pydantic-v1.yml src/m.py \
+    'Model.parse_file("model.json")' \
+    'Model.model_validate_json("{}")'
   _rb_row mandate/python/mandate-pydantic-v1-ambiguous.yml src/m.py \
     'data = model.dict()' \
     'data = model.model_dump()'

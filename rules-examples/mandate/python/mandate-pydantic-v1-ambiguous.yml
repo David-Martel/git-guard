@@ -4,11 +4,15 @@
 # `.dict()` and `.copy(update=...)` are pydantic v1 model methods, but the same
 # names exist on unrelated objects (a dataclass helper, a custom mapping), so a
 # structural match cannot tell a v1 call from a legitimate one. That is why this
-# half warns by default instead of blocking.
+# half warns by default instead of blocking. mandate_scan.py also classifies
+# unresolved parse_obj/parse_raw/parse_file/from_orm receivers under this key;
+# those candidates come from mandate-pydantic-v1.yml so disabling this warning
+# cannot disable a proven model's strong rule. Namespace/decorator/Config
+# findings remain strong, and verified plain parser methods are not findings.
 id: mandate-pydantic-v1-ambiguous
 language: python
 severity: warning
-message: "Possible pydantic v1 method — `.dict()` / `.copy(update=...)` are v1 spellings"
+message: "Possible Pydantic v1 method — receiver ownership is unresolved"
 rule:
   kind: call
   any:

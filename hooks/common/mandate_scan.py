@@ -40,6 +40,7 @@ it left unevaluated, matching qa_gate.sh's anti-brick policy.
 from __future__ import annotations
 
 import argparse
+import ast
 import io
 import json
 import os
@@ -50,10 +51,24 @@ import sys
 import tempfile
 import time
 import tokenize
-from dataclasses import dataclass, field
-from enum import Enum, IntEnum
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
+from enum import Enum, IntEnum, IntFlag
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import (
+    Collection,
+    Dict,
+    FrozenSet,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 POLICY_REVISION = "git-guard-mandate-1"
 CANONICAL_POLICY = "vigil-ai-tpm templates/strict-python-module/RULES.md @ ecbedf353d4a"
@@ -184,10 +199,12 @@ RULES: Tuple[Rule, ...] = (
         Severity.WARN,
         sg=("mandate-pydantic-v1-ambiguous",),
         source="vigil-spark AGENTS.md:188-190",
-        why="`.dict()` and `.copy(update=...)` are pydantic v1 model methods; the "
-        "names also exist elsewhere, so this only warns.",
-        fix="On a pydantic model use model.model_dump() / "
-        "model.model_copy(update=...).",
+        why="Legacy model method names also occur on unrelated APIs. Unresolved "
+        "receivers, `.dict()` and `.copy(update=...)` only warn; proven model "
+        "classmethods retain the strong rule.",
+        fix="On a proven model use the corresponding v2 model_validate, "
+        "model_validate_json, model_dump or model_copy API. Otherwise establish "
+        "the receiver's type before changing its API.",
     ),
     _rule(
         "bare_except",
@@ -1136,6 +1153,3916 @@ def rule_inventory() -> Dict[str, Path]:
     return ids
 
 
+class ReceiverOperation(IntFlag):
+    """Finite unsupported projections; these do not erase class ancestry."""
+
+    NONE = 0
+    CONSTRUCT = 1
+    INSTANCE_ACCESS = 2
+    CLASS_SUBSCRIPT = 4
+    SUBCLASS = 8
+
+
+class ReceiverEffect(IntFlag):
+    """Keep namespace events distinct from absent events and operation effects."""
+
+    NONE = 0
+    NAMESPACE = 1
+    TYPE = 2
+    CONSTRUCT = 4
+    INSTANCE_ACCESS = 8
+    CLASS_SUBSCRIPT = 16
+    SUBCLASS = 32
+
+
+@dataclass(frozen=True)
+class ReceiverBinding:
+    """Local static receiver evidence; unknown never means a proven model."""
+
+    kind: str
+    methods: FrozenSet[str] = frozenset()
+    identity: str = ""
+    dependencies: FrozenSet[str] = frozenset()
+    is_instance: bool = False
+    opaque: ReceiverOperation = ReceiverOperation.NONE
+    has_set_name: bool = False
+    protocol_effect: ReceiverEffect = ReceiverEffect.NONE
+
+
+UNKNOWN_RECEIVER = ReceiverBinding("unknown")
+MODEL_RECEIVER = ReceiverBinding(
+    "model", identity="pydantic-model", dependencies=frozenset({"pydantic-model"})
+)
+PYDANTIC_MODULE = ReceiverBinding("module")
+PYDANTIC_SETTINGS_MODULE = ReceiverBinding("module", identity="pydantic-settings")
+LEGACY_MODEL_METHODS = frozenset({"parse_obj", "parse_raw", "parse_file", "from_orm"})
+RECEIVER_NAMESPACE_MEMBERS = frozenset({"__code__", "__set_name__"})
+MODEL_BASES = frozenset({"BaseModel", "BaseSettings", "RootModel"})
+RECEIVER_TYPE_MEMBERS = frozenset(
+    {
+        "__class__",
+        "__bases__",
+        "__mro__",
+        "__dict__",
+        "__new__",
+        "__getattr__",
+        "__getattribute__",
+    }
+)
+RECEIVER_OPERATION_MEMBERS = {
+    "__init__": ReceiverEffect.CONSTRUCT,
+    "__del__": ReceiverEffect.CONSTRUCT,
+    "__call__": ReceiverEffect.CONSTRUCT,
+    "__setattr__": ReceiverEffect.CONSTRUCT | ReceiverEffect.INSTANCE_ACCESS,
+    "__delattr__": ReceiverEffect.INSTANCE_ACCESS,
+    "__getitem__": ReceiverEffect.CLASS_SUBSCRIPT,
+    "__class_getitem__": ReceiverEffect.CLASS_SUBSCRIPT,
+    "__init_subclass__": ReceiverEffect.SUBCLASS,
+    "__prepare__": ReceiverEffect.SUBCLASS,
+    "__mro_entries__": ReceiverEffect.SUBCLASS,
+}
+
+
+def receiver_unknown(binding: ReceiverBinding) -> ReceiverBinding:
+    """Forfeit positive identity while retaining possible callback effects."""
+    return replace(UNKNOWN_RECEIVER, protocol_effect=binding.protocol_effect)
+
+
+def receiver_effect(
+    binding: ReceiverBinding, effect: ReceiverEffect
+) -> ReceiverBinding:
+    """Invalidate type/namespace proof or retain ancestry with opaque projections."""
+    if binding.kind in {"data-hook", "function", "stored-int"}:
+        return receiver_unknown(binding) if effect else binding
+    if binding.kind not in {"plain", "model"}:
+        return binding
+    if effect & ReceiverEffect.TYPE or (
+        binding.kind == "plain" and effect & ReceiverEffect.NAMESPACE
+    ):
+        return receiver_unknown(binding)
+    operations = ReceiverOperation.NONE
+    for mutation, operation in (
+        (ReceiverEffect.CONSTRUCT, ReceiverOperation.CONSTRUCT),
+        (ReceiverEffect.INSTANCE_ACCESS, ReceiverOperation.INSTANCE_ACCESS),
+        (ReceiverEffect.CLASS_SUBSCRIPT, ReceiverOperation.CLASS_SUBSCRIPT),
+        (ReceiverEffect.SUBCLASS, ReceiverOperation.SUBCLASS),
+    ):
+        if effect & mutation:
+            operations |= operation
+    result = replace(binding, opaque=binding.opaque | operations)
+    if result.is_instance and result.opaque & ReceiverOperation.INSTANCE_ACCESS:
+        return receiver_unknown(binding)
+    return result
+
+
+def receiver_join(one: ReceiverBinding, two: ReceiverBinding) -> ReceiverBinding:
+    """Join old positive facts independently of negative callback provenance."""
+    protocol = one.protocol_effect | two.protocol_effect
+    one = replace(one, protocol_effect=ReceiverEffect.NONE)
+    two = replace(two, protocol_effect=ReceiverEffect.NONE)
+    if one == two:
+        result = one
+    elif one.kind in {"model", "plain"} and replace(
+        one, is_instance=False, opaque=ReceiverOperation.NONE, has_set_name=False
+    ) == replace(
+        two, is_instance=False, opaque=ReceiverOperation.NONE, has_set_name=False
+    ):
+        result = receiver_effect(
+            replace(
+                one,
+                is_instance=one.is_instance or two.is_instance,
+                opaque=one.opaque | two.opaque,
+                has_set_name=one.has_set_name or two.has_set_name,
+            ),
+            ReceiverEffect.NONE,
+        )
+    else:
+        result = UNKNOWN_RECEIVER
+    return replace(result, protocol_effect=protocol)
+
+
+def receiver_annotation_root(annotation: Optional[ast.AST]) -> Optional[str]:
+    """Extract the root after value() has validated model/plain type evidence."""
+    while annotation is not None:
+        if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+            annotation = ast.parse(annotation.value, mode="eval").body
+        elif isinstance(annotation, (ast.Attribute, ast.Subscript)):
+            annotation = annotation.value
+        elif isinstance(annotation, ast.Call):
+            annotation = annotation.func
+        else:
+            return annotation.id if isinstance(annotation, ast.Name) else None
+    return None
+
+
+def receiver_bound_names(node: ast.AST) -> Set[str]:
+    """Find bindings in this scope without borrowing nested function locals."""
+    if isinstance(
+        node,
+        (
+            ast.FunctionDef,
+            ast.AsyncFunctionDef,
+            ast.ClassDef,
+            ast.ListComp,
+            ast.SetComp,
+            ast.DictComp,
+            ast.GeneratorExp,
+        ),
+    ):
+        return set(receiver_binding_events(node))
+    names: Set[str] = set()
+    if isinstance(node, ast.Lambda):
+        for default in [*node.args.defaults, *node.args.kw_defaults]:
+            if default is not None:
+                names.update(receiver_bound_names(default))
+        return names
+    if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+        names.add(node.id)
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        names.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+    if isinstance(node, ast.ExceptHandler) and node.name:
+        names.add(node.name)
+    if type(node).__name__ in {"MatchAs", "MatchStar"}:
+        name = getattr(node, "name", None)
+        if isinstance(name, str):
+            names.add(name)
+    for child in ast.iter_child_nodes(node):
+        names.update(receiver_bound_names(child))
+    return names
+
+
+def receiver_binding_events(node: ast.AST) -> Iterable[str]:
+    """Count actual scope writes, including multiple writes in one statement."""
+    children: List[ast.AST]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        yield node.name
+        if isinstance(node, ast.ClassDef):
+            children = [*node.decorator_list, *node.bases]
+            children.extend(keyword.value for keyword in node.keywords)
+        else:
+            children = [*node.decorator_list, *node.args.defaults]
+            children.extend(d for d in node.args.kw_defaults if d is not None)
+            arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+            arguments.extend(
+                arg for arg in (node.args.vararg, node.args.kwarg) if arg is not None
+            )
+            children.extend(arg.annotation for arg in arguments if arg.annotation)
+            if node.returns is not None:
+                children.append(node.returns)
+    elif isinstance(node, ast.Lambda):
+        children = [*node.args.defaults]
+        children.extend(d for d in node.args.kw_defaults if d is not None)
+    elif isinstance(node, (ast.Import, ast.ImportFrom)):
+        yield from (alias.asname or alias.name.split(".")[0] for alias in node.names)
+        return
+    elif isinstance(node, ast.AnnAssign) and node.value is None:
+        children = [node.annotation]
+        if not isinstance(node.target, ast.Name):
+            children.append(node.target)
+    elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+        yield node.id
+        return
+    else:
+        if isinstance(node, ast.ExceptHandler) and node.name:
+            yield node.name
+        if type(node).__name__ in {"MatchAs", "MatchStar", "MatchMapping"}:
+            name = getattr(node, "name", None) or getattr(node, "rest", None)
+            if isinstance(name, str):
+                yield name
+        if isinstance(
+            node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+        ):
+            children = [g.iter for g in node.generators]
+            children.extend(c for g in node.generators for c in g.ifs)
+            values = (
+                [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+            )
+            children.extend(value for value in values if value is not None)
+        else:
+            children = list(ast.iter_child_nodes(node))
+    for child in children:
+        if child is not None:
+            yield from receiver_binding_events(child)
+
+
+def receiver_field_root(node: ast.AST) -> Optional[str]:
+    """Identify only the syntactic lookup root, without parsing string values."""
+    while isinstance(node, (ast.Attribute, ast.Subscript, ast.Call)):
+        node = node.func if isinstance(node, ast.Call) else node.value
+    return node.id if isinstance(node, ast.Name) else None
+
+
+def receiver_immediate_calls(nodes: Iterable[ast.AST]) -> Iterable[ast.Call]:
+    """Visit eager calls without borrowing deferred function/lambda bodies."""
+    pending = list(nodes)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.Call):
+            yield node
+        children: List[Optional[ast.AST]]
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+            args.extend(arg for arg in (node.args.vararg, node.args.kwarg) if arg)
+            children = [
+                *node.decorator_list,
+                *node.args.defaults,
+                *node.args.kw_defaults,
+                node.returns,
+                *(argument.annotation for argument in args),
+            ]
+        elif isinstance(node, ast.Lambda):
+            children = [*node.args.defaults, *node.args.kw_defaults]
+        elif isinstance(node, ast.GeneratorExp):
+            children = [node.generators[0].iter] if node.generators else []
+        else:
+            children = list(ast.iter_child_nodes(node))
+        pending.extend(child for child in children if child is not None)
+
+
+def receiver_field_write_targets(
+    nodes: Iterable[ast.AST],
+) -> Iterable[Tuple[ast.AST, str]]:
+    """Enumerate write operations across eager, not deferred, bodies."""
+    pending = list(nodes)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(
+            node.ctx, (ast.Store, ast.Del)
+        ):
+            member: Optional[str] = None
+            if isinstance(node, ast.Attribute):
+                member = node.attr
+            elif receiver_target_owner(node) is not None:
+                key = node.slice
+                if type(key).__name__ == "Index":
+                    key = getattr(key, "value", key)
+                member = (
+                    key.value
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                    else "*"
+                )
+            else:
+                member = "*"
+            if member is not None:
+                yield node, member
+        children: List[Optional[ast.AST]]
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+            args.extend(arg for arg in (node.args.vararg, node.args.kwarg) if arg)
+            children = [
+                *node.decorator_list,
+                *node.args.defaults,
+                *node.args.kw_defaults,
+            ]
+            children.extend([node.returns, *(arg.annotation for arg in args)])
+        elif isinstance(node, ast.Lambda):
+            children = [*node.args.defaults, *node.args.kw_defaults]
+        elif isinstance(node, ast.GeneratorExp):
+            children = [node.generators[0].iter] if node.generators else []
+        elif isinstance(node, ast.AnnAssign) and node.value is None:
+            children = [node.annotation, *ast.iter_child_nodes(node.target)]
+        else:
+            children = list(ast.iter_child_nodes(node))
+        pending.extend(child for child in children if child is not None)
+
+
+def receiver_field_write_events(nodes: Iterable[ast.AST]) -> Iterable[str]:
+    """Count stored-slot writes without changing the existing member domain."""
+    for _, member in receiver_field_write_targets(nodes):
+        if not member.startswith("__"):
+            yield "<stored-member>:" + member
+
+
+def receiver_capture_suffix(
+    nodes: Sequence[ast.AST], capture: ast.AST
+) -> Sequence[ast.AST]:
+    """Retain the whole containing statement and later scope siblings."""
+    containing = [
+        index
+        for index, statement in enumerate(nodes)
+        if any(child is capture for child in ast.walk(statement))
+    ]
+    return nodes[containing[0] :] if len(containing) == 1 else nodes
+
+
+def receiver_field_call_writes(node: ast.Module) -> Dict[str, Set[str]]:
+    """Propagate only finite stored-member effects over local call/alias names."""
+    fields: Dict[str, Set[str]] = {}
+    edges: Dict[str, Set[str]] = {}
+    for child in ast.walk(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            fields.setdefault(child.name, set()).update(
+                receiver_field_write_events(child.body)
+            )
+            edges.setdefault(child.name, set()).update(
+                receiver_immediate_call_names(child.body)
+            )
+        elif isinstance(child, (ast.Assign, ast.AnnAssign)):
+            value = child.value
+            targets = child.targets if isinstance(child, ast.Assign) else [child.target]
+            if isinstance(value, ast.Name):
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        edges.setdefault(target.id, set()).add(value.id)
+    while True:
+        changed = False
+        for name, callees in edges.items():
+            additions = set().union(*(fields.get(callee, set()) for callee in callees))
+            current = fields.setdefault(name, set())
+            if not additions <= current:
+                current.update(additions)
+                changed = True
+        if not changed:
+            return {name: values for name, values in fields.items() if values}
+
+
+def receiver_rebound_names(
+    nodes: Iterable[ast.AST], initial_names: Iterable[str] = ()
+) -> Set[str]:
+    """Rebound captures cannot retain their earlier plain receiver proof."""
+    nodes = list(nodes)
+    counts: Dict[str, int] = {name: 1 for name in initial_names}
+    for node in nodes:
+        for name in receiver_binding_events(node):
+            counts[name] = counts.get(name, 0) + 1
+    for member in receiver_field_write_events(nodes):
+        counts[member] = counts.get(member, 0) + 1
+    return {name for name, count in counts.items() if count > 1}
+
+
+def receiver_declared_writes(nodes: Sequence[ast.AST]) -> Set[str]:
+    """Summarize declared global/nonlocal writes without executing callees."""
+    written = {name for node in nodes for name in receiver_binding_events(node)}
+    declared: Set[str] = set()
+    nested: Set[str] = set()
+    pending: List[ast.AST] = list(nodes)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.ClassDef):
+            nested.update(receiver_declared_writes(node.body))
+            continue
+        if isinstance(node, (ast.Global, ast.Nonlocal)):
+            declared.update(node.names)
+        pending.extend(ast.iter_child_nodes(node))
+    return (declared & written) | nested
+
+
+def receiver_lexical_globals(nodes: Sequence[ast.AST]) -> FrozenSet[str]:
+    """Collect this suite's Global declarations, including read-only declarations."""
+    names: Set[str] = set()
+    pending = list(nodes)
+    while pending:
+        node = pending.pop()
+        if isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+        ):
+            continue
+        if isinstance(node, ast.Global):
+            names.update(node.names)
+        pending.extend(ast.iter_child_nodes(node))
+    return frozenset(names)
+
+
+def receiver_immediate_call_names(nodes: Iterable[ast.AST]) -> Set[str]:
+    """Find syntactic local calls across eager, not deferred, evaluation."""
+    names: Set[str] = set()
+    pending = list(nodes)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                names.add(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                names.add(node.func.attr)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Name):
+                    names.add(decorator.id)
+                elif isinstance(decorator, ast.Attribute):
+                    names.add(decorator.attr)
+        children: List[Optional[ast.AST]]
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+            if node.args.vararg:
+                args.append(node.args.vararg)
+            if node.args.kwarg:
+                args.append(node.args.kwarg)
+            children = [
+                *node.decorator_list,
+                *node.args.defaults,
+                *node.args.kw_defaults,
+            ]
+            children.extend([node.returns, *(arg.annotation for arg in args)])
+        elif isinstance(node, ast.Lambda):
+            children = [*node.args.defaults, *node.args.kw_defaults]
+        elif isinstance(node, ast.GeneratorExp):
+            children = [node.generators[0].iter] if node.generators else []
+        else:
+            children = list(ast.iter_child_nodes(node))
+        pending.extend(child for child in children if child is not None)
+    return names
+
+
+def receiver_comprehension_body(node: ast.AST) -> List[ast.AST]:
+    """Separate per-iteration expressions from the eager first iterator."""
+    generators = getattr(node, "generators", ())
+    body: List[ast.AST] = [item.iter for item in generators[1:]]
+    body.extend(item.target for item in generators)
+    body.extend(condition for item in generators for condition in item.ifs)
+    values = (
+        [node.key, node.value]
+        if isinstance(node, ast.DictComp)
+        else [getattr(node, "elt")]
+    )
+    body.extend(value for value in values if value is not None)
+    return body
+
+
+def receiver_walrus_names(node: ast.AST) -> Set[str]:
+    """Comprehension walrus targets bind outside it, unlike lambda locals."""
+    pending = [node]
+    names: Set[str] = set()
+    while pending:
+        child = pending.pop()
+        if isinstance(child, ast.NamedExpr):
+            names.update(receiver_bound_names(child.target))
+        if isinstance(child, ast.Lambda):
+            pending.extend(
+                d for d in [*child.args.defaults, *child.args.kw_defaults] if d
+            )
+        else:
+            pending.extend(ast.iter_child_nodes(child))
+    return names
+
+
+def receiver_target_owner(node: ast.AST) -> Optional[ast.AST]:
+    """Normalize the written owner without mistaking a field's root for it."""
+    if isinstance(node, ast.Attribute):
+        return node.value
+    if (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "__dict__"
+    ):
+        return node.value.value
+    return None
+
+
+def receiver_combined_effects(effects: Iterable[ReceiverEffect]) -> ReceiverEffect:
+    """Merge effect categories without collapsing namespace events to booleans."""
+    combined = ReceiverEffect.NONE
+    for effect in effects:
+        combined |= effect
+    return combined
+
+
+def receiver_unresolved_effect(effect: ReceiverEffect) -> ReceiverEffect:
+    """An unresolved initializer owner may be a shared metaclass."""
+    if effect & ReceiverEffect.CONSTRUCT:
+        return effect | ReceiverEffect.SUBCLASS
+    return effect
+
+
+def receiver_literal_data_hook(node: ast.AST) -> bool:
+    """Prove only literal/name data stores on the callback's first argument."""
+    if not isinstance(node, ast.FunctionDef) or node.decorator_list:
+        return False
+    positional = [*node.args.posonlyargs, *node.args.args]
+    if not positional:
+        return False
+    receiver = positional[0].arg
+    for statement in node.body:
+        if isinstance(statement, ast.Pass) or (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+        ):
+            continue
+        if isinstance(statement, ast.Return) and (
+            statement.value is None
+            or isinstance(statement.value, ast.Constant)
+            and statement.value.value is None
+        ):
+            continue
+        if not isinstance(statement, ast.Assign) or not isinstance(
+            statement.value, (ast.Constant, ast.Name)
+        ):
+            return False
+        for target in statement.targets:
+            if not (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == receiver
+                and not target.attr.startswith("__")
+                and target.attr not in LEGACY_MODEL_METHODS
+            ):
+                return False
+    return True
+
+
+def receiver_target_mutation(
+    node: ast.AST, *, resolved_owner: bool = False
+) -> Optional[Tuple[str, ReceiverEffect]]:
+    """Separate method-namespace/type changes from ordinary field writes."""
+    if isinstance(node, ast.Attribute):
+        member = node.attr
+    elif (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "__dict__"
+    ):
+        key = node.slice
+        # Python 3.8 wraps subscript expressions in Index; newer ASTs do not.
+        if type(key).__name__ == "Index":
+            key = getattr(key, "value", key)
+        member = (
+            key.value
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            else "__dict__"
+        )
+    else:
+        return None
+    if member not in (
+        LEGACY_MODEL_METHODS
+        | RECEIVER_NAMESPACE_MEMBERS
+        | RECEIVER_TYPE_MEMBERS
+        | RECEIVER_OPERATION_MEMBERS.keys()
+    ):
+        return None
+    owner = receiver_target_owner(node)
+    name = owner.id if isinstance(owner, ast.Name) else None
+    effect = (
+        ReceiverEffect.TYPE
+        if member in RECEIVER_TYPE_MEMBERS
+        else RECEIVER_OPERATION_MEMBERS.get(member, ReceiverEffect.NAMESPACE)
+    )
+    if name is None and not resolved_owner:
+        effect = receiver_unresolved_effect(effect)
+    return (name or "<unresolved-mutation>", effect)
+
+
+def receiver_target_leaves(target: ast.AST) -> Iterable[ast.AST]:
+    """Expand assignment containers without treating loaded expressions as writes."""
+    pending = [target]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.Tuple, ast.List)):
+            pending.extend(reversed(node.elts))
+        elif isinstance(node, ast.Starred):
+            pending.append(node.value)
+        else:
+            yield node
+
+
+def receiver_mutated_names(
+    nodes: Iterable[ast.AST], include_class_bodies: bool = True
+) -> Dict[str, ReceiverEffect]:
+    """Find relevant mutations/aliases without collapsing distinct effect categories."""
+    pending = list(nodes)
+    aliases: Dict[str, Set[str]] = {}
+    mutated: Dict[str, ReceiverEffect] = {}
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or (
+            isinstance(node, ast.ClassDef) and not include_class_bodies
+        ):
+            continue
+        targets: Sequence[ast.AST] = ()
+        if isinstance(node, (ast.Assign, ast.Delete)):
+            targets = node.targets
+        elif isinstance(
+            node, (ast.AugAssign, ast.For, ast.AsyncFor, ast.comprehension)
+        ) or (isinstance(node, ast.AnnAssign) and node.value is not None):
+            targets = (node.target,)
+        elif isinstance(node, ast.withitem) and node.optional_vars is not None:
+            targets = (node.optional_vars,)
+        for target in targets:
+            for leaf in receiver_target_leaves(target):
+                mutation = receiver_target_mutation(leaf)
+                if mutation:
+                    name, effect = mutation
+                    mutated[name] = mutated.get(name, ReceiverEffect.NONE) | effect
+            value = getattr(node, "value", None)
+            if isinstance(target, ast.Name) and isinstance(value, ast.Name):
+                aliases.setdefault(target.id, set()).add(value.id)
+                aliases.setdefault(value.id, set()).add(target.id)
+        pending.extend(ast.iter_child_nodes(node))
+    while True:
+        expanded = dict(mutated)
+        for name, effect in mutated.items():
+            for alias in aliases.get(name, set()):
+                expanded[alias] = expanded.get(alias, ReceiverEffect.NONE) | effect
+        if expanded == mutated:
+            return mutated
+        mutated = expanded
+
+
+class PydanticReceivers(ast.NodeVisitor):
+    """Track local class/constructor/annotation evidence without executing imports."""
+
+    def __init__(self, source: str) -> None:
+        self.source = source
+        self.env: Dict[str, ReceiverBinding] = {}
+        self.class_binding: Optional[ReceiverBinding] = None
+        self.class_outer: Optional[Dict[str, ReceiverBinding]] = None
+        self.class_comprehension_outer: Optional[Dict[str, ReceiverBinding]] = None
+        self.class_eager_envs: List[Dict[str, ReceiverBinding]] = []
+        self.class_eager_epoch = 0
+        self.namespace_opaque = False
+        self.namespace_globals: FrozenSet[str] = frozenset()
+        self.has_star_import = False
+        self.module_may_bind: Set[str] = set()
+        self.deferred_horizon = False
+        self.sensitive_call_effects: Dict[str, ReceiverEffect] = {}
+        self.binding_call_names: Dict[str, Set[str]] = {}
+        self.field_capture_scopes: List[List[ast.AST]] = []
+        self.field_definitions: Dict[str, ast.FunctionDef] = {}
+        self.field_classes: Dict[str, ast.ClassDef] = {}
+        self.field_module_env: Optional[Dict[str, ReceiverBinding]] = None
+        self.field_module_functions: Set[ast.FunctionDef] = set()
+        self.field_module_calls: Set[ast.Call] = set()
+        self.namespace_call_effects: Dict[ast.Call, ReceiverEffect] = {}
+        self.call_effect_observers: List[List[ReceiverEffect]] = []
+        self.capture_call_effect = ReceiverEffect.NONE
+        self.rebound: Set[str] = set()
+        self.mutated: Dict[str, ReceiverEffect] = {}
+        self.calls: Dict[Tuple[int, int, str], Set[str]] = {}
+        self.call_callees: Dict[ast.Call, ReceiverBinding] = {}
+        self.subscript_bindings: Dict[ast.Subscript, ReceiverBinding] = {}
+        self.tuple_argument_regions: List[
+            Tuple[Dict[str, ReceiverBinding], Dict[ast.Subscript, bool]]
+        ] = []
+
+    def visit(self, node: ast.AST) -> None:
+        """Retain only a finite positive prefix in immediate class evaluation."""
+        if any(value.kind == "stored-int" for value in self.env.values()):
+            if isinstance(node, ast.expr):
+                if "<stored-member>:*" in self.field_expression(node, set(), set()):
+                    self.expire_stored_int()
+            elif isinstance(node, ast.stmt) and not isinstance(
+                node,
+                (
+                    ast.Assign,
+                    ast.AnnAssign,
+                    ast.AugAssign,
+                    ast.Expr,
+                    ast.Return,
+                    ast.Global,
+                    ast.Nonlocal,
+                    ast.Pass,
+                ),
+            ):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or (
+                    node.decorator_list
+                ):
+                    self.expire_stored_int()
+        if self.namespace_opaque:
+            self.expire_namespace_identity()
+        elif self.in_class_eager_view() and not self.eager_prefix_node(node):
+            self.expire_class_eager()
+        super().visit(node)
+        if self.namespace_opaque:
+            self.expire_namespace_identity()
+
+    def expire_stored_int(self) -> None:
+        """Unsupported hook-capable evaluation forfeits only primitive metadata."""
+        for name, binding in list(self.env.items()):
+            if binding.kind == "stored-int":
+                self.env[name] = receiver_unknown(self.env.get(name, UNKNOWN_RECEIVER))
+
+    def builtin_lookup(
+        self,
+        name: str,
+        bindings: Optional[Collection[str]] = None,
+        *,
+        ordinary: Optional[bool] = None,
+    ) -> bool:
+        """Prove a builtin only in its actual ordinary/global lookup frame."""
+        if bindings is None:
+            bindings = self.env
+        if ordinary is None:
+            ordinary = not self.namespace_opaque or name in self.namespace_globals
+        return (
+            ordinary
+            and not self.has_star_import
+            and not (self.deferred_horizon and name in self.module_may_bind)
+            and name not in bindings
+        )
+
+    def expire_namespace_identity(self) -> None:
+        """An opaque mapping cannot publish identity through LOAD/STORE_NAME."""
+        self.expire_class_eager()
+        for name in self.env:
+            if name not in self.namespace_globals:
+                self.env[name] = receiver_unknown(self.env.get(name, UNKNOWN_RECEIVER))
+
+    def in_class_eager_view(self) -> bool:
+        return any(self.env is view for view in self.class_eager_envs)
+
+    def eager_prefix_node(self, node: ast.AST) -> bool:
+        """Recognize inert values and existing explicitly staged evaluators."""
+        if isinstance(
+            node,
+            (
+                ast.Name,
+                ast.Constant,
+                ast.Pass,
+                ast.Global,
+                ast.Nonlocal,
+                ast.expr_context,
+                ast.operator,
+                ast.unaryop,
+                ast.boolop,
+                ast.cmpop,
+                ast.Expr,
+                ast.Call,
+                ast.FunctionDef,
+                ast.AsyncFunctionDef,
+                ast.ClassDef,
+                ast.Lambda,
+                ast.ListComp,
+                ast.SetComp,
+                ast.DictComp,
+                ast.GeneratorExp,
+            ),
+        ):
+            return True
+        if isinstance(node, ast.keyword):
+            return node.arg is not None
+        if isinstance(node, ast.NamedExpr):
+            return isinstance(node.target, ast.Name)
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            return all(
+                isinstance(target, ast.Name)
+                or (
+                    isinstance(target, ast.Attribute)
+                    and self.stored_class_key(self.value(target.value), target.attr)
+                    is not None
+                )
+                for target in targets
+            )
+        if isinstance(node, ast.Attribute):
+            owner = self.value(node.value)
+            return (
+                (
+                    node.attr in LEGACY_MODEL_METHODS
+                    and (
+                        owner.kind == "model"
+                        or owner.kind == "plain"
+                        and node.attr in owner.methods
+                    )
+                )
+                or self.value(node).kind in {"plain", "model", "module"}
+                or (
+                    isinstance(node.ctx, ast.Store)
+                    and self.stored_class_key(owner, node.attr) is not None
+                )
+            )
+        if isinstance(node, ast.Subscript):
+            owner = self.value(node.value)
+            return (
+                owner.kind == "model"
+                and not owner.is_instance
+                and not (owner.opaque & ReceiverOperation.CLASS_SUBSCRIPT)
+            )
+        safe = {
+            name: self.descriptor_free_field(value) for name, value in self.env.items()
+        }
+        return self.supported_eager_value(node, self.env, safe)
+
+    def expire_class_eager(self) -> None:
+        """Join an opaque execution point into namespace-sensitive evidence."""
+        if self.in_class_eager_view():
+            self.class_mutation_barrier(
+                self.env, {"<opaque-class-prefix>": ReceiverEffect.NAMESPACE}
+            )
+            self.class_eager_epoch += 1
+
+    def visit_Module(self, node: ast.Module) -> None:
+        self.field_module_env = self.env
+        self.field_module_functions = {
+            child for child in node.body if isinstance(child, ast.FunctionDef)
+        }
+        for statement in node.body:
+            if isinstance(statement, ast.Expr) and isinstance(
+                statement.value, ast.Call
+            ):
+                self.field_module_calls.add(statement.value)
+            elif (
+                isinstance(statement, ast.Assign)
+                and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+                and isinstance(statement.value, ast.Call)
+            ):
+                self.field_module_calls.add(statement.value)
+        definitions: Dict[str, List[ast.FunctionDef]] = {}
+        for child in ast.walk(node):
+            if isinstance(child, ast.FunctionDef):
+                definitions.setdefault(child.name, []).append(child)
+            elif isinstance(child, ast.ClassDef):
+                self.field_classes[f"class:{child.lineno}:{child.name}"] = child
+        counts: Dict[str, int] = {}
+        for statement in node.body:
+            for name in receiver_binding_events(statement):
+                counts[name] = counts.get(name, 0) + 1
+        self.field_definitions = {
+            name: values[0]
+            for name, values in definitions.items()
+            if len(values) == 1 and counts.get(name) == 1
+        }
+        self.module_may_bind = {
+            name for child in node.body for name in receiver_binding_events(child)
+        }
+        for child in ast.walk(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                self.module_may_bind.update(
+                    receiver_lexical_globals(child.body)
+                    & receiver_declared_writes(child.body)
+                )
+        for child in ast.walk(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                written = receiver_declared_writes(child.body)
+                if written:
+                    self.binding_call_names.setdefault(child.name, set()).update(
+                        written
+                    )
+                effects = receiver_mutated_names(child.body, include_class_bodies=True)
+                if effects:
+                    self.sensitive_call_effects[child.name] = (
+                        self.sensitive_call_effects.get(child.name, ReceiverEffect.NONE)
+                        | receiver_unresolved_effect(
+                            receiver_combined_effects(effects.values())
+                        )
+                    )
+        for name, members in receiver_field_call_writes(node).items():
+            self.binding_call_names.setdefault(name, set()).update(members)
+        self.has_star_import = any(
+            isinstance(child, ast.ImportFrom)
+            and any(alias.name == "*" for alias in child.names)
+            for child in ast.walk(node)
+        )
+        self.rebound = receiver_rebound_names(node.body)
+        self.mutated = receiver_mutated_names(node.body)
+        with self.call_effect_scope(node.body):
+            self.generic_visit(node)
+
+    def value(self, node: Optional[ast.AST]) -> ReceiverBinding:
+        if isinstance(node, ast.Name):
+            if self.namespace_opaque and node.id not in self.namespace_globals:
+                return receiver_unknown(self.env.get(node.id, UNKNOWN_RECEIVER))
+            if node.id == "object" and self.builtin_lookup("object"):
+                return ReceiverBinding("plain")
+            return self.env.get(node.id, UNKNOWN_RECEIVER)
+        if isinstance(node, ast.Attribute):
+            namespace = self.value(node.value)
+            if namespace == PYDANTIC_MODULE:
+                if node.attr in MODEL_BASES:
+                    return MODEL_RECEIVER
+                if node.attr in {"v1", "main"}:
+                    return PYDANTIC_MODULE
+            elif namespace == PYDANTIC_SETTINGS_MODULE and node.attr == "BaseSettings":
+                return MODEL_RECEIVER
+            key = self.stored_class_key(namespace, node.attr)
+            if key is not None:
+                return self.env.get(key, UNKNOWN_RECEIVER)
+        if isinstance(node, ast.Lambda):
+            _, effect = self.full_effects([node.body], {})
+            return replace(UNKNOWN_RECEIVER, protocol_effect=effect)
+        if isinstance(node, ast.Call):
+            binding = self.call_callees.get(node)
+            if binding is None:
+                binding = self.value(node.func)
+            if binding.kind in {"model", "plain"} and not binding.is_instance:
+                if binding.opaque & (
+                    ReceiverOperation.CONSTRUCT | ReceiverOperation.INSTANCE_ACCESS
+                ):
+                    return UNKNOWN_RECEIVER
+                return replace(binding, is_instance=True)
+            return UNKNOWN_RECEIVER
+        if isinstance(node, ast.Subscript):
+            if node in self.subscript_bindings:
+                return self.subscript_bindings[node]
+            binding = self.value(node.value)
+            return (
+                binding
+                if binding.kind == "model"
+                and not binding.is_instance
+                and not binding.opaque & ReceiverOperation.CLASS_SUBSCRIPT
+                else UNKNOWN_RECEIVER
+            )
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            try:
+                return self.value(ast.parse(node.value, mode="eval").body)
+            except SyntaxError:
+                return UNKNOWN_RECEIVER
+        return UNKNOWN_RECEIVER
+
+    @contextmanager
+    def observe_call_effects(
+        self, *, deferred: bool = False
+    ) -> Iterator[List[ReceiverEffect]]:
+        """Collect this visit's effects, never an old observation for its AST."""
+        previous = self.call_effect_observers
+        if deferred:
+            self.call_effect_observers = []
+        observed = [ReceiverEffect.NONE]
+        self.call_effect_observers.append(observed)
+        try:
+            yield observed
+        finally:
+            self.call_effect_observers.pop()
+            if self.call_effect_observers:
+                self.call_effect_observers[-1][0] |= observed[0]
+            if deferred:
+                self.call_effect_observers = previous
+
+    @contextmanager
+    def call_observation_domain(self, deferred: bool) -> Iterator[None]:
+        """A deferred body cannot publish observations into an eager parent."""
+        previous = self.call_effect_observers
+        if deferred:
+            self.call_effect_observers = []
+        try:
+            yield
+        finally:
+            self.call_effect_observers = previous
+
+    @contextmanager
+    def effect_view(self, bindings: Mapping[str, ReceiverBinding]) -> Iterator[None]:
+        """Select an explicit captured view for pure summary work only."""
+        previous = (
+            self.env,
+            self.namespace_opaque,
+            self.namespace_globals,
+            self.deferred_horizon,
+            self.namespace_call_effects,
+            self.call_callees,
+            self.subscript_bindings,
+        )
+        self.env = dict(bindings)
+        self.namespace_opaque = False
+        self.namespace_globals = frozenset()
+        self.deferred_horizon = True
+        self.namespace_call_effects = {}
+        self.call_callees = {}
+        self.subscript_bindings = {}
+        try:
+            yield
+        finally:
+            (
+                self.env,
+                self.namespace_opaque,
+                self.namespace_globals,
+                self.deferred_horizon,
+                self.namespace_call_effects,
+                self.call_callees,
+                self.subscript_bindings,
+            ) = previous
+
+    def full_effects(
+        self, nodes: Iterable[ast.AST], bindings: Mapping[str, ReceiverBinding]
+    ) -> Tuple[Set[str], ReceiverEffect]:
+        """No visitors, body replay or positive cache imported from another frame."""
+        nodes = list(nodes)
+        with self.effect_view(bindings):
+            return self.call_effects(nodes, include_protocols=True)
+
+    def scoped(
+        self,
+        nodes: Iterable[ast.AST],
+        env: Dict[str, ReceiverBinding],
+        *,
+        deferred: bool = False,
+        opaque_namespace: Optional[bool] = None,
+        namespace_globals: Optional[FrozenSet[str]] = None,
+    ) -> Dict[str, ReceiverBinding]:
+        nodes = list(nodes)
+        previous = self.env
+        previous_epoch = self.class_eager_epoch
+        previous_opaque = self.namespace_opaque
+        previous_globals = self.namespace_globals
+        previous_horizon = self.deferred_horizon
+        self.deferred_horizon = previous_horizon or deferred
+        eager = not deferred and any(previous is view for view in self.class_eager_envs)
+        if eager:
+            self.class_eager_envs.append(env)
+        self.env = env
+        self.namespace_opaque = (
+            opaque_namespace
+            if opaque_namespace is not None
+            else False
+            if deferred
+            else previous_opaque
+        )
+        self.namespace_globals = (
+            namespace_globals
+            if namespace_globals is not None
+            else frozenset()
+            if deferred
+            else previous_globals
+        )
+        with self.call_observation_domain(deferred):
+            with self.call_effect_scope(nodes):
+                for node in nodes:
+                    self.visit(node)
+        result = self.env
+        self.env = previous
+        self.namespace_opaque = previous_opaque
+        self.namespace_globals = previous_globals
+        self.deferred_horizon = previous_horizon
+        if deferred:
+            self.class_eager_epoch = previous_epoch
+        if eager:
+            self.class_eager_envs.pop()
+        return result
+
+    def call_effects(
+        self,
+        nodes: Iterable[ast.AST],
+        *,
+        current_constructor: Optional[Tuple[ast.Call, ReceiverBinding]] = None,
+        include_protocols: bool = True,
+        current_callee: Optional[Tuple[ast.Call, ReceiverBinding]] = None,
+        tuple_events: Optional[Mapping[ast.Subscript, bool]] = None,
+    ) -> Tuple[Set[str], ReceiverEffect]:
+        """Summarize one level of already known local callable effects."""
+        nodes = list(nodes)
+        written = receiver_declared_writes(nodes)
+        effect = ReceiverEffect.NONE
+        for name in receiver_immediate_call_names(nodes):
+            written.update(self.binding_call_names.get(name, set()))
+            if name in self.sensitive_call_effects:
+                effect = effect | self.sensitive_call_effects[name]
+        written.update(
+            self.field_call_effects(
+                nodes,
+                current_constructor=current_constructor,
+                include_protocols=include_protocols,
+            )
+        )
+        effect |= self.namespace_effects(
+            nodes, include_protocols=include_protocols, current_callee=current_callee
+        )
+        if include_protocols:
+            protocol_written, protocol_effect = self.protocol_effects(
+                nodes, self.env, tuple_events=tuple_events
+            )
+            written.update(protocol_written)
+            effect |= protocol_effect
+        return written, effect
+
+    def tuple_reference_supported(self, binding: ReceiverBinding) -> bool:
+        """Only retained ordinary classes and existing callable facts are inert."""
+        return (
+            bool(binding.identity)
+            and not binding.is_instance
+            and (
+                self.ordinary_field_owner(binding)
+                or binding.kind in {"function", "data-hook"}
+            )
+        )
+
+    def tuple_argument_events(self) -> Optional[Dict[ast.Subscript, bool]]:
+        """Do not carry actual argument observations across another frame/view."""
+        if self.tuple_argument_regions:
+            env, events = self.tuple_argument_regions[-1]
+            if env is self.env and not self.namespace_opaque:
+                return events
+        return None
+
+    @contextmanager
+    def tuple_argument_region(self) -> Iterator[Dict[ast.Subscript, bool]]:
+        """A current-call negative-event projection, never expression values."""
+        env = self.env
+        events: Dict[ast.Subscript, bool] = {}
+        self.tuple_argument_regions.append((env, events))
+        try:
+            yield events
+        finally:
+            self.tuple_argument_regions.pop()
+            if self.tuple_argument_regions:
+                outer_env, outer_events = self.tuple_argument_regions[-1]
+                if outer_env is env:
+                    for node, safe in events.items():
+                        outer_events[node] = outer_events.get(node, True) and safe
+
+    def capture_tuple_argument(
+        self, node: ast.Subscript
+    ) -> Optional[Dict[str, ReceiverBinding]]:
+        """Capture only retained reference elements, never a returned value."""
+        if (
+            not isinstance(node.ctx, ast.Load)
+            or not isinstance(node.value, (ast.List, ast.Tuple))
+            or not isinstance(node.slice, ast.Constant)
+            or type(node.slice.value) is not int
+            or not -len(node.value.elts) <= node.slice.value < len(node.value.elts)
+        ):
+            return None
+        references: Set[str] = set()
+        targets: Set[str] = set()
+        for element in node.value.elts:
+            if isinstance(element, ast.Name):
+                references.add(element.id)
+            elif (
+                isinstance(element, ast.NamedExpr)
+                and isinstance(node.value, ast.Tuple)
+                and self.tuple_argument_events() is not None
+                and isinstance(element.target, ast.Name)
+                and isinstance(element.value, ast.Name)
+            ):
+                targets.add(element.target.id)
+                references.add(element.value.id)
+            else:
+                return None
+        if references & targets:
+            return None
+        captured = {name: self.value(ast.Name(id=name)) for name in references}
+        if not all(
+            self.tuple_reference_supported(value) for value in captured.values()
+        ):
+            return None
+        for name in targets:
+            # The binding map is partial (for example after a star import).
+            # Absence cannot certify that rebinding drops no finalizable object.
+            if name not in self.env:
+                return None
+            previous = self.env[name]
+            if not self.tuple_reference_supported(previous):
+                return None
+            retained = next(
+                (
+                    alias
+                    for alias, value in self.env.items()
+                    if alias.isidentifier()
+                    and alias not in targets
+                    and value == previous
+                    and self.tuple_reference_supported(value)
+                ),
+                None,
+            )
+            if retained is None:
+                return None
+            captured[retained] = previous
+        return captured
+
+    def namespace_owner_supported(self, owner: ReceiverBinding) -> bool:
+        "Keep the existing namespace-owner domain independent of key effects."
+        return self.ordinary_field_owner(owner) or owner.kind in {
+            "function",
+            "data-hook",
+        }
+
+    def apply_namespace_getter_event(
+        self, node: ast.Subscript, owner: ReceiverBinding
+    ) -> None:
+        "An unproved __dict__ getter executes before the key expression."
+        if receiver_target_owner(
+            node
+        ) is not None and not self.namespace_owner_supported(owner):
+            self.apply_call_effects(
+                self.env, {"<stored-member>:*"}, ReceiverEffect.NAMESPACE
+            )
+            if self.in_class_eager_view():
+                self.expire_class_eager()
+
+    def namespace_mutator(self, node: ast.AST) -> Optional[ast.Attribute]:
+        """Recognize only direct namespace mapping mutation syntax."""
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr
+            in {
+                "update",
+                "setdefault",
+                "clear",
+                "pop",
+                "popitem",
+                "__setitem__",
+                "__delitem__",
+            }
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "__dict__"
+        ):
+            return node.func.value
+        return None
+
+    def namespace_getter_supported(self, owner: ReceiverBinding) -> bool:
+        """Use the existing ordinary instance-access domain for this getter."""
+        return self.namespace_owner_supported(owner) or (
+            owner.kind == "plain"
+            and owner.is_instance
+            and owner.identity in self.field_classes
+            and not owner.opaque
+        )
+
+    def protocol_event(
+        self,
+        node: ast.AST,
+        bindings: Mapping[str, ReceiverBinding],
+        captured: Optional[ReceiverBinding] = None,
+        tuple_events: Optional[Mapping[ast.Subscript, bool]] = None,
+    ) -> Tuple[Set[str], ReceiverEffect]:
+        "Use existing negative facts, never infer arbitrary protocol returns."
+        unsafe = False
+        if isinstance(node, ast.Subscript):
+            if (
+                isinstance(node.ctx, ast.Load)
+                and tuple_events is not None
+                and tuple_events.get(node, False)
+            ):
+                return set(), ReceiverEffect.NONE
+            if isinstance(node.ctx, (ast.Store, ast.Del)):
+                owner_node = receiver_target_owner(node)
+                # An effectful or unproved key cannot certify a pre-key owner
+                # from its later binding. Literal keys cannot rebind that root.
+                if owner_node is None or not isinstance(node.slice, ast.Constant):
+                    unsafe = True
+                else:
+                    owner = (
+                        captured
+                        if captured is not None
+                        else self.stored_class_value(owner_node, bindings)
+                    )
+                    unsafe = not self.namespace_owner_supported(owner)
+            else:
+                owner = (
+                    captured
+                    if captured is not None
+                    else self.stored_class_value(node.value, bindings)
+                )
+                unsafe = not (
+                    owner.kind == "model"
+                    and not owner.is_instance
+                    and not owner.opaque & ReceiverOperation.CLASS_SUBSCRIPT
+                )
+        elif isinstance(node, ast.BinOp):
+            unsafe = not (
+                isinstance(node.op, ast.Add)
+                and isinstance(node.left, ast.Constant)
+                and type(node.left.value) is int
+                and isinstance(node.right, ast.Constant)
+                and type(node.right.value) is int
+            )
+        elif isinstance(node, ast.AugAssign):
+            # Current facts are eligible only in their actual selected view.
+            unsafe = bindings is not self.env or "<stored-member>:*" in (
+                self.field_augassign(node, set(), set())
+            )
+        elif isinstance(node, ast.Compare):
+            operands = [node.left, *node.comparators]
+            unsafe = not (
+                all(isinstance(op, (ast.Is, ast.IsNot)) for op in node.ops)
+                or all(isinstance(value, ast.Constant) for value in operands)
+            )
+        elif isinstance(node, ast.UnaryOp):
+            unsafe = not isinstance(node.operand, ast.Constant)
+        elif self.namespace_mutator(node) is not None:
+            # A mapping mutation completion is separate from its getter prefix.
+            namespace = self.namespace_mutator(node)
+            assert namespace is not None
+            owner = (
+                captured
+                if captured is not None
+                else self.stored_class_value(namespace.value, bindings)
+            )
+            unsafe = not self.namespace_owner_supported(owner)
+        elif isinstance(node, ast.withitem):
+            unsafe = True
+        return (
+            ({"<stored-member>:*"}, ReceiverEffect.NAMESPACE)
+            if unsafe
+            else (set(), ReceiverEffect.NONE)
+        )
+
+    def protocol_effects(
+        self,
+        nodes: Iterable[ast.AST],
+        bindings: Mapping[str, ReceiverBinding],
+        *,
+        tuple_events: Optional[Mapping[ast.Subscript, bool]] = None,
+    ) -> Tuple[Set[str], ReceiverEffect]:
+        "Summarize eager protocol events using the selected lexical view."
+        nodes = list(nodes)
+        pending = list(nodes)
+        operations: List[ast.AST] = []
+        while pending:
+            node = pending.pop()
+            if (
+                isinstance(
+                    node,
+                    (
+                        ast.Subscript,
+                        ast.BinOp,
+                        ast.AugAssign,
+                        ast.Compare,
+                        ast.UnaryOp,
+                        ast.withitem,
+                    ),
+                )
+                or self.namespace_mutator(node) is not None
+            ):
+                operations.append(node)
+            children: List[Optional[ast.AST]]
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+                args.extend(arg for arg in (node.args.vararg, node.args.kwarg) if arg)
+                children = [
+                    *node.decorator_list,
+                    *node.args.defaults,
+                    *node.args.kw_defaults,
+                ]
+                children.extend([node.returns, *(arg.annotation for arg in args)])
+            elif isinstance(node, ast.Lambda):
+                children = [*node.args.defaults, *node.args.kw_defaults]
+            elif isinstance(node, ast.GeneratorExp):
+                children = [node.generators[0].iter] if node.generators else []
+            elif isinstance(node, ast.AnnAssign) and node.value is None:
+                children = [node.annotation, *ast.iter_child_nodes(node.target)]
+            else:
+                children = list(ast.iter_child_nodes(node))
+            pending.extend(child for child in children if child is not None)
+        operation_ids = {id(node) for node in operations}
+        scopes: List[Tuple[Set[int], Set[str]]] = []
+        for root in nodes:
+            for part in ast.walk(root):
+                if isinstance(
+                    part, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+                ):
+                    names = {
+                        name
+                        for item in part.generators
+                        for name in receiver_bound_names(item.target)
+                    }
+                    identities = {
+                        id(child)
+                        for body in receiver_comprehension_body(part)
+                        for child in ast.walk(body)
+                    } & operation_ids
+                    if names and identities:
+                        scopes.append((identities, names))
+        written: Set[str] = set()
+        effect = ReceiverEffect.NONE
+        for node in operations:
+            shadowed = {
+                name
+                for identities, names in scopes
+                if id(node) in identities
+                for name in names
+            }
+            view = bindings
+            if shadowed or self.namespace_opaque and bindings is self.env:
+                view = dict(bindings)
+                for name in view:
+                    if (
+                        name in shadowed
+                        or self.namespace_opaque
+                        and bindings is self.env
+                    ):
+                        view[name] = UNKNOWN_RECEIVER
+            losses, mutation = self.protocol_event(
+                node, view, tuple_events=tuple_events if view is bindings else None
+            )
+            written.update(losses)
+            effect |= mutation
+        return written, effect
+
+    def apply_protocol_event(
+        self,
+        node: ast.AST,
+        captured: Optional[ReceiverBinding] = None,
+        *,
+        sequence_safe: bool = False,
+    ) -> None:
+        "Apply an event after its already observed operand/target prefix."
+        if (
+            sequence_safe
+            and isinstance(node, ast.Subscript)
+            and isinstance(node.ctx, ast.Load)
+            and isinstance(node.value, (ast.List, ast.Tuple))
+        ):
+            return
+        written, effect = self.protocol_event(
+            node, self.env, captured, tuple_events=self.tuple_argument_events()
+        )
+        self.apply_call_effects(self.env, written, effect)
+        if effect and self.in_class_eager_view():
+            self.expire_class_eager()
+
+    def namespace_effects(
+        self,
+        nodes: Iterable[ast.AST],
+        *,
+        include_protocols: bool = True,
+        current_callee: Optional[Tuple[ast.Call, ReceiverBinding]] = None,
+    ) -> ReceiverEffect:
+        """Propagate existing recognized member effects through finite callees."""
+        nodes = list(nodes)
+        effect = ReceiverEffect.NONE
+        pending = list(receiver_immediate_call_names(nodes))
+        seen: Set[str] = set()
+        for call in receiver_immediate_calls(nodes):
+            if include_protocols:
+                selected = (
+                    current_callee[1]
+                    if current_callee is not None and current_callee[0] is call
+                    else self.value(call.func)
+                )
+                effect |= selected.protocol_effect
+                effect |= self.namespace_call_effects.get(call, ReceiverEffect.NONE)
+            else:
+                # Observed-call entries mix explicit and protocol effects.
+                # Recompute existing explicit contributions instead of importing
+                # that mixed cache into a setup/capture summary.
+                explicit: List[ReceiverEffect] = []
+                self.field_call(
+                    call, set(), set(), protocols=explicit, include_protocols=False
+                )
+                for contribution in explicit:
+                    effect |= contribution
+                for argument in [
+                    *call.args,
+                    *(keyword.value for keyword in call.keywords),
+                ]:
+                    effect |= self.argument_namespace_effect(
+                        argument, include_protocols=False
+                    )
+        while pending:
+            name = pending.pop()
+            if name in seen:
+                continue
+            seen.add(name)
+            effect |= self.sensitive_call_effects.get(name, ReceiverEffect.NONE)
+            definition = self.field_definitions.get(name)
+            binding = self.env.get(name, UNKNOWN_RECEIVER)
+            if definition is None and binding.kind in {"function", "data-hook"}:
+                definition = self.field_definition_binding(binding)
+            if definition is not None:
+                body = definition.body
+                invocation_protocols: List[ReceiverEffect] = []
+                selected = self.stable_binding(binding, self.env)
+                if (
+                    selected.kind in {"function", "data-hook"}
+                    and selected.identity
+                    == f"data-hook:{definition.lineno}:{definition.name}"
+                    and not definition.decorator_list
+                ):
+                    self.field_body(
+                        definition,
+                        set(),
+                        protocols=invocation_protocols,
+                        include_protocols=include_protocols,
+                    )
+                else:
+                    if include_protocols:
+                        invocation_protocols.append(self.protocol_effects(body, {})[1])
+                for invocation_effect in invocation_protocols:
+                    effect |= invocation_effect
+                effect |= self.declared_builtin_effects(definition)
+                pending.extend(receiver_immediate_call_names(definition.body) - seen)
+                if include_protocols:
+                    for call in receiver_immediate_calls(definition.body):
+                        effect |= self.namespace_call_effects.get(
+                            call, ReceiverEffect.NONE
+                        )
+        return effect
+
+    def declared_builtin_effects(
+        self, function: Union[ast.FunctionDef, ast.Lambda]
+    ) -> ReceiverEffect:
+        """Look ahead only through unshadowed existing builtin member writes."""
+        body = (
+            function.body if isinstance(function, ast.FunctionDef) else [function.body]
+        )
+        args = [
+            *function.args.posonlyargs,
+            *function.args.args,
+            *function.args.kwonlyargs,
+        ]
+        args.extend(arg for arg in (function.args.vararg, function.args.kwarg) if arg)
+        blocked = {arg.arg for arg in args}
+        for statement in body:
+            blocked.update(receiver_bound_names(statement))
+            blocked.update(receiver_binding_events(statement))
+        blocked.difference_update(receiver_lexical_globals(body))
+        effect = ReceiverEffect.NONE
+        for statement in body:
+            if isinstance(statement, ast.ClassDef):
+                continue
+            for call in receiver_immediate_calls([statement]):
+                if not (
+                    isinstance(call.func, ast.Name)
+                    and call.func.id in {"setattr", "delattr"}
+                    and call.func.id not in blocked | self.module_may_bind
+                    and len(call.args) == (3 if call.func.id == "setattr" else 2)
+                    and not call.keywords
+                    and not any(isinstance(arg, ast.Starred) for arg in call.args)
+                ):
+                    continue
+                target = ast.Subscript(
+                    value=ast.Attribute(
+                        value=call.args[0], attr="__dict__", ctx=ast.Load()
+                    ),
+                    slice=call.args[1],
+                    ctx=ast.Store(),
+                )
+                mutation = receiver_target_mutation(target)
+                if mutation is not None:
+                    effect |= mutation[1]
+        return effect
+
+    def field_definition_binding(
+        self, binding: ReceiverBinding
+    ) -> Optional[ast.FunctionDef]:
+        for definition in self.field_definitions.values():
+            if binding.identity == f"data-hook:{definition.lineno}:{definition.name}":
+                return definition
+        return None
+
+    def field_call_effects(
+        self,
+        nodes: Iterable[ast.AST],
+        *,
+        current_constructor: Optional[Tuple[ast.Call, ReceiverBinding]] = None,
+        include_protocols: bool = True,
+    ) -> Set[str]:
+        """Keep absent callable proofs distinct from complete empty effects."""
+        fields: Set[str] = set()
+        for node in receiver_immediate_calls(nodes):
+            observed = (
+                current_constructor[1]
+                if current_constructor is not None and current_constructor[0] is node
+                else None
+            )
+            fields.update(
+                self.field_call(
+                    node,
+                    set(),
+                    set(),
+                    observed_constructor=observed,
+                    include_protocols=include_protocols,
+                )
+            )
+        return fields
+
+    def field_expression(
+        self,
+        node: Optional[ast.AST],
+        blocked: Set[str],
+        active: Set[int],
+        *,
+        consumed: Optional[Set[str]] = None,
+        protocols: Optional[List[ReceiverEffect]] = None,
+        include_protocols: bool = True,
+    ) -> Set[str]:
+        """Prove only inert values or explicitly summarized invocations."""
+        if node is None or isinstance(node, (ast.Name, ast.Constant)):
+            return set()
+        if isinstance(node, ast.Call):
+            return self.field_call(
+                node,
+                blocked,
+                active,
+                consumed=consumed,
+                protocols=protocols,
+                include_protocols=include_protocols,
+            )
+        if isinstance(node, ast.Attribute):
+            root = receiver_field_root(node)
+            owner = self.value(node.value)
+            if (
+                root not in blocked
+                and self.stored_class_key(owner, node.attr) is not None
+                and (
+                    isinstance(node.ctx, (ast.Store, ast.Del))
+                    or self.value(node).kind in {"plain", "model", "stored-int"}
+                    and not self.value(node).is_instance
+                )
+            ):
+                return self.field_expression(
+                    node.value,
+                    blocked,
+                    active,
+                    consumed=consumed,
+                    protocols=protocols,
+                    include_protocols=include_protocols,
+                )
+        return {"<stored-member>:*"}
+
+    def field_body(
+        self,
+        node: ast.FunctionDef,
+        active: Set[int],
+        *,
+        consumed: Optional[Set[str]] = None,
+        protocols: Optional[List[ReceiverEffect]] = None,
+        include_protocols: bool = True,
+    ) -> Set[str]:
+        """Instantiate stored-int decisions in the existing ordered field flow."""
+        if id(node) in active:
+            return {"<stored-member>:*"}
+        active = active | {id(node)}
+        args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        args.extend(arg for arg in (node.args.vararg, node.args.kwarg) if arg)
+        blocked = {arg.arg for arg in args}
+        locals_: Set[str] = set()
+        for statement in node.body:
+            locals_.update(receiver_bound_names(statement))
+            locals_.update(receiver_binding_events(statement))
+        locals_.difference_update(receiver_lexical_globals(node.body))
+        blocked.update(locals_)
+        for statement in node.body:
+            if isinstance(statement, ast.Nonlocal):
+                blocked.update(statement.names)
+        fields = set(receiver_field_write_events(node.body))
+        consumed = set(consumed or ())
+        events = protocols if protocols is not None else []
+        for statement in node.body:
+            if isinstance(statement, (ast.Pass, ast.Global, ast.Nonlocal)):
+                continue
+            start = len(events)
+            if isinstance(statement, ast.AugAssign):
+                effects = self.field_augassign(statement, blocked, consumed)
+                events.append(
+                    ReceiverEffect.NAMESPACE
+                    if include_protocols and "<stored-member>:*" in effects
+                    else ReceiverEffect.NONE
+                )
+            elif isinstance(statement, (ast.Return, ast.Expr)):
+                effects = self.field_expression(
+                    statement.value,
+                    blocked,
+                    active,
+                    consumed=consumed,
+                    protocols=events,
+                    include_protocols=include_protocols,
+                )
+                events.append(
+                    self.protocol_effects([statement], {})[1]
+                    if include_protocols
+                    else ReceiverEffect.NONE
+                )
+            elif isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                effects = set(receiver_field_write_events([statement]))
+                effects.update(
+                    self.field_expression(
+                        statement.value,
+                        blocked,
+                        active,
+                        consumed=consumed,
+                        protocols=events,
+                        include_protocols=include_protocols,
+                    )
+                )
+                targets = (
+                    statement.targets
+                    if isinstance(statement, ast.Assign)
+                    else [statement.target]
+                    if statement.value is not None
+                    else []
+                )
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        blocked.add(target.id)
+                    elif not (
+                        isinstance(target, ast.Attribute)
+                        and receiver_field_root(target) not in blocked
+                        and self.stored_class_key(self.value(target.value), target.attr)
+                        is not None
+                    ):
+                        effects.add("<stored-member>:*")
+                events.append(
+                    self.protocol_effects([statement], {})[1]
+                    if include_protocols
+                    else ReceiverEffect.NONE
+                )
+            else:
+                effects = {"<stored-member>:*"}
+                events.append(
+                    self.protocol_effects([statement], {})[1]
+                    if include_protocols
+                    else ReceiverEffect.NONE
+                )
+            fields.update(effects)
+            consumed.update(effects)
+            if any(events[start:]):
+                consumed.add("<stored-member>:*")
+        # Existing recognized builtin effects also reach the invoking caller.
+        events.append(self.declared_builtin_effects(node))
+        return fields
+
+    def field_augassign(
+        self, node: ast.AugAssign, blocked: Set[str], consumed: Set[str]
+    ) -> Set[str]:
+        """Use a current exact-int premise once, without predicting the result."""
+        target = node.target
+        if (
+            isinstance(target, ast.Attribute)
+            and receiver_field_root(target) not in blocked
+            and isinstance(node.op, ast.Add)
+            and isinstance(node.value, ast.Constant)
+            and type(node.value.value) is int
+            and "<stored-member>:*" not in consumed
+            and "<stored-member>:" + target.attr not in consumed
+        ):
+            owner = self.stable_binding(self.value(target.value), self.env)
+            key = self.stored_class_key(owner, target.attr)
+            if (
+                key is not None
+                and self.env.get(key, UNKNOWN_RECEIVER).kind == "stored-int"
+            ):
+                return {"<stored-member>:" + target.attr}
+        return {"<stored-member>:*"}
+
+    def field_builtin(self, node: ast.Call, blocked: Set[str]) -> Optional[Set[str]]:
+        function = node.func
+        if not (
+            isinstance(function, ast.Name)
+            and function.id not in blocked
+            and self.builtin_lookup(function.id)
+        ):
+            return None
+        if function.id == "object" and not node.args and not node.keywords:
+            return set()
+        if (
+            function.id in {"classmethod", "staticmethod"}
+            and len(node.args) == 1
+            and not node.keywords
+        ):
+            return (
+                set()
+                if self.value(node.args[0]).kind in {"function", "data-hook"}
+                else {"<stored-member>:*"}
+            )
+        expected = 3 if function.id == "setattr" else 2
+        if function.id in {"setattr", "delattr"}:
+            if len(node.args) == expected and not node.keywords:
+                owner = self.value(node.args[0])
+                member = node.args[1]
+                if (
+                    isinstance(member, ast.Constant)
+                    and isinstance(member.value, str)
+                    and receiver_field_root(node.args[0]) not in blocked
+                    and self.stored_class_key(owner, member.value) is not None
+                ):
+                    return {"<stored-member>:" + member.value}
+            return {"<stored-member>:*"}
+        return None
+
+    def field_callee(
+        self,
+        function: ast.AST,
+        blocked: Set[str],
+        active: Set[int],
+        *,
+        consumed: Optional[Set[str]] = None,
+        protocols: Optional[List[ReceiverEffect]] = None,
+        include_protocols: bool = True,
+    ) -> Set[str]:
+        """A class instance, unresolved receiver or name collision is opaque."""
+        root = receiver_field_root(function)
+        if root in blocked or root in self.rebound:
+            return {"<stored-member>:*"}
+        binding = self.stable_binding(self.value(function), self.env)
+        if isinstance(function, ast.Name) and function.id in self.field_definitions:
+            definition = self.field_definitions[function.id]
+            identity = f"data-hook:{definition.lineno}:{definition.name}"
+            if function.id not in self.env:
+                binding = self.stable_binding(
+                    ReceiverBinding(
+                        "function",
+                        identity=identity,
+                        dependencies=frozenset({identity}),
+                    ),
+                    self.env,
+                )
+            if not definition.decorator_list and (
+                binding.kind in {"function", "data-hook"}
+                and binding.identity == identity
+            ):
+                return self.field_body(
+                    definition,
+                    active,
+                    consumed=consumed,
+                    protocols=protocols,
+                    include_protocols=include_protocols,
+                )
+        if isinstance(function, ast.Attribute):
+            owner = self.stable_binding(self.value(function.value), self.env)
+            declared = self.field_classes.get(owner.identity)
+            if (
+                declared is not None
+                and not owner.opaque
+                and function.attr in owner.methods
+            ):
+                methods = [
+                    child
+                    for child in declared.body
+                    if isinstance(child, ast.FunctionDef)
+                    and child.name == function.attr
+                ]
+                if len(methods) == 1:
+                    return self.field_body(
+                        methods[0],
+                        active,
+                        consumed=consumed,
+                        protocols=protocols,
+                        include_protocols=include_protocols,
+                    )
+        if self.field_empty_constructor(binding):
+            return set()
+        return {"<stored-member>:*"}
+
+    def field_empty_constructor(self, binding: ReceiverBinding) -> bool:
+        return (
+            binding.kind == "plain"
+            and not binding.is_instance
+            and binding.identity in self.field_classes
+            and not binding.opaque
+            & (ReceiverOperation.CONSTRUCT | ReceiverOperation.INSTANCE_ACCESS)
+            and self.field_constructor(binding)
+        )
+
+    def field_constructor(self, binding: ReceiverBinding) -> bool:
+        """Exclude inherited/descriptor writes from a closed constructor proof."""
+        declared = self.field_classes[binding.identity]
+        if any("__del__" in receiver_binding_events(child) for child in declared.body):
+            return False
+        if declared.keywords or any(
+            not (
+                isinstance(base, ast.Name)
+                and base.id == "object"
+                and self.builtin_lookup("object")
+            )
+            for base in declared.bases
+        ):
+            return False
+        writes = self.constructor_store_members(binding)
+        for member in writes:
+            # Negative-only lookup uses the existing key namespace even when an
+            # unrelated opaque operation prevents publishing positive store facts.
+            key = self.class_member_key(binding.identity, member)
+            if key in self.env and self.env[key].kind != "stored-int":
+                return False
+        for child in declared.body:
+            names = receiver_bound_names(child)
+            if not names & writes:
+                continue
+            if not (
+                isinstance(child, (ast.Assign, ast.AnnAssign))
+                and (
+                    isinstance(child.value, ast.Constant)
+                    or isinstance(child, ast.AnnAssign)
+                    and child.value is None
+                )
+            ):
+                return False
+        return True
+
+    def field_callable_expression(
+        self,
+        function: ast.AST,
+        blocked: Set[str],
+        active: Set[int],
+        *,
+        consumed: Optional[Set[str]] = None,
+        protocols: Optional[List[ReceiverEffect]] = None,
+        include_protocols: bool = True,
+    ) -> Set[str]:
+        """Callable lookup evaluates its owner before invoking the selected call."""
+        if isinstance(function, ast.Name):
+            return set()
+        value = function.value if isinstance(function, ast.Attribute) else function
+        return self.field_expression(
+            value,
+            blocked,
+            active,
+            consumed=consumed,
+            protocols=protocols,
+            include_protocols=include_protocols,
+        )
+
+    def field_call(
+        self,
+        node: ast.Call,
+        blocked: Set[str],
+        active: Set[int],
+        *,
+        observed_constructor: Optional[ReceiverBinding] = None,
+        consumed: Optional[Set[str]] = None,
+        protocols: Optional[List[ReceiverEffect]] = None,
+        include_protocols: bool = True,
+    ) -> Set[str]:
+        events = protocols if protocols is not None else []
+        consumed = set(consumed or ())
+        start = len(events)
+        fields = self.field_callable_expression(
+            node.func,
+            blocked,
+            active,
+            consumed=consumed,
+            protocols=events,
+            include_protocols=include_protocols,
+        )
+        consumed.update(fields)
+        if any(events[start:]):
+            consumed.add("<stored-member>:*")
+        for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
+            start = len(events)
+            losses = self.field_expression(
+                argument,
+                blocked,
+                active,
+                consumed=consumed,
+                protocols=events,
+                include_protocols=include_protocols,
+            )
+            fields.update(losses)
+            consumed.update(losses)
+            if any(events[start:]):
+                consumed.add("<stored-member>:*")
+        if any(isinstance(arg, ast.Starred) for arg in node.args) or any(
+            keyword.arg is None for keyword in node.keywords
+        ):
+            return fields | {"<stored-member>:*"}
+        builtin = self.field_builtin(node, blocked)
+        if builtin is not None:
+            target = self.builtin_mutation_target(node)
+            mutation = receiver_target_mutation(target) if target is not None else None
+            if mutation is not None:
+                events.append(mutation[1])
+            return fields | builtin
+        if isinstance(node.func, ast.Name) and node.func.id not in blocked:
+            events.append(
+                self.sensitive_call_effects.get(node.func.id, ReceiverEffect.NONE)
+            )
+        if observed_constructor is not None and self.field_empty_constructor(
+            observed_constructor
+        ):
+            return fields
+        return fields | self.field_callee(
+            node.func,
+            blocked,
+            active,
+            consumed=consumed,
+            protocols=events,
+            include_protocols=include_protocols,
+        )
+
+    def capture_decorators(
+        self, decorators: Sequence[ast.expr]
+    ) -> List[Tuple[bool, ReceiverBinding]]:
+        """Observe decorator loads before defaults, bases and definition bodies."""
+        snapshots = []
+        for decorator in decorators:
+            self.visit(decorator)
+            builtin = (
+                isinstance(decorator, ast.Name)
+                and decorator.id in {"classmethod", "staticmethod"}
+                and self.builtin_lookup(decorator.id)
+            )
+            snapshots.append((builtin, self.value(decorator)))
+        return snapshots
+
+    def apply_decorator_effects(
+        self,
+        decorators: Sequence[ast.expr],
+        snapshots: Sequence[Tuple[bool, ReceiverBinding]],
+    ) -> None:
+        """Fence unproved applications after their preserved eager prefixes."""
+        for decorator, (builtin, binding) in reversed(list(zip(decorators, snapshots))):
+            if not (
+                builtin
+                or binding.kind == "data-hook"
+                and self.value(decorator) == binding
+            ):
+                self.expire_class_eager()
+            name = (
+                decorator.id
+                if isinstance(decorator, ast.Name)
+                else decorator.attr
+                if isinstance(decorator, ast.Attribute)
+                else None
+            )
+            if name is not None:
+                self.apply_call_effects(
+                    self.env,
+                    self.binding_call_names.get(name, set()),
+                    self.sensitive_call_effects.get(name, ReceiverEffect.NONE),
+                )
+
+    @contextmanager
+    def call_effect_scope(self, nodes: Iterable[ast.AST]) -> Iterator[None]:
+        """Keep eager may-effects visible to captures made in this scope."""
+        nodes = list(nodes)
+        previous_rebound = self.rebound
+        previous_changes = self.capture_call_effect
+        # Direct future protocol events belong to anchored deferred summaries,
+        # not the already observed immediate prefix.
+        written, effect = self.call_effects(nodes, include_protocols=False)
+        self.rebound = self.rebound | {
+            name for name in written if not name.startswith("<stored-member>:")
+        }
+        self.field_capture_scopes.append(nodes)
+        if effect:
+            self.capture_call_effect = previous_changes | effect
+        try:
+            yield
+        finally:
+            self.field_capture_scopes.pop()
+            self.rebound = previous_rebound
+            self.capture_call_effect = previous_changes
+
+    def ordinary_field_owner(self, owner: ReceiverBinding) -> bool:
+        """Keep negative write precision separate from positive stored facts."""
+        return (
+            owner.kind == "plain"
+            and not owner.is_instance
+            and owner.identity in self.field_classes
+            and not owner.opaque & ~ReceiverOperation.CLASS_SUBSCRIPT
+        )
+
+    def field_write_effects(
+        self,
+        nodes: Iterable[ast.AST],
+        bindings: Mapping[str, ReceiverBinding],
+    ) -> Set[str]:
+        """Unknown write callbacks may replace a different recorded member."""
+        nodes = list(nodes)
+        targets = list(receiver_field_write_targets(nodes))
+        target_ids = {id(target) for target, _ in targets}
+        lexical_shadows: List[Tuple[Set[int], Set[str]]] = []
+        for root in nodes:
+            for part in ast.walk(root):
+                if isinstance(
+                    part, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+                ):
+                    names = {
+                        name
+                        for generator in part.generators
+                        for name in receiver_bound_names(generator.target)
+                    }
+                    if names:
+                        identities = {
+                            id(child)
+                            for body in receiver_comprehension_body(part)
+                            for child in ast.walk(body)
+                        } & target_ids
+                        if identities:
+                            lexical_shadows.append((identities, names))
+        written: Set[str] = set()
+        for target, member in targets:
+            shadowed = {
+                name
+                for identities, names in lexical_shadows
+                if id(target) in identities
+                for name in names
+            }
+            owner_node = receiver_target_owner(target)
+            owner = (
+                self.stored_class_value(owner_node, bindings)
+                if owner_node is not None
+                and receiver_field_root(owner_node) not in shadowed
+                else UNKNOWN_RECEIVER
+            )
+            if not self.ordinary_field_owner(owner):
+                written.add("<stored-member>:*")
+            elif not member.startswith("__"):
+                written.add("<stored-member>:" + member)
+        return written
+
+    def constructor_store_members(self, binding: ReceiverBinding) -> Set[str]:
+        """Look up finite declared stores only for the supplied class identity."""
+        if binding.kind != "plain" or binding.is_instance or not binding.identity:
+            return set()
+        declared = self.field_classes.get(binding.identity)
+        if declared is None:
+            return set()
+        return {
+            part.attr
+            for child in declared.body
+            if isinstance(child, ast.FunctionDef) and child.name == "__init__"
+            for part in ast.walk(child)
+            if isinstance(part, ast.Attribute) and isinstance(part.ctx, ast.Store)
+        }
+
+    def constructor_member_key(
+        self, binding: ReceiverBinding, member: str
+    ) -> Optional[str]:
+        """Name negative metadata for a supplied live class's constructor field."""
+        if (
+            member in self.constructor_store_members(binding)
+            and not member.startswith("__")
+            and member not in LEGACY_MODEL_METHODS
+        ):
+            return self.class_member_key(binding.identity, member)
+        return None
+
+    def constructor_write_keys(
+        self, env: Mapping[str, ReceiverBinding], written: Iterable[str]
+    ) -> Set[str]:
+        """Snapshot live classes before an unordered batch can erase aliases."""
+        members = {
+            name[len("<stored-member>:") :]
+            for name in written
+            if name.startswith("<stored-member>:")
+        }
+        if not members:
+            return set()
+        live = {
+            value.identity: value
+            for value in env.values()
+            if value.kind == "plain" and not value.is_instance and value.identity
+        }
+        return {
+            self.class_member_key(binding.identity, member)
+            for binding in live.values()
+            for member in self.constructor_store_members(binding)
+            if ("*" in members or member in members)
+            and not member.startswith("__")
+            and member not in LEGACY_MODEL_METHODS
+        }
+
+    def apply_written(
+        self, env: Dict[str, ReceiverBinding], written: Iterable[str]
+    ) -> None:
+        """Expire existing slots and unrecorded writes on already live classes."""
+        written = tuple(written)
+        constructor_keys = self.constructor_write_keys(env, written)
+        for name in written:
+            if name.startswith("<stored-member>:"):
+                member = name[len("<stored-member>:") :]
+                for key in list(env):
+                    if key.startswith("<stored-class>:") and (
+                        member == "*" or key.rsplit(":", 1)[-1] == member
+                    ):
+                        env[key] = receiver_unknown(env.get(key, UNKNOWN_RECEIVER))
+            else:
+                env[name] = receiver_unknown(env.get(name, UNKNOWN_RECEIVER))
+        for key in constructor_keys:
+            env[key] = receiver_unknown(env.get(key, UNKNOWN_RECEIVER))
+
+    def apply_call_effects(
+        self, env: Dict[str, ReceiverBinding], written: Set[str], effect: ReceiverEffect
+    ) -> None:
+        """Forfeit affected proofs without confusing rebinding with mutation."""
+        self.apply_written(env, written)
+        if effect:
+            for name, value in list(env.items()):
+                env[name] = receiver_effect(value, effect)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            name = alias.asname or alias.name.split(".")[0]
+            if alias.name.split(".")[0] == "pydantic":
+                self.env[name] = PYDANTIC_MODULE
+            elif alias.name == "pydantic_settings":
+                self.env[name] = PYDANTIC_SETTINGS_MODULE
+            else:
+                self.env[name] = UNKNOWN_RECEIVER
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if any(alias.name == "*" for alias in node.names):
+            for name in self.env:
+                self.env[name] = receiver_unknown(self.env[name])
+            return
+        module = node.module or ""
+        pydantic = node.level == 0 and (
+            module == "pydantic_settings" or module.split(".")[0] == "pydantic"
+        )
+        for alias in node.names:
+            self.env[alias.asname or alias.name] = (
+                MODEL_RECEIVER
+                if pydantic and alias.name in MODEL_BASES
+                else UNKNOWN_RECEIVER
+            )
+
+    def revalidate_binding(
+        self,
+        binding: ReceiverBinding,
+        nodes: Iterable[ast.AST],
+        target: Optional[ast.AST] = None,
+        eager_epoch: Optional[int] = None,
+        tuple_events: Optional[Mapping[ast.Subscript, bool]] = None,
+    ) -> ReceiverBinding:
+        """Recheck captured object proof after later expression or target effects."""
+        nodes = list(nodes)
+        mutations = receiver_mutated_names(nodes)
+        if target is not None:
+            for leaf in receiver_target_leaves(target):
+                mutation = receiver_target_mutation(leaf)
+                if mutation:
+                    name, target_effect = mutation
+                    mutations[name] = (
+                        mutations.get(name, ReceiverEffect.NONE) | target_effect
+                    )
+        _, call_effect = self.call_effects(nodes, tuple_events=tuple_events)
+        for name, effect in list(mutations.items()):
+            if self.env.get(name, UNKNOWN_RECEIVER).kind == "unknown":
+                mutations[name] = receiver_unresolved_effect(effect)
+        effect = receiver_combined_effects(mutations.values()) | call_effect
+        if eager_epoch is not None and self.class_eager_epoch != eager_epoch:
+            effect |= ReceiverEffect.NAMESPACE
+        return receiver_effect(binding, effect)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
+        binding = self.value(node.value)
+        eager_epoch = self.class_eager_epoch
+        for target in node.targets:
+            for leaf in receiver_target_leaves(target):
+                self.visit(leaf)
+                binding = self.revalidate_binding(
+                    binding, [leaf], target=leaf, eager_epoch=eager_epoch
+                )
+                self.invalidate_target(leaf, node.value)
+                self.record_class_store(leaf, binding, source=node.value)
+                if isinstance(leaf, ast.Name):
+                    self.env[leaf.id] = (
+                        binding if isinstance(target, ast.Name) else UNKNOWN_RECEIVER
+                    )
+                    self.publish_namespace_assignment(leaf.id, node.value)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None:
+            self.visit(node.value)
+        binding = self.value(node.value)
+        eager_epoch = self.class_eager_epoch
+        self.visit(node.target)
+        if node.value is None:
+            self.visit(node.annotation)
+            return
+        if binding == UNKNOWN_RECEIVER:
+            binding = self.value(node.annotation)
+            if binding.kind in {"model", "plain"}:
+                binding = receiver_effect(
+                    replace(binding, is_instance=True), ReceiverEffect.NONE
+                )
+        binding = self.revalidate_binding(
+            binding, [node.target], target=node.target, eager_epoch=eager_epoch
+        )
+        self.invalidate_target(node.target, node.value)
+        self.record_class_store(node.target, binding)
+        if isinstance(node.target, ast.Name):
+            self.env[node.target.id] = binding
+        self.visit(node.annotation)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
+        for name in receiver_bound_names(node.target):
+            self.env[name] = self.value(node.value)
+            self.publish_namespace_assignment(name, node.value)
+
+    @staticmethod
+    def invalidate_binding(
+        env: Dict[str, ReceiverBinding],
+        name: str,
+        effect: ReceiverEffect,
+        *,
+        owner: Optional[ReceiverBinding] = None,
+    ) -> None:
+        binding = owner if owner is not None else env.get(name, UNKNOWN_RECEIVER)
+        if binding.kind == "unknown":
+            effect = receiver_unresolved_effect(effect)
+        for candidate, value in list(env.items()):
+            if (
+                candidate == name
+                or (binding.identity and binding.identity in value.dependencies)
+                or (
+                    binding.kind == "unknown"
+                    and value.kind
+                    in {"plain", "model", "data-hook", "function", "stored-int"}
+                )
+            ):
+                env[candidate] = (
+                    receiver_unknown(value)
+                    if value.kind == "module" and effect & ReceiverEffect.TYPE
+                    else receiver_effect(value, effect)
+                )
+
+    def invalidate_target(
+        self, target: ast.AST, assigned: Optional[ast.AST] = None
+    ) -> None:
+        for leaf in receiver_target_leaves(target):
+            owner = self.value(receiver_target_owner(leaf))
+            known_owner = owner.kind in {"plain", "model"} and bool(owner.identity)
+            if isinstance(leaf, ast.Subscript):
+                self.apply_protocol_event(leaf)
+            if isinstance(leaf, ast.Attribute) and not self.ordinary_field_owner(owner):
+                # RHS and target expressions have already been evaluated. A
+                # setter on this unproved owner may alter any stored slot.
+                self.apply_written(self.env, {"<stored-member>:*"})
+            if isinstance(leaf, ast.Attribute):
+                key = self.stored_class_key(owner, leaf.attr)
+                if key is not None:
+                    self.env[key] = receiver_unknown(
+                        self.env.get(key, UNKNOWN_RECEIVER)
+                    )
+            mutation = receiver_target_mutation(leaf, resolved_owner=known_owner)
+            if mutation:
+                if (
+                    isinstance(leaf, ast.Attribute)
+                    and leaf.attr == "__init_subclass__"
+                    and isinstance(assigned, ast.Call)
+                    and isinstance(assigned.func, ast.Name)
+                    and assigned.func.id == "classmethod"
+                    and self.builtin_lookup("classmethod")
+                    and len(assigned.args) == 1
+                    and not assigned.keywords
+                    and self.value(assigned.args[0]).kind == "data-hook"
+                ):
+                    mutation = (mutation[0], ReceiverEffect.NAMESPACE)
+                self.invalidate_binding(
+                    self.env, *mutation, owner=owner if known_owner else None
+                )
+
+    @staticmethod
+    def class_member_key(identity: str, member: str) -> str:
+        """Format an existing slot key without granting a positive value proof."""
+        return f"<stored-class>:{identity}:{member}"
+
+    @staticmethod
+    def stored_class_key(owner: ReceiverBinding, member: str) -> Optional[str]:
+        """Index only explicit ordinary fields on a proved closed plain class."""
+        if (
+            owner.kind == "plain"
+            and not owner.is_instance
+            and owner.identity
+            and not owner.opaque
+            and not member.startswith("__")
+            and member not in LEGACY_MODEL_METHODS
+        ):
+            return PydanticReceivers.class_member_key(owner.identity, member)
+        return None
+
+    def record_class_store(
+        self,
+        target: ast.AST,
+        value: ReceiverBinding,
+        *,
+        source: Optional[ast.AST] = None,
+    ) -> None:
+        """Carry direct class-to-class facts through existing environment effects."""
+        if not isinstance(target, ast.Attribute):
+            return
+        owner = self.value(target.value)
+        key = self.stored_class_key(owner, target.attr)
+        if key is None:
+            negative = self.constructor_member_key(owner, target.attr)
+            if negative is not None:
+                self.env[negative] = receiver_unknown(value)
+            return
+        if key is not None:
+            if isinstance(source, ast.Constant) and type(source.value) is int:
+                self.env[key] = ReceiverBinding(
+                    "stored-int",
+                    dependencies=owner.dependencies | frozenset({owner.identity}),
+                )
+                return
+            self.env[key] = (
+                replace(value, dependencies=value.dependencies | owner.dependencies)
+                if value.kind in {"plain", "model"} and not value.is_instance
+                else receiver_unknown(value)
+            )
+
+    def stored_class_value(
+        self, node: ast.AST, bindings: Mapping[str, ReceiverBinding]
+    ) -> ReceiverBinding:
+        """Resolve names or recorded class fields, never getters or returns."""
+        if self.namespace_opaque and bindings is self.env:
+            return UNKNOWN_RECEIVER
+        if isinstance(node, ast.Name):
+            return bindings.get(node.id, UNKNOWN_RECEIVER)
+        if isinstance(node, ast.Attribute):
+            key = self.stored_class_key(
+                self.stored_class_value(node.value, bindings), node.attr
+            )
+            if key is not None:
+                return bindings.get(key, UNKNOWN_RECEIVER)
+        return UNKNOWN_RECEIVER
+
+    def stable_binding(
+        self, binding: ReceiverBinding, outer: Mapping[str, ReceiverBinding]
+    ) -> ReceiverBinding:
+        binding = receiver_effect(binding, self.capture_call_effect)
+        for name, effect in self.mutated.items():
+            changed = outer.get(name, UNKNOWN_RECEIVER)
+            if changed.kind == "unknown":
+                effect = receiver_unresolved_effect(effect)
+            if changed.kind == "unknown" or (
+                changed.identity and changed.identity in binding.dependencies
+            ):
+                binding = receiver_effect(binding, effect)
+        return binding
+
+    def plain_class_methods(
+        self,
+        node: ast.ClassDef,
+        bases: Sequence[ReceiverBinding],
+        outer: Mapping[str, ReceiverBinding],
+    ) -> FrozenSet[str]:
+        methods = set().union(*(base.methods for base in bases))
+        shadowed = set(outer)
+        for child in node.body:
+            names = receiver_bound_names(child)
+            if isinstance(child, ast.AnnAssign) and child.value is None:
+                continue
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                plain = all(
+                    isinstance(decorator, ast.Name)
+                    and decorator.id in {"classmethod", "staticmethod"}
+                    and self.builtin_lookup(decorator.id, shadowed, ordinary=True)
+                    for decorator in child.decorator_list
+                )
+                if plain:
+                    methods.add(child.name)
+                else:
+                    methods.discard(child.name)
+            else:
+                methods.difference_update(names)
+            shadowed.update(names)
+        return frozenset(methods)
+
+    @staticmethod
+    def plain_initializer_supported(node: ast.ClassDef) -> bool:
+        for child in node.body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                child.name == "__init__"
+            ):
+                if (
+                    child.decorator_list
+                    or receiver_mutated_names(child.body)
+                    or any(isinstance(part, ast.Call) for part in ast.walk(child))
+                    or not receiver_literal_data_hook(child)
+                ):
+                    return False
+            elif "__init__" in receiver_binding_events(child):
+                return False
+        return True
+
+    @staticmethod
+    def descriptor_free_field(binding: ReceiverBinding) -> bool:
+        """Prove absence only for known functions and closed ordinary values."""
+        return binding.kind in {"data-hook", "function"} or (
+            binding.kind == "plain"
+            and (not binding.is_instance or not binding.has_set_name)
+        )
+
+    def plain_field_value(
+        self,
+        value: ast.AST,
+        bindings: Mapping[str, ReceiverBinding],
+        safe_names: Mapping[str, bool],
+    ) -> Tuple[ReceiverBinding, bool]:
+        """Check a finite value surface without invoking protocols or returns."""
+        if any(receiver_binding_events(value)):
+            return UNKNOWN_RECEIVER, False
+        if isinstance(
+            value, (ast.Constant, ast.Tuple, ast.List, ast.Set, ast.Dict, ast.Lambda)
+        ):
+            return UNKNOWN_RECEIVER, self.supported_eager_value(
+                value, bindings, safe_names
+            )
+        if isinstance(value, ast.Name):
+            return bindings.get(value.id, UNKNOWN_RECEIVER), safe_names.get(
+                value.id, False
+            )
+        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
+            name = value.func.id
+            if (
+                name == "object"
+                and self.builtin_lookup(
+                    name,
+                    bindings,
+                    ordinary=bindings is not self.env or not self.namespace_opaque,
+                )
+                and not value.args
+                and not value.keywords
+            ):
+                return ReceiverBinding("plain", is_instance=True), True
+            if (
+                name in {"classmethod", "staticmethod"}
+                and self.builtin_lookup(
+                    name,
+                    bindings,
+                    ordinary=bindings is not self.env or not self.namespace_opaque,
+                )
+                and len(value.args) == 1
+                and not value.keywords
+                and isinstance(value.args[0], (ast.Name, ast.Lambda))
+            ):
+                _, safe = self.plain_field_value(value.args[0], bindings, safe_names)
+                return UNKNOWN_RECEIVER, safe
+            arguments = [*value.args, *(keyword.value for keyword in value.keywords)]
+            if any(keyword.arg is None for keyword in value.keywords) or not all(
+                isinstance(argument, (ast.Constant, ast.Name)) for argument in arguments
+            ):
+                return UNKNOWN_RECEIVER, False
+            callee = bindings.get(name, UNKNOWN_RECEIVER)
+            if (
+                callee.kind == "plain"
+                and not callee.is_instance
+                and not callee.opaque
+                & (ReceiverOperation.CONSTRUCT | ReceiverOperation.INSTANCE_ACCESS)
+            ):
+                instance = replace(callee, is_instance=True)
+                return instance, not instance.has_set_name
+        return UNKNOWN_RECEIVER, False
+
+    @staticmethod
+    def literal_hash_input(value: ast.AST) -> bool:
+        """Accept only builtin literal hashes without user protocol dispatch."""
+        return isinstance(value, ast.Constant) or (
+            isinstance(value, ast.Tuple)
+            and all(PydanticReceivers.literal_hash_input(item) for item in value.elts)
+        )
+
+    def prescan_class_stores(
+        self,
+        targets: Sequence[ast.expr],
+        value: ast.AST,
+        bindings: Dict[str, ReceiverBinding],
+        safe_names: Mapping[str, bool],
+    ) -> bool:
+        """Advance only closed ordinary class-field assignments in the prescan."""
+        if not self.supported_eager_value(value, bindings, safe_names):
+            return False
+        assigned = self.stored_class_value(value, bindings)
+        for target in targets:
+            if not isinstance(target, ast.Attribute):
+                return False
+            owner = self.stored_class_value(target.value, bindings)
+            key = self.stored_class_key(owner, target.attr)
+            if key is None:
+                return False
+            bindings[key] = (
+                replace(
+                    assigned, dependencies=assigned.dependencies | owner.dependencies
+                )
+                if assigned.kind in {"plain", "model"} and not assigned.is_instance
+                else UNKNOWN_RECEIVER
+            )
+        return True
+
+    def supported_eager_value(
+        self,
+        value: ast.AST,
+        bindings: Mapping[str, ReceiverBinding],
+        safe_names: Mapping[str, bool],
+    ) -> bool:
+        """Inspect only evaluated value surfaces, never lambda or callback bodies."""
+        if isinstance(value, (ast.Constant, ast.Name)):
+            return True
+        if isinstance(value, (ast.Tuple, ast.List)):
+            return all(
+                self.supported_eager_value(item, bindings, safe_names)
+                for item in value.elts
+            )
+        if isinstance(value, ast.Set):
+            return all(self.literal_hash_input(item) for item in value.elts)
+        if isinstance(value, ast.Dict):
+            return all(
+                key is not None
+                and self.literal_hash_input(key)
+                and self.supported_eager_value(item, bindings, safe_names)
+                for key, item in zip(value.keys, value.values)
+            )
+        if isinstance(value, ast.Lambda):
+            return all(
+                self.supported_eager_value(item, bindings, safe_names)
+                for item in [*value.args.defaults, *value.args.kw_defaults]
+                if item is not None
+            )
+        if isinstance(value, ast.Call):
+            binding, descriptor_free = self.plain_field_value(
+                value, bindings, safe_names
+            )
+            return descriptor_free or (binding.kind == "plain" and binding.is_instance)
+        return False
+
+    def plain_namespace_supported(
+        self, node: ast.ClassDef, outer: Mapping[str, ReceiverBinding]
+    ) -> bool:
+        """Prescan closed namespaces before trusting any deferred method body."""
+        bindings = dict(outer)
+        safe_names = {
+            name: self.descriptor_free_field(value) for name, value in outer.items()
+        }
+        for child in node.body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if any(name != child.name for name in receiver_binding_events(child)):
+                    return False
+                if not all(
+                    isinstance(decorator, ast.Name)
+                    and decorator.id in {"classmethod", "staticmethod"}
+                    and self.builtin_lookup(decorator.id, bindings, ordinary=True)
+                    for decorator in child.decorator_list
+                ):
+                    return False
+                arguments = [
+                    *child.args.posonlyargs,
+                    *child.args.args,
+                    *child.args.kwonlyargs,
+                ]
+                if child.args.vararg is not None:
+                    arguments.append(child.args.vararg)
+                if child.args.kwarg is not None:
+                    arguments.append(child.args.kwarg)
+                headers = [
+                    *child.args.defaults,
+                    *child.args.kw_defaults,
+                    *(argument.annotation for argument in arguments),
+                    child.returns,
+                ]
+                if not all(
+                    self.supported_eager_value(value, bindings, safe_names)
+                    for value in headers
+                    if value is not None
+                ):
+                    return False
+                bindings[child.name] = UNKNOWN_RECEIVER
+                safe_names[child.name] = True
+            elif isinstance(child, (ast.Assign, ast.AnnAssign)):
+                targets = (
+                    child.targets if isinstance(child, ast.Assign) else [child.target]
+                )
+                if isinstance(child, ast.Assign) and all(
+                    isinstance(target, ast.Attribute) for target in targets
+                ):
+                    if not self.prescan_class_stores(
+                        targets, child.value, bindings, safe_names
+                    ):
+                        return False
+                    continue
+                if not all(isinstance(target, ast.Name) for target in targets):
+                    return False
+                if isinstance(child, ast.AnnAssign):
+                    if any(
+                        receiver_binding_events(child.annotation)
+                    ) or not self.supported_eager_value(
+                        child.annotation, bindings, safe_names
+                    ):
+                        return False
+                    if child.value is None:
+                        continue
+                value = child.value
+                if value is None:
+                    return False
+                binding, safe = self.plain_field_value(value, bindings, safe_names)
+                if not safe:
+                    return False
+                for target in targets:
+                    assert isinstance(target, ast.Name)
+                    bindings[target.id] = binding
+                    safe_names[target.id] = safe
+            elif isinstance(child, (ast.Pass, ast.Global, ast.Nonlocal)) or (
+                isinstance(child, ast.Expr) and isinstance(child.value, ast.Constant)
+            ):
+                continue
+            else:
+                return False
+        return True
+
+    def class_mutation_barrier(
+        self, env: Dict[str, ReceiverBinding], mutations: Mapping[str, ReceiverEffect]
+    ) -> None:
+        """Share immediate class effects with enclosing and comprehension views."""
+        if mutations:
+            for name, value in list(env.items()):
+                if value.kind == "plain":
+                    env[name] = receiver_unknown(env.get(name, UNKNOWN_RECEIVER))
+        for name, effect in mutations.items():
+            # Immediate class suites can mutate an outer alias; keep the existing
+            # conservative namespace barrier, but operation flags retain ancestry.
+            if effect & ReceiverEffect.NAMESPACE:
+                self.apply_call_effects(env, set(), effect)
+            else:
+                PydanticReceivers.invalidate_binding(env, name, effect)
+
+    def capture_class_base(self, base: ast.AST) -> ReceiverBinding:
+        """Capture a supported base before its own index changes owner bindings."""
+        self.visit(base)
+        return self.value(base)
+
+    def class_eager_protocol_barrier(self, node: ast.AST) -> None:
+        """Expire immediate class proofs after an unsupported operation executes."""
+        if not self.in_class_eager_view():
+            return
+        safe_names = {
+            name: self.descriptor_free_field(value) for name, value in self.env.items()
+        }
+        if not self.supported_eager_value(node, self.env, safe_names):
+            self.expire_class_eager()
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        """Capture a supported class owner before its index evaluates effects."""
+        tuple_capture = self.capture_tuple_argument(node)
+        self.visit(node.value)
+        owner = self.value(node.value)
+        namespace_owner_node = receiver_target_owner(node)
+        namespace_owner = self.value(namespace_owner_node)
+        self.apply_namespace_getter_event(node, namespace_owner)
+        self.visit(node.slice)
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            namespace_owner = self.revalidate_binding(namespace_owner, [node.slice])
+            self.apply_protocol_event(node, namespace_owner)
+            return
+        owner = self.revalidate_binding(owner, [node.slice])
+        self.subscript_bindings[node] = (
+            owner
+            if owner.kind == "model"
+            and not owner.is_instance
+            and not owner.opaque & ReceiverOperation.CLASS_SUBSCRIPT
+            else UNKNOWN_RECEIVER
+        )
+        safe = tuple_capture is not None and all(
+            self.env.get(name, UNKNOWN_RECEIVER) == binding
+            and self.tuple_reference_supported(binding)
+            for name, binding in tuple_capture.items()
+        )
+        events = self.tuple_argument_events()
+        if events is not None and isinstance(node.value, (ast.List, ast.Tuple)):
+            events[node] = events.get(node, True) and safe
+            safe = events[node]
+        self.apply_protocol_event(node, owner, sequence_safe=safe)
+        self.class_eager_protocol_barrier(node)
+
+    def visit_BinOp(self, node: ast.BinOp) -> None:
+        self.visit(node.left)
+        self.visit(node.right)
+        self.apply_protocol_event(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        decorators = self.capture_decorators(node.decorator_list)
+        captured_bases = []
+        captured_builtin_types = []
+        for base in node.bases:
+            captured_builtin_types.append(
+                isinstance(base, ast.Name)
+                and base.id == "type"
+                and self.builtin_lookup("type")
+            )
+            captured_bases.append(self.capture_class_base(base))
+        keywords = [keyword.value for keyword in node.keywords]
+        for expression in keywords:
+            self.visit(expression)
+        nested = self.class_binding is not None
+        body_outer = (
+            self.class_comprehension_outer
+            if nested and self.class_comprehension_outer is not None
+            else self.env
+        )
+        method_outer = (
+            self.class_outer if nested and self.class_outer is not None else self.env
+        )
+        bases = [
+            self.revalidate_binding(binding, [*node.bases[index + 1 :], *keywords])
+            for index, binding in enumerate(captured_bases)
+        ]
+        namespace_globals = receiver_lexical_globals(node.body)
+        if self.deferred_horizon and namespace_globals:
+            # An enclosing function's locals are not this class's module globals.
+            # No module-environment interpreter is needed for conservative facts.
+            body_outer = dict(body_outer)
+            method_outer = dict(method_outer)
+            for name in namespace_globals:
+                body_outer[name] = UNKNOWN_RECEIVER
+                method_outer[name] = UNKNOWN_RECEIVER
+        preparation_supported = not node.keywords and all(
+            builtin
+            or (
+                parent.kind in {"plain", "model"}
+                and not parent.is_instance
+                and not parent.opaque & ReceiverOperation.SUBCLASS
+            )
+            for parent, builtin in zip(bases, captured_builtin_types)
+        )
+        dynamic = any(
+            receiver_bound_names(child) & {"__new__", "__getattr__", "__getattribute__"}
+            for child in node.body
+        )
+        methods = (
+            self.plain_class_methods(node, bases, body_outer)
+            if preparation_supported
+            else frozenset()
+        )
+        model_base = any(
+            base.kind == "model" and not base.is_instance for base in bases
+        )
+        unsupported_hook = not model_base and any(
+            "__init_subclass__" in receiver_bound_names(child) for child in node.body
+        )
+        uncertain_keywords = bool(node.keywords) and (
+            not model_base
+            or any(keyword.arg in {None, "metaclass"} for keyword in node.keywords)
+        )
+        namespace_supported = preparation_supported and self.plain_namespace_supported(
+            node, body_outer
+        )
+        if (
+            node.decorator_list
+            or uncertain_keywords
+            or dynamic
+            or unsupported_hook
+            or any(base.opaque & ReceiverOperation.SUBCLASS for base in bases)
+            or (not model_base and len(bases) > 1)
+            or (not model_base and not self.plain_initializer_supported(node))
+            or (not model_base and not namespace_supported)
+        ):
+            binding = UNKNOWN_RECEIVER
+        elif model_base or all(
+            base.kind == "plain" and not base.is_instance for base in bases
+        ):
+            identity = f"class:{node.lineno}:{node.name}"
+            dependencies = frozenset({identity}).union(
+                *(base.dependencies for base in bases)
+            )
+            binding = ReceiverBinding(
+                "model" if model_base else "plain",
+                methods,
+                identity,
+                dependencies,
+                has_set_name=any(base.has_set_name for base in bases)
+                or any(
+                    not (isinstance(child, ast.AnnAssign) and child.value is None)
+                    and "__set_name__" in receiver_bound_names(child)
+                    for child in node.body
+                ),
+            )
+            opaque = ReceiverOperation.NONE
+            for parent_binding in bases:
+                opaque |= parent_binding.opaque
+            for child in node.body:
+                names = receiver_bound_names(child)
+                if names & {"__setattr__", "__delattr__"}:
+                    opaque |= ReceiverOperation.INSTANCE_ACCESS
+                if "__setattr__" in names:
+                    opaque |= ReceiverOperation.CONSTRUCT
+                if "__class_getitem__" in names:
+                    opaque |= ReceiverOperation.CLASS_SUBSCRIPT
+                if "__init__" in names and not self.plain_initializer_supported(node):
+                    opaque |= ReceiverOperation.CONSTRUCT
+                if "__init_subclass__" in names:
+                    # A data-only hook is supported; opaque calls or namespace
+                    # writes can change what a future subclass means.
+                    supported = receiver_literal_data_hook(child)
+                    if not supported:
+                        opaque |= ReceiverOperation.SUBCLASS
+            binding = replace(binding, opaque=opaque)
+        else:
+            binding = UNKNOWN_RECEIVER
+        creation_supported = (
+            preparation_supported
+            and namespace_supported
+            and all(
+                builtin or value.kind == "data-hook" for builtin, value in decorators
+            )
+        )
+        previous = self.class_binding
+        previous_outer = self.class_outer
+        previous_comprehension_outer = self.class_comprehension_outer
+        previous_capture_effect = self.capture_call_effect
+        mutations = receiver_mutated_names(node.body, include_class_bodies=True)
+        if not namespace_supported:
+            mutations["<unsupported-class-namespace>"] = ReceiverEffect.NAMESPACE
+        if not creation_supported:
+            mutations["<unproved-class-completion>"] = ReceiverEffect.NAMESPACE
+        written, effect = self.call_effects(node.body)
+        written.update(receiver_field_write_events(node.body))
+        self.class_binding = binding
+        self.class_outer = dict(method_outer)
+        self.class_comprehension_outer = dict(body_outer)
+        self.apply_written(
+            self.class_outer,
+            {name for name in written if name.startswith("<stored-member>:")},
+        )
+        body_env = dict(body_outer)
+        if not preparation_supported:
+            # Header expressions have already been observed. Namespace preparation
+            # executes before the body, independently of its eventual closure.
+            self.class_mutation_barrier(
+                body_env, {"<unproved-class-preparation>": ReceiverEffect.NAMESPACE}
+            )
+            self.expire_class_eager()
+        if not namespace_supported or not creation_supported:
+            self.class_mutation_barrier(self.class_outer, mutations)
+            self.capture_call_effect |= ReceiverEffect.NAMESPACE
+        self.class_mutation_barrier(self.class_comprehension_outer, mutations)
+        self.apply_call_effects(self.class_comprehension_outer, written, effect)
+        if not nested:
+            self.class_outer[node.name] = binding
+        self.class_eager_envs.append(body_env)
+        try:
+            self.scoped(
+                node.body,
+                body_env,
+                opaque_namespace=not preparation_supported,
+                namespace_globals=namespace_globals,
+            )
+        finally:
+            self.class_eager_envs.pop()
+        self.class_binding = previous
+        self.class_outer = previous_outer
+        self.class_comprehension_outer = previous_comprehension_outer
+        self.capture_call_effect = previous_capture_effect
+        self.class_mutation_barrier(self.env, mutations)
+        self.apply_call_effects(self.env, written, effect)
+        if (mutations or effect) and binding.kind == "plain":
+            binding = UNKNOWN_RECEIVER
+        if not creation_supported:
+            self.expire_class_eager()
+        self.apply_decorator_effects(node.decorator_list, decorators)
+        self.env[node.name] = binding
+
+    def deferred_bindings(
+        self,
+        outer: Optional[Mapping[str, ReceiverBinding]] = None,
+        *,
+        capture: Optional[ast.AST] = None,
+    ) -> Tuple[Mapping[str, ReceiverBinding], Dict[str, ReceiverBinding]]:
+        if outer is None:
+            outer = (
+                self.class_outer
+                if self.class_binding and self.class_outer is not None
+                else self.env
+            )
+        local = dict(outer)
+        if self.has_star_import:
+            local = {name: receiver_unknown(value) for name, value in local.items()}
+        self.apply_call_effects(local, set(), self.capture_call_effect)
+        for name, effect in self.mutated.items():
+            self.invalidate_binding(local, name, effect)
+        self.apply_written(local, self.rebound)
+        for scope in self.field_capture_scopes:
+            self.apply_written(local, self.field_call_effects(scope))
+        if capture is not None:
+            future_writes: Set[str] = set()
+            for scope in self.field_capture_scopes:
+                suffix = receiver_capture_suffix(scope, capture)
+                protocol_written, protocol_effect = self.protocol_effects(suffix, local)
+                full_written, full_effect = self.full_effects(suffix, local)
+                protocol_written.update(full_written)
+                protocol_effect |= full_effect
+                self.apply_call_effects(local, protocol_written, protocol_effect)
+                future_writes.update(self.field_write_effects(suffix, local))
+            # Snapshot all live class values before any negative key is expired.
+            for key in self.constructor_write_keys(local, future_writes):
+                local[key] = receiver_unknown(local.get(key, UNKNOWN_RECEIVER))
+        return outer, local
+
+    def visit_FunctionDef(
+        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> None:
+        ordinary_function = all(
+            isinstance(decorator, ast.Name)
+            and decorator.id in {"classmethod", "staticmethod"}
+            and self.builtin_lookup(decorator.id)
+            for decorator in node.decorator_list
+        )
+        args = [*node.args.posonlyargs, *node.args.args]
+        if node.args.vararg:
+            args.append(node.args.vararg)
+        args.extend(node.args.kwonlyargs)
+        if node.args.kwarg:
+            args.append(node.args.kwarg)
+        decorators = self.capture_decorators(node.decorator_list)
+        for expression in [*node.args.defaults, *node.args.kw_defaults]:
+            if expression is not None:
+                self.visit(expression)
+        self.visit_parameter_annotations(node, args)
+        outer, local = self.deferred_bindings(capture=node)
+        if self.deferred_horizon:
+            for name in receiver_lexical_globals(node.body):
+                # A nested function global is not an enclosing function local.
+                local[name] = UNKNOWN_RECEIVER
+        for statement in node.body:
+            for name in receiver_bound_names(statement):
+                local[name] = UNKNOWN_RECEIVER
+        for argument in args:
+            annotation = self.stable_binding(self.value(argument.annotation), outer)
+            local[argument.arg] = (
+                receiver_effect(
+                    replace(annotation, is_instance=True), ReceiverEffect.NONE
+                )
+                if annotation.kind in {"model", "plain"}
+                else annotation
+            )
+            annotation_name = (
+                receiver_annotation_root(argument.annotation)
+                if annotation.kind in {"model", "plain"}
+                else None
+            )
+            if annotation_name is not None and annotation_name in self.rebound:
+                local[argument.arg] = UNKNOWN_RECEIVER
+        role = "instance" if not decorators else "unknown"
+        if len(decorators) == 1 and decorators[0][0]:
+            decorator = node.decorator_list[0]
+            if isinstance(decorator, ast.Name):
+                role = "class" if decorator.id == "classmethod" else "unbound"
+        if (
+            self.class_binding
+            and (node.args.posonlyargs or node.args.args)
+            and role in {"instance", "class"}
+            and args[0].annotation is None
+        ):
+            binding = self.stable_binding(self.class_binding, outer)
+            local[args[0].arg] = (
+                receiver_effect(
+                    replace(binding, is_instance=role == "instance"),
+                    ReceiverEffect.NONE,
+                )
+                if binding.kind in {"model", "plain"}
+                else binding
+            )
+        previous = self.class_binding
+        previous_rebound = self.rebound
+        previous_mutated = self.mutated
+        self.class_binding = None
+        formal_names = {arg.arg for arg in args}
+        self.rebound = (self.rebound - formal_names) | receiver_rebound_names(
+            node.body, formal_names
+        )
+        self.mutated = dict(self.mutated)
+        for name, effect in receiver_mutated_names(node.body).items():
+            self.mutated[name] = self.mutated.get(name, ReceiverEffect.NONE) | effect
+        self.scoped(node.body, local, deferred=True)
+        namespace_effect = self.namespace_effects(node.body, include_protocols=False)
+        if namespace_effect:
+            self.sensitive_call_effects[node.name] = self.sensitive_call_effects.get(
+                node.name, ReceiverEffect.NONE
+            ) | receiver_unresolved_effect(namespace_effect)
+        self.class_binding = previous
+        self.rebound = previous_rebound
+        self.mutated = previous_mutated
+        self.apply_decorator_effects(node.decorator_list, decorators)
+        identity = f"data-hook:{node.lineno}:{node.name}"
+        self.env[node.name] = (
+            ReceiverBinding(
+                "data-hook", identity=identity, dependencies=frozenset({identity})
+            )
+            if receiver_literal_data_hook(node)
+            else ReceiverBinding(
+                "function", identity=identity, dependencies=frozenset({identity})
+            )
+            if ordinary_function
+            else UNKNOWN_RECEIVER
+        )
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_parameter_annotations(
+        self,
+        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        args: Sequence[ast.arg],
+    ) -> None:
+        """Join the two observed legacy/current mixed positional annotation orders."""
+        positional = [arg.annotation for arg in node.args.posonlyargs if arg.annotation]
+        normal = [arg.annotation for arg in node.args.args if arg.annotation]
+        offset = len(node.args.posonlyargs) + len(node.args.args)
+        tail = [arg.annotation for arg in args[offset:] if arg.annotation]
+        if node.returns is not None:
+            tail.append(node.returns)
+        if not positional or not normal:
+            for annotation in [*positional, *normal, *tail]:
+                self.visit(annotation)
+            return
+        base = dict(self.env)
+        before_callees = dict(self.call_callees)
+        before_subscripts = dict(self.subscript_bindings)
+        current = self.scoped([*positional, *normal, *tail], dict(base))
+        current_callees = self.call_callees
+        current_subscripts = self.subscript_bindings
+        self.call_callees = dict(before_callees)
+        self.subscript_bindings = dict(before_subscripts)
+        legacy = self.scoped([*normal, *positional, *tail], dict(base))
+        self.merge_bindings(current, legacy)
+        for call in current_callees.keys() | self.call_callees.keys():
+            left = current_callees.get(call, UNKNOWN_RECEIVER)
+            right = self.call_callees.get(call, UNKNOWN_RECEIVER)
+            self.call_callees[call] = receiver_join(left, right)
+        for subscript in current_subscripts.keys() | self.subscript_bindings.keys():
+            left = current_subscripts.get(subscript, UNKNOWN_RECEIVER)
+            right = self.subscript_bindings.get(subscript, UNKNOWN_RECEIVER)
+            self.subscript_bindings[subscript] = receiver_join(left, right)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        for default in [*node.args.defaults, *node.args.kw_defaults]:
+            if default is not None:
+                self.visit(default)
+        _, local = self.deferred_bindings(capture=node)
+        for name in receiver_bound_names(node.body):
+            local[name] = UNKNOWN_RECEIVER
+        args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        if node.args.vararg:
+            args.append(node.args.vararg)
+        if node.args.kwarg:
+            args.append(node.args.kwarg)
+        for argument in args:
+            local[argument.arg] = UNKNOWN_RECEIVER
+        previous_class = self.class_binding
+        previous_rebound = self.rebound
+        previous_mutated = self.mutated
+        self.class_binding = None
+        formal_names = {arg.arg for arg in args}
+        self.rebound = (self.rebound - formal_names) | receiver_rebound_names(
+            [node.body], formal_names
+        )
+        self.mutated = dict(self.mutated)
+        for name, effect in receiver_mutated_names([node.body]).items():
+            self.mutated[name] = self.mutated.get(name, ReceiverEffect.NONE) | effect
+        self.scoped([node.body], local, deferred=True)
+        self.class_binding = previous_class
+        self.rebound = previous_rebound
+        self.mutated = previous_mutated
+
+    def comprehension(self, node: ast.AST, deferred: bool = False) -> None:
+        previous = self.env
+        previous_class = self.class_binding
+        previous_opaque = self.namespace_opaque
+        previous_globals = self.namespace_globals
+        previous_horizon = self.deferred_horizon
+        generators: list[ast.comprehension] = list(getattr(node, "generators", ()))
+        if generators:
+            self.visit(generators[0].iter)
+            # All forms acquire the first iterator now, including GeneratorExp.
+            # Only its body is deferred; the observed expression prefix survives.
+            self.expire_class_eager()
+        body = receiver_comprehension_body(node)
+        written, effect = self.call_effects(body, include_protocols=False)
+        mutations = receiver_mutated_names([node])
+        local = dict(previous)
+        with self.observe_call_effects(deferred=deferred) as observed:
+            with self.call_effect_scope(body):
+                local = (
+                    self.deferred_bindings(capture=node)[1]
+                    if deferred
+                    else dict(previous)
+                )
+                if (
+                    self.class_binding is not None
+                    and self.class_comprehension_outer is not None
+                ):
+                    local = dict(self.class_comprehension_outer)
+                    if deferred:
+                        local = self.deferred_bindings(
+                            self.class_comprehension_outer, capture=node
+                        )[1]
+                self.class_binding = None
+                field_bindings = dict(local)
+                for part in body:
+                    for name in receiver_bound_names(part):
+                        field_bindings[name] = UNKNOWN_RECEIVER
+                for name, mutation_effect in mutations.items():
+                    self.invalidate_binding(field_bindings, name, mutation_effect)
+                self.apply_call_effects(field_bindings, written, effect)
+                written.update(self.field_write_effects(body, field_bindings))
+                protocol_written, protocol_effect = self.protocol_effects(
+                    body, field_bindings
+                )
+                written.update(protocol_written)
+                effect |= protocol_effect
+                self.apply_call_effects(local, written, effect)
+                for name, mutation_effect in mutations.items():
+                    self.invalidate_binding(local, name, mutation_effect)
+                for part in body:
+                    for name in receiver_walrus_names(part):
+                        if local.get(name, UNKNOWN_RECEIVER).kind == "plain":
+                            local[name] = UNKNOWN_RECEIVER
+                self.env = local
+                # Comprehension bodies have their own lexical lookup frame; only the
+                # first iterator expression above uses the surrounding class mapping.
+                self.namespace_opaque = False
+                self.namespace_globals = frozenset()
+                self.deferred_horizon = previous_horizon or deferred
+                for index, generator in enumerate(generators):
+                    if index:
+                        self.visit(generator.iter)
+                    self.visit(generator.target)
+                    for name in receiver_bound_names(generator.target):
+                        local[name] = UNKNOWN_RECEIVER
+                    for condition in generator.ifs:
+                        self.visit(condition)
+                if isinstance(node, ast.DictComp):
+                    for value in (node.key, node.value):
+                        if value is not None:
+                            self.visit(value)
+                else:
+                    self.visit(getattr(node, "elt"))
+        effect |= observed[0]
+        self.env = previous
+        self.class_binding = previous_class
+        self.namespace_opaque = previous_opaque
+        self.namespace_globals = previous_globals
+        self.deferred_horizon = previous_horizon
+        for name in receiver_walrus_names(node):
+            before = previous.get(name, UNKNOWN_RECEIVER)
+            after = local.get(name, UNKNOWN_RECEIVER)
+            self.env[name] = (
+                before
+                if before == after
+                else receiver_unknown(receiver_join(before, after))
+            )
+        self.apply_call_effects(self.env, written, effect)
+        for name, mutation_effect in mutations.items():
+            self.invalidate_binding(self.env, name, mutation_effect)
+
+    visit_ListComp = comprehension
+    visit_SetComp = comprehension
+    visit_DictComp = comprehension
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self.comprehension(node, deferred=True)
+
+    def visit_Delete(self, node: ast.Delete) -> None:
+        for target in node.targets:
+            self.visit(target)
+            self.invalidate_target(target)
+        for name in receiver_bound_names(node):
+            self.env[name] = UNKNOWN_RECEIVER
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        if isinstance(node.target, ast.Subscript):
+            self.visit(node.target.value)
+            owner = self.value(node.target.value)
+            namespace_owner = self.value(receiver_target_owner(node.target))
+            self.apply_namespace_getter_event(node.target, namespace_owner)
+            self.visit(node.target.slice)
+            owner = self.revalidate_binding(owner, [node.target.slice])
+            getter = ast.Subscript(
+                value=node.target.value, slice=node.target.slice, ctx=ast.Load()
+            )
+            self.apply_protocol_event(getter, owner)
+        else:
+            self.visit(node.target)
+        self.visit(node.value)
+        fields = self.field_augassign(node, set(), set())
+        self.apply_protocol_event(node)
+        self.invalidate_target(node.target)
+        self.apply_written(self.env, fields)
+        for name in receiver_bound_names(node.target):
+            self.env[name] = receiver_unknown(self.env.get(name, UNKNOWN_RECEIVER))
+
+    def merge_bindings(
+        self, left: Mapping[str, ReceiverBinding], right: Mapping[str, ReceiverBinding]
+    ) -> None:
+        for name in set(left) | set(right):
+            one = left.get(name, UNKNOWN_RECEIVER)
+            two = right.get(name, UNKNOWN_RECEIVER)
+            self.env[name] = receiver_join(one, two)
+
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        left = self.scoped(node.body, dict(self.env))
+        right = self.scoped(node.orelse, dict(self.env))
+        self.merge_bindings(left, right)
+
+    def visit_Dict(self, node: ast.Dict) -> None:
+        if any(key is None or not self.literal_hash_input(key) for key in node.keys):
+            # Hash insertion may interleave entries across supported interpreters.
+            # Forfeit uncertain class proofs before this unsupported container.
+            self.class_eager_protocol_barrier(node)
+        for key, value in zip(node.keys, node.values):
+            if key is not None:
+                self.visit(key)
+            self.visit(value)
+
+    def visit_Set(self, node: ast.Set) -> None:
+        if not all(self.literal_hash_input(item) for item in node.elts):
+            self.class_eager_protocol_barrier(node)
+        self.generic_visit(node)
+
+    def visit_IfExp(self, node: ast.IfExp) -> None:
+        self.visit(node.test)
+        left = self.scoped([node.body], dict(self.env))
+        right = self.scoped([node.orelse], dict(self.env))
+        self.merge_bindings(left, right)
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> None:
+        self.visit(node.values[0])
+        for value in node.values[1:]:
+            before = dict(self.env)
+            branch = self.scoped([value], dict(before))
+            self.merge_bindings(before, branch)
+
+    def visit_Compare(self, node: ast.Compare) -> None:
+        self.visit(node.left)
+        left = node.left
+        for index, (operator, value) in enumerate(zip(node.ops, node.comparators)):
+            pair = ast.Compare(left=left, ops=[operator], comparators=[value])
+            if index == 0:
+                self.visit(value)
+                self.apply_protocol_event(pair)
+            else:
+                before = dict(self.env)
+                branch = self.scoped([value], dict(before))
+                fields, effect = self.protocol_event(pair, branch)
+                self.apply_call_effects(branch, fields, effect)
+                self.merge_bindings(before, branch)
+                if effect and self.in_class_eager_view():
+                    self.expire_class_eager()
+            left = value
+
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> None:
+        self.visit(node.operand)
+        self.apply_protocol_event(node)
+
+    def conservative_control(self, node: ast.AST) -> None:
+        headers = {"iter", "test", "items", "subject"}
+        for field_name, item in ast.iter_fields(node):
+            if field_name in headers:
+                nodes = item if isinstance(item, list) else [item]
+                for child in nodes:
+                    if isinstance(child, ast.AST):
+                        self.visit(child)
+        if isinstance(node, ast.Try) or type(node).__name__ == "TryStar":
+            self.record_first_model_lookup(getattr(node, "body", ()), self.env)
+        elif (
+            isinstance(node, ast.For)
+            and isinstance(node.iter, (ast.List, ast.Tuple))
+            and len(node.iter.elts) == 1
+            and isinstance(node.iter.elts[0], ast.Constant)
+            and isinstance(node.target, ast.Name)
+        ):
+            entry = dict(self.env)
+            entry[node.target.id] = UNKNOWN_RECEIVER
+            self.record_first_model_lookup(node.body, entry)
+        base = dict(self.env)
+        assigned = receiver_bound_names(node)
+        possible = {
+            name: base.get(name, UNKNOWN_RECEIVER).protocol_effect for name in assigned
+        }
+        mutations = receiver_mutated_names([node])
+        written, call_effect = self.call_effects([node], include_protocols=False)
+        field_bindings = dict(base)
+        if self.namespace_opaque:
+            field_bindings = {name: UNKNOWN_RECEIVER for name in field_bindings}
+        for name in assigned:
+            field_bindings[name] = UNKNOWN_RECEIVER
+        for name, mutation_effect in mutations.items():
+            self.invalidate_binding(field_bindings, name, mutation_effect)
+        self.apply_call_effects(field_bindings, written, call_effect)
+        written.update(self.field_write_effects([node], field_bindings))
+        protocol_written, protocol_effect = self.protocol_effects(
+            [node], field_bindings
+        )
+        written.update(protocol_written)
+        call_effect |= protocol_effect
+        self.apply_call_effects(base, written, call_effect)
+        for name in assigned:
+            base[name] = UNKNOWN_RECEIVER
+        for name, mutation_effect in mutations.items():
+            self.invalidate_binding(base, name, mutation_effect)
+        with self.observe_call_effects() as observed:
+            if isinstance(node, ast.While):
+                initial_model = {
+                    key for key, kinds in self.calls.items() if kinds == {"model"}
+                }
+                self.scoped([node.test], dict(base))
+                # The initial known-model header remains a proven violation even
+                # when later iterations have uncertain ownership.
+                for key in initial_model:
+                    self.calls[key] = {"model"}
+            for field_name, item in ast.iter_fields(node):
+                if field_name in headers:
+                    continue
+                if isinstance(item, list):
+                    nodes = [child for child in item if isinstance(child, ast.AST)]
+                    result = self.scoped(nodes, dict(base))
+                    for name in assigned:
+                        possible[name] |= result.get(
+                            name, UNKNOWN_RECEIVER
+                        ).protocol_effect
+                elif isinstance(item, ast.AST):
+                    result = self.scoped([item], dict(base))
+                    for name in assigned:
+                        possible[name] |= result.get(
+                            name, UNKNOWN_RECEIVER
+                        ).protocol_effect
+        call_effect |= observed[0]
+        for name in assigned:
+            self.env[name] = replace(UNKNOWN_RECEIVER, protocol_effect=possible[name])
+        for name, effect in mutations.items():
+            self.invalidate_binding(self.env, name, effect)
+        self.apply_call_effects(self.env, written, call_effect)
+
+    visit_For = conservative_control
+    visit_AsyncFor = conservative_control
+    visit_While = conservative_control
+    visit_With = conservative_control
+    visit_AsyncWith = conservative_control
+    visit_Try = conservative_control
+    visit_TryStar = conservative_control
+    visit_Match = conservative_control
+
+    def visit_withitem(self, node: ast.withitem) -> None:
+        self.visit(node.context_expr)
+        self.apply_protocol_event(node)
+        if node.optional_vars is not None:
+            self.visit(node.optional_vars)
+            self.invalidate_target(node.optional_vars)
+            for name in receiver_bound_names(node.optional_vars):
+                self.env[name] = UNKNOWN_RECEIVER
+
+    def record_first_model_lookup(
+        self, statements: Sequence[ast.stmt], bindings: Mapping[str, ReceiverBinding]
+    ) -> None:
+        "Keep only the actual initial pure MODEL lookup, never body replay."
+        if self.namespace_opaque:
+            return
+        for statement in statements:
+            if isinstance(statement, (ast.Pass, ast.Global, ast.Nonlocal)) or (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+            ):
+                continue
+            value: Optional[ast.AST] = None
+            if isinstance(statement, (ast.Expr, ast.Return)):
+                value = statement.value
+            elif (
+                isinstance(statement, ast.Assign)
+                and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+            ):
+                value = statement.value
+            if not (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Attribute)
+                and value.func.attr in LEGACY_MODEL_METHODS
+                and all(isinstance(arg, ast.Constant) for arg in value.args)
+                and all(
+                    keyword.arg is not None and isinstance(keyword.value, ast.Constant)
+                    for keyword in value.keywords
+                )
+            ):
+                return
+            receiver = value.func.value
+            if self.stored_class_value(receiver, bindings).kind != "model":
+                return
+            while isinstance(receiver, ast.Attribute):
+                if (
+                    self.stored_class_key(
+                        self.stored_class_value(receiver.value, bindings), receiver.attr
+                    )
+                    is None
+                ):
+                    return
+                receiver = receiver.value
+            if not isinstance(receiver, ast.Name):
+                return
+            segment = ast.get_source_segment(self.source, value)
+            if segment is not None:
+                self.calls.setdefault(
+                    (value.lineno, getattr(value, "end_lineno", value.lineno), segment),
+                    set(),
+                ).add("model")
+            return
+
+    def model_prefix_function(
+        self, node: ast.Call, callee: ReceiverBinding
+    ) -> Optional[ast.FunctionDef]:
+        """Select an actual module invocation, never a guessed runtime count."""
+        if (
+            self.env is not self.field_module_env
+            or node not in self.field_module_calls
+            or not isinstance(node.func, ast.Name)
+            or node.args
+            or node.keywords
+            or self.has_star_import
+        ):
+            return None
+        function = self.field_definitions.get(node.func.id)
+        if function is None or function not in self.field_module_functions:
+            return None
+        identity = f"data-hook:{function.lineno}:{function.name}"
+        if callee.kind not in {"function", "data-hook"} or callee.identity != identity:
+            return None
+        args = function.args
+        if (
+            function.decorator_list
+            or function.returns is not None
+            or getattr(function, "type_params", [])
+            or args.posonlyargs
+            or args.args
+            or args.kwonlyargs
+            or args.vararg
+            or args.kwarg
+            or args.defaults
+            or args.kw_defaults
+            or any(
+                isinstance(part, (ast.Yield, ast.YieldFrom, ast.Nonlocal))
+                for part in ast.walk(function)
+            )
+        ):
+            return None
+        return function
+
+    def model_prefix_receiver(self, node: ast.AST, local_names: Set[str]) -> bool:
+        """A pure global/free path must resolve MODEL in the actual caller."""
+        root = receiver_field_root(node)
+        if (
+            root is None
+            or root in local_names
+            or root in self.rebound
+            or "<stored-member>:*" in self.rebound
+            or self.value(node).kind != "model"
+        ):
+            return False
+        while isinstance(node, ast.Attribute):
+            if (
+                "<stored-member>:" + node.attr in self.rebound
+                or self.stored_class_key(self.value(node.value), node.attr) is None
+            ):
+                return False
+            node = node.value
+        return isinstance(node, ast.Name)
+
+    def record_called_model_prefix(
+        self, node: ast.Call, callee: ReceiverBinding
+    ) -> None:
+        """Retain only an actual first MODEL lookup; opaque PLAIN stays unknown."""
+        function = self.model_prefix_function(node, callee)
+        if function is None:
+            return
+        local_names: Set[str] = set()
+        for statement in function.body:
+            local_names.update(receiver_bound_names(statement))
+            local_names.update(receiver_binding_events(statement))
+        local_names.difference_update(receiver_lexical_globals(function.body))
+        for statement in function.body:
+            if isinstance(statement, (ast.Pass, ast.Global)) or (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+            ):
+                continue
+            value: Optional[ast.AST] = None
+            if isinstance(statement, ast.Return):
+                value = statement.value
+            elif (
+                isinstance(statement, ast.Assign)
+                and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+            ):
+                value = statement.value
+            if not (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Attribute)
+                and value.func.attr in LEGACY_MODEL_METHODS
+                and self.model_prefix_receiver(value.func.value, local_names)
+                and all(isinstance(arg, ast.Constant) for arg in value.args)
+                and all(
+                    keyword.arg is not None and isinstance(keyword.value, ast.Constant)
+                    for keyword in value.keywords
+                )
+            ):
+                return
+            segment = ast.get_source_segment(self.source, value)
+            if segment is not None:
+                key = (
+                    value.lineno,
+                    getattr(value, "end_lineno", value.lineno),
+                    segment,
+                )
+                self.calls.setdefault(key, set()).add("model")
+            return
+
+    def builtin_mutation_target(self, node: ast.Call) -> Optional[ast.Subscript]:
+        """Capture a genuine mutator before argument code can rebind its name."""
+        function = node.func
+        if not (
+            isinstance(function, ast.Name)
+            and function.id in {"setattr", "delattr"}
+            and self.builtin_lookup(function.id)
+            and len(node.args) == (3 if function.id == "setattr" else 2)
+            and not node.keywords
+            and not any(isinstance(argument, ast.Starred) for argument in node.args)
+        ):
+            return None
+        return ast.Subscript(
+            value=ast.Attribute(value=node.args[0], attr="__dict__", ctx=ast.Load()),
+            slice=node.args[1],
+            ctx=ast.Store() if function.id == "setattr" else ast.Del(),
+        )
+
+    def argument_namespace_effect(
+        self,
+        value: ast.AST,
+        *,
+        include_protocols: bool = True,
+        captured: Optional[ReceiverBinding] = None,
+    ) -> ReceiverEffect:
+        selected = captured if captured is not None else self.value(value)
+        effect = selected.protocol_effect if include_protocols else ReceiverEffect.NONE
+        while isinstance(value, ast.NamedExpr):
+            value = value.value
+        if isinstance(value, ast.Lambda):
+            if include_protocols:
+                effect |= self.full_effects([value.body], {})[1]
+            else:
+                effect |= self.namespace_effects([value.body], include_protocols=False)
+            return effect | self.declared_builtin_effects(value)
+        if isinstance(value, ast.Name):
+            if captured is None:
+                effect |= self.sensitive_call_effects.get(value.id, ReceiverEffect.NONE)
+            definition = self.field_definition_binding(selected)
+            if definition is not None:
+                if include_protocols:
+                    effect |= self.full_effects(definition.body, {})[1]
+                else:
+                    effect |= self.namespace_effects(
+                        definition.body, include_protocols=False
+                    )
+                effect |= self.declared_builtin_effects(definition)
+        return effect
+
+    def publish_namespace_assignment(self, name: str, value: ast.AST) -> None:
+        effect = self.argument_namespace_effect(value, include_protocols=False)
+        if effect:
+            self.sensitive_call_effects[name] = self.sensitive_call_effects.get(
+                name, ReceiverEffect.NONE
+            ) | receiver_unresolved_effect(effect)
+
+    def invocation_namespace_effect(
+        self,
+        node: ast.Call,
+        callee: ReceiverBinding,
+        target: Optional[ast.Subscript],
+        owner: Optional[ReceiverBinding],
+        method_owner: Optional[ReceiverBinding],
+        before_fields: Set[str],
+        captured_arguments: Optional[Mapping[ast.AST, ReceiverBinding]] = None,
+    ) -> ReceiverEffect:
+        """Unsupported calls forfeit construction safety, not receiver identity."""
+        builtin = self.field_builtin(node, set())
+        if builtin is not None and "<stored-member>:*" not in builtin:
+            return ReceiverEffect.NONE
+        if (
+            target is not None
+            and owner is not None
+            and (
+                owner.kind in {"function", "data-hook"}
+                or owner.kind == "plain"
+                and not owner.is_instance
+                and not owner.opaque
+            )
+        ):
+            return ReceiverEffect.NONE
+        definition = self.field_definition_binding(callee)
+        if definition is not None and "<stored-member>:*" not in self.field_body(
+            definition, set()
+        ):
+            return ReceiverEffect.NONE
+        if (
+            isinstance(node.func, ast.Attribute)
+            and method_owner is not None
+            and method_owner.identity
+            and self.value(node.func.value).identity == method_owner.identity
+            and "<stored-member>:*" not in before_fields
+            and "<stored-member>:*" not in self.field_callee(node.func, set(), set())
+        ):
+            return ReceiverEffect.NONE
+        if self.field_empty_constructor(callee):
+            return ReceiverEffect.NONE
+        effect = ReceiverEffect.NONE
+        for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
+            effect |= self.argument_namespace_effect(
+                argument,
+                captured=captured_arguments.get(argument)
+                if captured_arguments is not None
+                else None,
+            )
+        return ReceiverEffect.CONSTRUCT | receiver_unresolved_effect(effect)
+
+    def project_builtin_mutation(
+        self, target: ast.Subscript, owner: ReceiverBinding
+    ) -> ReceiverEffect:
+        """Apply existing member effects to the evaluated object, not its name."""
+        member = target.slice
+        if type(member).__name__ == "Index":
+            member = getattr(member, "value", member)
+        fields = {"<stored-member>:*"}
+        key: Optional[str] = None
+        if isinstance(member, ast.Constant) and isinstance(member.value, str):
+            positive = self.stored_class_key(owner, member.value)
+            key = (
+                positive
+                if positive is not None
+                else self.constructor_member_key(owner, member.value)
+            )
+            if positive is not None:
+                fields = {"<stored-member>:" + member.value}
+        self.apply_written(self.env, fields)
+        if key is not None:
+            self.env[key] = receiver_unknown(self.env.get(key, UNKNOWN_RECEIVER))
+        mutation = receiver_target_mutation(target, resolved_owner=bool(owner.identity))
+        if mutation is None:
+            return ReceiverEffect.NONE
+        name, effect = mutation
+        if (
+            not owner.identity
+            or self.env.get(name, UNKNOWN_RECEIVER).identity != owner.identity
+        ):
+            name = "<captured-builtin-owner>"
+        self.invalidate_binding(self.env, name, effect, owner=owner)
+        return effect
+
+    def visit_Call(self, node: ast.Call) -> None:
+        function = node.func
+        self.visit(function)
+        namespace = self.namespace_mutator(node)
+        namespace_owner = self.value(namespace.value) if namespace is not None else None
+        if namespace_owner is not None and not self.namespace_getter_supported(
+            namespace_owner
+        ):
+            self.apply_call_effects(
+                self.env, {"<stored-member>:*"}, ReceiverEffect.NAMESPACE
+            )
+            if self.in_class_eager_view():
+                self.expire_class_eager()
+        callee = self.value(function)
+        method_owner = (
+            self.value(function.value) if isinstance(function, ast.Attribute) else None
+        )
+        before_fields = self.field_callee(function, set(), set())
+        builtin_target = self.builtin_mutation_target(node)
+        builtin_owner: Optional[ReceiverBinding] = None
+        eager_epoch = self.class_eager_epoch
+        if (
+            isinstance(function, ast.Attribute)
+            and function.attr in LEGACY_MODEL_METHODS
+        ):
+            binding = self.value(function.value)
+            kind = binding.kind if binding.kind in {"model", "plain"} else "unknown"
+            if kind == "plain" and function.attr not in binding.methods:
+                kind = "unknown"
+            segment = ast.get_source_segment(self.source, node)
+            if segment is not None:
+                key = (node.lineno, getattr(node, "end_lineno", node.lineno), segment)
+                self.calls.setdefault(key, set()).add(kind)
+        with self.tuple_argument_region() as tuple_events:
+            arguments = [*node.args, *node.keywords]
+            captured_arguments: Dict[ast.AST, ReceiverBinding] = {}
+            for index, argument in enumerate(arguments):
+                self.visit(argument)
+                actual = (
+                    argument.value if isinstance(argument, ast.keyword) else argument
+                )
+                captured_arguments[actual] = self.value(actual)
+                if builtin_target is not None and index == 0:
+                    builtin_owner = self.value(argument)
+            callee = self.revalidate_binding(
+                callee, arguments, eager_epoch=eager_epoch, tuple_events=tuple_events
+            )
+            self.record_called_model_prefix(node, callee)
+            current_constructor = (
+                (node, callee)
+                if self.env is self.field_module_env
+                and node in self.field_module_calls
+                and not self.namespace_opaque
+                and isinstance(node.func, ast.Name)
+                and self.value(node.func).identity == callee.identity
+                and self.field_empty_constructor(callee)
+                else None
+            )
+            written, effect = self.call_effects(
+                [node],
+                current_constructor=current_constructor,
+                tuple_events=tuple_events,
+                current_callee=(node, callee),
+            )
+            effect |= callee.protocol_effect
+            effect |= self.invocation_namespace_effect(
+                node,
+                callee,
+                builtin_target,
+                builtin_owner,
+                method_owner,
+                before_fields,
+                captured_arguments,
+            )
+            self.apply_call_effects(self.env, written, effect)
+            if namespace_owner is not None:
+                namespace_owner = self.revalidate_binding(
+                    namespace_owner,
+                    arguments,
+                    eager_epoch=eager_epoch,
+                    tuple_events=tuple_events,
+                )
+                self.apply_protocol_event(node, namespace_owner)
+            if builtin_target is not None and builtin_owner is not None:
+                builtin_owner = self.revalidate_binding(
+                    builtin_owner,
+                    node.args[1:],
+                    eager_epoch=eager_epoch,
+                    tuple_events=tuple_events,
+                )
+                effect |= self.project_builtin_mutation(builtin_target, builtin_owner)
+            self.namespace_call_effects[node] = (
+                self.namespace_call_effects.get(node, ReceiverEffect.NONE) | effect
+            )
+            if self.call_effect_observers:
+                self.call_effect_observers[-1][0] |= effect
+            self.class_eager_protocol_barrier(node)
+            if self.class_eager_epoch != eager_epoch:
+                callee = receiver_effect(callee, ReceiverEffect.NAMESPACE)
+            self.call_callees[node] = callee
+
+
+class PydanticReceiverCache:
+    """Bind method candidates to the exact exported source being scanned."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.files: Dict[str, Dict[Tuple[int, int, str], Set[str]]] = {}
+        self.issues: Dict[str, str] = {}
+
+    def classify(self, finding: Finding, text: object) -> List[Finding]:
+        if isinstance(text, str) and text.lstrip().startswith(
+            ("class ", "from ", "import ", "@")
+        ):
+            return [finding]
+        if finding.path not in self.files:
+            source = (self.root / finding.path).read_text(encoding="utf-8-sig")
+            resolver = PydanticReceivers(source)
+            try:
+                resolver.visit(ast.parse(source))
+            except SyntaxError as error:
+                # Ruff owns syntax validity; this records missing type evidence.
+                self.issues[finding.path] = (
+                    f"receiver analysis unavailable at line {error.lineno}"
+                )
+            self.files[finding.path] = resolver.calls
+        if not isinstance(text, str):
+            return [finding]
+        normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+        key = (finding.line, finding.end_line, normalized)
+        kinds = self.files[finding.path].get(key)
+        # Non-method namespace/decorator/Config findings retain their strong rule.
+        if kinds is None and not re.search(
+            r"\.(parse_obj|parse_raw|parse_file|from_orm)\s*\(", normalized
+        ):
+            return [finding]
+        result = [finding] if kinds and "model" in kinds else []
+        if not kinds or "unknown" in kinds or "module" in kinds:
+            result.append(
+                Finding(
+                    "pydantic_v1_ambiguous",
+                    finding.path,
+                    finding.line,
+                    finding.end_line,
+                    finding.origin,
+                    "Possible legacy model method: receiver is unresolved, "
+                    "not proven Pydantic"
+                    + (
+                        "; " + self.issues[finding.path]
+                        if finding.path in self.issues
+                        else ""
+                    ),
+                )
+            )
+        return result
+
+
 def run_astgrep(
     sg: str, root: Path, scratch: Path, files: Sequence[str], sg_ids: Sequence[str]
 ) -> List[Finding]:
@@ -1149,6 +5076,7 @@ def run_astgrep(
     )
     pattern = "^(" + "|".join(re.escape(i) for i in sorted(sg_ids)) + ")$"
     found: List[Finding] = []
+    receivers = PydanticReceiverCache(root)
     for batch in chunks(files):
         command = [
             sg,
@@ -1172,11 +5100,16 @@ def run_astgrep(
             done.stdout.decode("utf-8", "replace").splitlines(), 1
         ):
             if raw.strip():
-                found.extend(astgrep_item(raw, number, command))
+                found.extend(astgrep_item(raw, number, command, receivers))
     return found
 
 
-def astgrep_item(raw: str, number: int, command: Sequence[str]) -> List[Finding]:
+def astgrep_item(
+    raw: str,
+    number: int,
+    command: Sequence[str],
+    receivers: Optional[PydanticReceiverCache] = None,
+) -> List[Finding]:
     try:
         item = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -1208,18 +5141,17 @@ def astgrep_item(raw: str, number: int, command: Sequence[str]) -> List[Finding]
             return []
         raise ToolFailure("ast-grep", command, f"unknown mandate rule id {rule_id!r}")
     # ast-grep ranges are 0-based; everything else here is 1-based.
-    return [
-        Finding(
-            SG_TO_KEY[rule_id],
-            PurePosixPath(
-                path.replace("\\", "/") if os.name == "nt" else path
-            ).as_posix(),
-            line + 1,
-            end_line + 1,
-            f"ast-grep:{rule_id}",
-            message if isinstance(message, str) else rule_id,
-        )
-    ]
+    finding = Finding(
+        SG_TO_KEY[rule_id],
+        PurePosixPath(path.replace("\\", "/") if os.name == "nt" else path).as_posix(),
+        line + 1,
+        end_line + 1,
+        f"ast-grep:{rule_id}",
+        message if isinstance(message, str) else rule_id,
+    )
+    if rule_id == "mandate-pydantic-v1" and receivers is not None:
+        return receivers.classify(finding, item.get("text"))
+    return [finding]
 
 
 def suppression_codes(enabled: Mapping[str, Severity]) -> Set[str]:
@@ -1407,6 +5339,10 @@ def scan_tree(
         result.skipped["ast-grep"] = [r.key for r in sg_rules]
     elif sg_rules and tools.astgrep is not None:
         sg_ids = [i for r in sg_rules for i in r.sg_ids]
+        if py_files and enabled["pydantic_v1_ambiguous"] is not Severity.OFF:
+            # Strong rule supplies method-name candidates even when its own
+            # policy is off; receiver classification selects the actual rule.
+            sg_ids = sorted(set(sg_ids) | {"mandate-pydantic-v1"})
         targets = sorted({f for r in sg_rules for f in by_lang[r.language]})
         result.findings.extend(
             run_astgrep(tools.astgrep, root, scratch, targets, sg_ids)
@@ -1415,7 +5351,11 @@ def scan_tree(
     if files and any(r.text_check for r in active):
         result.findings.extend(text_findings(root, py_files + rs_files, enabled))
 
-    result.findings = postprocess(root, result.findings, policy.vendored)
+    result.findings = postprocess(
+        root,
+        [f for f in result.findings if enabled[f.key] is not Severity.OFF],
+        policy.vendored,
+    )
     return result
 
 
@@ -2064,13 +6004,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 return Outcome.PASSED
         if args.pre_push:
             return pre_push(repo, pushed)
+        changed_selection: tuple[dict[str, set[int]], str] | None = None
         # Policy comes from the snapshot being scanned: the index for staged
         # content and index-based counts, otherwise the named commit.
         if args.staged:
             snapshot, changes, export = INDEX, staged_changes(repo), "index"
+            changed_selection = changes, export
         elif args.range:
             head, changes = range_changes(repo, args.range)
             snapshot, export = head, head
+            changed_selection = changes, export
         elif args.check_baseline:
             snapshot = verify_commit(repo, args.rev or "HEAD")
         else:
@@ -2081,7 +6024,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             debug("mandate.enabled=off")
             return Outcome.PASSED
         tools = resolve_tools(repo)
-        if args.staged or args.range:
+        if changed_selection is not None:
+            changes, export = changed_selection
             return changed_mode(repo, changes, export, policy, tools)
         if args.all:
             return all_mode(repo, args.rev, policy, tools)

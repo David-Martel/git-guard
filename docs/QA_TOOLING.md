@@ -966,8 +966,8 @@ supplied range; this change only adjusts staged merges.
 
 | Rule (`mandate.<rule>`) | Policy | Protects against | Tool / code | Default | Source | Fix |
 |---|---|---|---|---|---|---|
-| `pydantic_v1` | PY-01 | v1 APIs in a v2-only fleet | ast-grep `mandate-pydantic-v1` (`pydantic.v1`, `@validator`, `@root_validator`, `class Config:` in a BaseModel, `parse_obj`/`parse_raw`/`parse_file`/`from_orm`) | block | vigil-spark AGENTS.md:188-190; vigil-ai-tpm CLAUDE.md:76 | `field_validator`/`model_validator`, `model_config = ConfigDict(...)`, `model_validate` |
-| `pydantic_v1_ambiguous` | PY-01 | `.dict()` / `.copy(update=)` | ast-grep `mandate-pydantic-v1-ambiguous` | warn | as above | `model_dump()` / `model_copy(update=)` |
+| `pydantic_v1` | PY-01 | v1 APIs in a v2-only fleet | ast-grep `mandate-pydantic-v1`: namespace, decorators and Config stay strong; legacy-method candidates require proven model receiver evidence | block | vigil-spark AGENTS.md:188-190; vigil-ai-tpm CLAUDE.md:76 | `field_validator`/`model_validator`, `model_config = ConfigDict(...)`, `model_validate` |
+| `pydantic_v1_ambiguous` | PY-01 | `.dict()` / `.copy(update=)` and unresolved legacy-method receivers | ast-grep candidates plus receiver classification in `mandate_scan.py` | warn | as above | Resolve receiver ownership before selecting the appropriate model v2 API |
 | `bare_except` | PY-06 | Ctrl-C and `sys.exit()` swallowed | ruff `E722` | block | clarius AGENTS.md:653-655 | catch a named exception |
 | `blind_except` | PY-06 | every failure handled alike | ruff `BLE001` | changed | clarius AGENTS.md:653-655; vigil-ai-tpm pyproject.toml:80-87 | catch what you can recover from |
 | `except_pass` | PY-06 | a failure discarded (logging does not count as handling) | ruff `S110` + ast-grep `mandate-except-pass` | changed | clarius AGENTS.md:653-655 | re-raise typed, or `contextlib.suppress(Specific)` |
@@ -989,6 +989,20 @@ supplied range; this change only adjusts staged merges.
 
 The whole-file panic set of §4 (`astgrep_panics`, default warn) is unchanged and
 independent of `rust_panic`.
+
+Legacy Pydantic classmethod names are candidates, not type evidence. The scanner
+reads the same exported snapshot used by staged, range and census checks; it
+never imports or executes repository modules. Local BaseModel/BaseSettings/
+RootModel inheritance, import/class aliases, constructors and direct annotations
+establish model receivers. Proven model calls stay under `pydantic_v1`, including
+when the ambiguous rule is disabled. Declared methods on plain local classes
+clear. Parameter/comprehension shadowing, rebinding, branch merges, decorators
+and unresolved cross-file types retain ambiguity rather than a false model claim.
+Namespace imports, deprecated validators and nested Config constructs retain
+their existing strong rule. Existing `.dict()` and `.copy(update=...)` defaults
+are unchanged. [Receiver controls](../tests/32-quality-mandate.t.sh) include real
+scanner runs in staged, range and census modes; the
+[source-bound review](PYDANTIC_RECEIVER_REVIEW.md) records their disposition.
 
 `except_sentinel` and `str_enum_param` are advisory by default. A syntax match
 cannot prove whether `False` is an expected classification result or whether a
