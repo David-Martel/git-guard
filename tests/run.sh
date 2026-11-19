@@ -173,6 +173,7 @@ t_case_doctor_hooks_resolution
 t_case_doctor_timeout_prereq
 t_case_doctor_coverage
 t_case_prepush_content_and_bare
+t_case_prepush_delete_only
 t_case_install_rotates_legacy_hooks
 t_case_precommit_provider_old_git
 t_case_lfs_prepush

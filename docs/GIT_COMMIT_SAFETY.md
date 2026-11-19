@@ -60,6 +60,7 @@ that it is missing, so check with `git-guard doctor --require-installed --repo <
 (add `--wsl` on Windows). It exits non-zero and prints
 `git-guard doctor: NOT COVERED (n failures)` when the hooks will not run. Pushes from
 bare repositories are refused: use `git worktree add`, or `preserve/*` for custody.
+A push that only deletes refs publishes nothing and passes from anywhere.
 The per-host procedure is in [`FLEET_ROLLOUT.md`](FLEET_ROLLOUT.md) (installed at
 `~/.local/share/git-guard/current/docs/FLEET_ROLLOUT.md`).
 
