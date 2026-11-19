@@ -2,7 +2,8 @@
 #
 # git-guard pre-push — generic, optional downstream chaining.
 #
-# git-guard's enforcement is at pre-commit. This pre-push refuses pushes from a
+# git-guard's enforcement is at pre-commit. This pre-push passes delete-only
+# pushes (they publish nothing), refuses other pushes from a
 # bare repository, secret-scans every commit the push publishes (commits made
 # where no hook ran included), and chains a downstream pusher's heavy gate
 # (tests/clippy/typecheck) if one is configured. On success it prints a
@@ -140,6 +141,37 @@ if [ -x "$git_guard_hook_dir/common/preserve.sh" ] && [ ! -t 0 ]; then
       [ "$git_guard_preserve_rc" -ne 0 ] || git_guard_receipt
       exit "$git_guard_preserve_rc"
     fi
+  fi
+fi
+
+# A push whose every ref update is a deletion publishes no commit and no
+# content: there is nothing for the bare-repository rule, the secret scan, the
+# mandate or a repo provider to check. Let it through with the receipt, from a
+# bare repository or a clone without a checkout too; requiring a worktree just
+# to delete a remote ref was a false block (tests/43-prepush-delete-only.t.sh).
+# Any non-zero local sha makes the push ordinary and every check below runs.
+if [ ! -t 0 ]; then
+  if [ -z "$git_guard_stdin" ]; then
+    git_guard_stdin="$(mktemp "${TMPDIR:-/tmp}/git-guard-prepush.XXXXXX" 2>/dev/null)" ||
+      git_guard_stdin="$(mktemp /tmp/git-guard-prepush.XXXXXX 2>/dev/null)" || {
+        printf '%s\n' "git-guard BLOCK: cannot create the pushed-ref buffer." >&2
+        exit 1
+      }
+    trap 'rm -f "$git_guard_stdin"' EXIT
+    git_guard_read_refs
+  fi
+  git_guard_deletes=0
+  git_guard_publishes=0
+  while read -r _gg_dlref _gg_dlsha _gg_drref _gg_drsha _gg_dmore; do
+    [ -n "${_gg_dlsha:-}" ] || continue
+    case "$_gg_dlsha" in
+      *[!0]*) git_guard_publishes=1 ;;
+      *) git_guard_deletes=$((git_guard_deletes + 1)) ;;
+    esac
+  done < "$git_guard_stdin"
+  if [ "$git_guard_deletes" -gt 0 ] && [ "$git_guard_publishes" -eq 0 ]; then
+    git_guard_receipt
+    exit 0
   fi
 fi
 
