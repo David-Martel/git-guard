@@ -15,7 +15,8 @@
 #     unknown value is a TOOL ERROR, not a default.
 #   * the debt register (.git-guard/mandate-baseline.json) blocks MALFORMED,
 #     REGRESSION, UNRATCHETED, UNDECLARED and STALE, passes when it holds, and is
-#     wired into hooks/pre-push only for commits that carry it.
+#     wired into hooks/pre-push only for commits that carry it; --pre-push
+#     also works in a bare repository (t_case_quality_mandate_bare_prepush).
 #   * a scanner that exits 2 or prints unparseable output is a TOOL ERROR that
 #     blocks, and so is an installed `ast-grep` whose version probe fails; a
 #     scanner that is not installed (or a util-linux `sg`) is a WARN naming the
@@ -204,6 +205,80 @@ _QM_SWALLOW='def probe():\n    try:\n        connect()\n    except Exception:\n 
 # _qm_narrow_swallow — narrow except-pass (except_pass only, no BLE001).
 _QM_NARROW='def probe():\n    try:\n        connect()\n    except OSError:\n        pass\n'
 _QM_CLEAN='\n\ndef added(value: int) -> int:\n    return value + 1\n'
+
+t_case_quality_mandate_bare_prepush() {
+  t_begin "32 quality mandate: --pre-push in a bare repository"
+  log="$(gg_tmp_log)"
+
+  # Protects: `mandate_scan.sh --pre-push` run from a bare repository (a bare
+  #   mirror pruning branches; repos whose own hooks call the scanner) reads
+  #   the pushed commits instead of failing closed.
+  # Detects: the scanner locating the repo with `git rev-parse --show-toplevel`,
+  #   which exits 128 in a bare repository, so every push, even one that only
+  #   deletes refs, was a TOOL ERROR (exit 2) and refused.
+  # Positive control: from the same bare repository, a pushed commit that
+  #   carries a malformed debt register is still BLOCKED (exit 1), so the
+  #   register check runs, not just the delete-only short cut.
+  # Needs: Python only (no ruff or ast-grep: a malformed register blocks before
+  #   any scanner runs). Breadcrumb: mandate_scan.py push_root() and main().
+  if ! gg_has_python; then
+    t_skip "mandate bare pre-push: no Python interpreter (the scanner needs python3)"
+    return 0
+  fi
+  _qm_zero=0000000000000000000000000000000000000000
+  r="$(_qm_repo)"
+  _qm_put "$r" README.md 'bare fixture\n'
+  _qm_commit "$r" "base"
+  _qm_base="$(git -C "$r" rev-parse HEAD)"
+  ( cd "$r" && git branch topic )
+  _qm_put "$r" .git-guard/mandate-baseline.json '{not json\n'
+  _qm_commit "$r" "malformed debt register"
+  _qm_tip="$(git -C "$r" rev-parse HEAD)"
+  _qm_bare="$GG_T_TMPROOT/qm-bare.git"
+  rm -rf "$_qm_bare"
+  git clone -q --bare "$r" "$_qm_bare"
+
+  printf '(delete) %s refs/heads/topic %s\n' "$_qm_zero" "$_qm_base" > "$GG_T_TMPROOT/qm-refs"
+  ( cd "$_qm_bare" && sh "$_QM_SCAN" --pre-push ) <"$GG_T_TMPROOT/qm-refs" >/dev/null 2>"$log"; rc=$?
+  t_expect_rc 0 "$rc" "a delete-only pre-push from a bare repository passes"
+  _qm_lacks "$log" "TOOL ERROR" "the bare repository is not a tool failure"
+
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_base" > "$GG_T_TMPROOT/qm-refs"
+  ( cd "$_qm_bare" && sh "$_QM_SCAN" --pre-push ) <"$GG_T_TMPROOT/qm-refs" >/dev/null 2>"$log"; rc=$?
+  t_expect_rc 1 "$rc" "from a bare repository, a pushed malformed debt register still blocks"
+  _qm_has "$log" "BLOCK MALFORMED" "the bare-repository block names the malformed register"
+  _qm_lacks "$log" "TOOL ERROR" "the register check ran rather than failing closed"
+  rm -rf "$_qm_bare"
+  gg_rmrepo "$r"
+
+  # The full ratchet from a bare repository: the census exports the pushed
+  # commit through a scratch index, which needs no work tree. A new swallow on
+  # top of a register that records none is a REGRESSION.
+  if ! gg_has_ruff || ! gg_has_astgrep; then
+    t_skip "mandate bare pre-push ratchet: need ruff and a genuine ast-grep"
+    rm -f "$log"
+    return 0
+  fi
+  r="$(_qm_repo)"
+  _qm_put "$r" src/app.py "$_QM_CLEAN"
+  ( cd "$r" && sh "$_QM_SCAN" --write-baseline ) >"$log" 2>&1; rc=$?
+  t_expect_rc 0 "$rc" "a clean debt register is written for the ratchet fixture"
+  _qm_commit "$r" "clean register"
+  _qm_base="$(git -C "$r" rev-parse HEAD)"
+  _qm_put "$r" src/new.py "$_QM_SWALLOW"
+  _qm_commit "$r" "new swallow on a clean register"
+  _qm_tip="$(git -C "$r" rev-parse HEAD)"
+  git clone -q --bare "$r" "$_qm_bare"
+  printf 'refs/heads/main %s refs/heads/main %s\n' "$_qm_tip" "$_qm_base" > "$GG_T_TMPROOT/qm-refs"
+  ( cd "$_qm_bare" && sh "$_QM_SCAN" --pre-push ) <"$GG_T_TMPROOT/qm-refs" >/dev/null 2>"$log"; rc=$?
+  t_expect_rc 1 "$rc" "from a bare repository, a pushed regression of the register blocks"
+  _qm_has "$log" "BLOCK REGRESSION" "the bare-repository ratchet names the regression"
+
+  rm -rf "$_qm_bare"
+  gg_rmrepo "$r"
+  rm -f "$log"
+  return 0
+}
 
 t_case_quality_mandate() {
   t_begin "32 quality mandate: changed lines, rules, suppressions, debt register"

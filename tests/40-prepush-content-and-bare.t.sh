@@ -1,6 +1,7 @@
 #!/bin/sh
 # Category 40 — pre-push re-scans the content it publishes, refuses bare
-# repositories, and prints a one-line receipt.
+# repositories (except delete-only pushes, which publish no content), and
+# prints a one-line receipt.
 #
 # Why: pre-commit scans added lines, but a commit made on a host without
 # git-guard (vigil-utils #1403 came from a WSL distro with no hooks path), by
@@ -160,6 +161,23 @@ t_case_prepush_content_and_bare() {
   ( cd "$wt" && git push "$r.remote" plain >"$log" 2>&1 ); rc=$?
   t_expect_rc 0 "$rc" "push from a worktree of the bare repository passes"
   grep -Eq "$t_pc_receipt_re" "$log"; t_assert $? "the worktree push prints the receipt"
+
+  # Protects: a bare mirror can prune its remote's branches. A delete publishes
+  #   no content, so there is nothing for a worktree-based check to scan.
+  # Detects: delete-only pushes refused as "bare" (main since #108) or failed
+  #   closed by the mandate's `rev-parse --show-toplevel` (exit 128, v0.2.19).
+  # Positive control: a push that deletes one ref AND updates another is not
+  #   delete-only and is still refused, deleting nothing.
+  # Breadcrumb: hooks/pre-push git_guard_delete_only; mandate_scan.py push_root.
+  git -C "$bare" push "$r.remote" :plain declared >"$log" 2>&1; rc=$?
+  t_pc_check "a bare push that deletes one ref and updates another is refused (rc=$rc)" [ "$rc" -ne 0 ]
+  grep -q "this push comes from a bare repository" "$log"; t_assert $? "the mixed push is refused as bare"
+  git -C "$r.remote" rev-parse -q --verify refs/heads/plain >/dev/null; t_assert $? "the refused mixed push deleted nothing"
+  git -C "$bare" push "$r.remote" :plain >"$log" 2>&1; rc=$?
+  t_expect_rc 0 "$rc" "a delete-only push from a bare repository passes"
+  grep -Eq "$t_pc_receipt_re" "$log"; t_assert $? "the delete-only bare push prints the receipt"
+  t_pc_check "the delete-only push removed the remote branch" \
+    t_pc_not git -C "$r.remote" rev-parse -q --verify refs/heads/plain
 
   # preserve/* custody pushes are exempt before the bare check. The exemption
   # needs every NEW commit to carry the trailer, so the bare repo tracks the
