@@ -882,7 +882,9 @@ remove what drain already proves integrated, but never another lane's work
 without proof of custody. With `hygiene.syncRemove=true` set globally, each
 pass runs `drain --apply --unattended` in place of the dry run (`sync
 --dry-run` runs `drain --dry-run --unattended`, which shows the custody
-verdicts and removes nothing). A repository where any fetch in that pass
+verdicts and removes nothing). With removal on, sync fetches every remote that
+a local branch's upstream lives on, plus the integration remote, not only the
+remotes of checked-out branches. A repository where any of those fetches
 failed or timed out, or where nothing was fetched, keeps the plain dry run,
 and the report says `removal withheld`. Drain judges integration from
 remote-tracking refs, and after a failed fetch those refs are stale: they can

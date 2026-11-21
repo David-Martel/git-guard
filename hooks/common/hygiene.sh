@@ -1153,13 +1153,26 @@ hyg_sync_repo() {
     /^prunable/  { prunable = 1; next }
     /^locked/    { locked = 1; reason = substr($0, 8); next }
     END { flush() }' > "$HYG_TMP/checkouts"
-  # Fetch once per remote that origin or any checked-out branch tracks.
+  # Removal needs the global opt-in; a repository can only opt itself out.
+  _rm_on=0
+  if [ "$HYG_SYNC_DRAIN" = "1" ] && [ "$HYG_SYNC_REMOVE" = "1" ] &&
+     [ "$(git -C "$1" config --bool --get hygiene.syncRemove 2>/dev/null)" = "true" ]; then
+    _rm_on=1
+  fi
+  # Fetch once per remote that origin or any checked-out branch tracks. When
+  # removal is on, also every remote a local branch's upstream lives on and the
+  # integration remote: drain reads each branch's upstream (hyg_remote_moved)
+  # and the base, and an unfetched remote would leave them stale.
   : > "$HYG_TMP/fetched"
   { git -C "$1" config --get remote.origin.url >/dev/null 2>&1 && echo origin
     while IFS='	' read -r _p _x _y; do
       _b="$(git -C "$_p" symbolic-ref -q --short HEAD 2>/dev/null)" || continue
       git -C "$1" config --get "branch.$_b.remote" 2>/dev/null
     done < "$HYG_TMP/checkouts"
+    if [ "$_rm_on" = "1" ]; then
+      git -C "$1" for-each-ref --format='%(upstream:remotename)' refs/heads/ 2>/dev/null
+      (cd "$1" && hyg_remote ""; echo)
+    fi
   } | awk 'NF && !seen[$0]++' > "$HYG_TMP/remotes"
   _to="$(cd "$1" && hyg_int hygiene.syncFetchTimeout "$HYG_SYNC_DEFAULT_FETCH_TIMEOUT")"
   while IFS= read -r _r; do
@@ -1176,9 +1189,8 @@ hyg_sync_repo() {
   done < "$HYG_TMP/checkouts"
   if [ "$HYG_SYNC_DRAIN" = "1" ]; then
     _dto="$(cd "$1" && hyg_int hygiene.syncDrainTimeout "$HYG_SYNC_DEFAULT_DRAIN_TIMEOUT")"
-    # Removal needs the global opt-in; a repository can only opt itself out.
     _dmode="--dry-run"; _dwhy=""
-    if [ "$HYG_SYNC_REMOVE" = "1" ] && [ "$(git -C "$1" config --bool --get hygiene.syncRemove 2>/dev/null)" = "true" ]; then
+    if [ "$_rm_on" = "1" ]; then
       # Drain judges integration from remote-tracking refs. After a failed
       # fetch they are stale and can miss an upstream that resumed after its
       # merge (codex review of #107 at dd0452f, P1), so any fetch in this repo

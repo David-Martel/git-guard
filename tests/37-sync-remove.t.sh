@@ -218,6 +218,29 @@ t_rm_refusals() {
   t_rm_fixture fetchfail || t_fail "fixture fetchfail"
   git -C "$SY_REPO" remote set-url origin "$SY_ROOT/no-such-origin.git"
   t_rm_expect_kept "a fetch failed in this run" "removal withheld: fetch failed (origin)"
+  # The same hole through a remote sync never fetched: stale branch "old"
+  # tracks a second remote, no checkout tracks that remote, and its upstream
+  # resumed after the merge. Removal must fetch every remote an upstream lives
+  # on, or hyg_remote_moved reads a stale ref equal to the local tip.
+  t_rm_fixture remotemoved || t_fail "fixture remotemoved"
+  rm_other="$SY_ROOT/../other.git"; rm -rf "$rm_other" "$rm_other.work"
+  git init -q --bare "$rm_other"
+  git -C "$SY_REPO" remote add other "$rm_other"
+  git -C "$SY_REPO" push -q other old 2>/dev/null
+  git -C "$SY_REPO" branch -q --set-upstream-to=other/old old
+  (
+    git clone -q -b old "$rm_other" "$rm_other.work" 2>/dev/null && cd "$rm_other.work" || exit 1
+    git config user.email tester@git-guard.local; git config user.name git-guard-tester
+    git config commit.gpgsign false; git config core.hooksPath "$GG_T_TMPROOT/no-hooks"
+    printf 'resumed\n' > resumed.txt; git add resumed.txt; git commit -q -m "resumed after merge" || exit 1
+    git push -q origin old 2>/dev/null
+  ) || t_fail "remotemoved: could not resume old on the second remote"
+  touch -t 202001010000 "$SY_REPO/.git/logs/refs/heads/old"
+  t_sync_run "$sylog"
+  git -C "$SY_REPO" rev-parse -q --verify refs/heads/old >/dev/null && t_ok "branch whose unfetched upstream resumed kept" \
+    || { t_fail "branch whose unfetched upstream resumed was removed"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
+  grep -Fq "keep   branch old  (upstream moved after the merge)" "$report" && t_ok "report names the resumed upstream" \
+    || t_fail "report lacks the resumed-upstream reason"
 
   # --- custody refusals ---------------------------------------------------------
   t_rm_fixture nogrants || t_fail "fixture nogrants"
