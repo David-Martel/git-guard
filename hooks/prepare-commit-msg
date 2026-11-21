@@ -44,6 +44,64 @@ fi
 # rather than read as "human": treating it as human used to skip every check
 # below, so any made-up selector, or a typo, passed silently.
 git_guard_known_agents='claude codex gemini copilot jules'
+
+# git_guard_unknown_agent FILE — print the first Agent value in FILE that is not
+# one known id, or nothing. The value is ONE id, compared whole against each
+# known id: `claude codex` names no single agent even though it is a substring
+# of the list. An indented continuation line is part of the value, as Git folds
+# it (`Agent: codex` + `  other` is `codex other`), so it is validated too.
+# Reading stops at a scissors line, so a `commit -v` diff below it is ignored.
+git_guard_unknown_agent() {
+  awk -v known="$git_guard_known_agents" '
+    BEGIN { nk = split(known, k, " "); for (i = 1; i <= nk; i++) ok[k[i]] = 1; pending = 0; bad = "" }
+    function check(v,   id, base) {
+      sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v)
+      id = tolower(v)
+      base = ""
+      # A lane suffix keeps the base id: gemini-dtm-oto-mesh -> gemini.
+      if (id ~ /^[a-z]+(-[a-z0-9][a-z0-9-]*)?$/) { base = id; sub(/-.*/, "", base) }
+      if (base == "" || !(base in ok)) bad = (v == "" ? "<empty>" : v)
+    }
+    bad != "" { next }
+    substr($0, 2) == " ------------------------ >8 ------------------------" { exit }
+    pending && /^[ \t]+[^ \t]/ {
+      cont = $0
+      sub(/^[ \t]+/, "", cont); sub(/[[:space:]]+$/, "", cont)
+      value = value " " cont
+      next
+    }
+    pending { check(value); pending = 0; if (bad != "") next }
+    tolower($0) ~ /^agent[[:space:]]*:/ {
+      value = $0
+      sub(/^[^:]*:[[:space:]]*/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      pending = 1
+    }
+    END { if (bad == "" && pending) check(value); if (bad != "") print bad }
+  ' "$1"
+}
+
+git_guard_refuse_unknown_agent() {
+  _gg_bad="$(git_guard_unknown_agent "$1")"
+  [ -n "$_gg_bad" ] || return 0
+  printf "git-guard %s: unknown Agent trailer '%s' (known: %s)\n" \
+    "$2" "$_gg_bad" "$git_guard_known_agents" >&2
+  printf 'Set GIT_GUARD=0 only for an intentional human emergency commit.\n' >&2
+  return 1
+}
+
+# commit-msg runs `prepare-commit-msg FILE --check-agents` on the FINAL
+# message. The editor opens after this hook, so a value typed there was never
+# checked: an interactive `Agent: gemnii` landed while the same `-m` commit was
+# refused (codex review of #106 at 4e6325ea, P2). This mode runs only the
+# known-agent check, in every shell, and never edits FILE. Git's own second
+# argument is a message source (message, template, merge, squash, commit),
+# never this flag.
+if [ "${2:-}" = "--check-agents" ]; then
+  git_guard_refuse_unknown_agent "$message_file" commit-msg || exit 1
+  exit 0
+fi
+
 case "${GIT_GUARD_AGENT:-}" in
   codex|claude|gemini|copilot) agent="$GIT_GUARD_AGENT" ;;
   "")
@@ -67,42 +125,7 @@ if [ -z "$agent" ]; then
   # Human shell. A commit with no Agent trailer is the owner's own and passes
   # untouched; a trailer that records an agent's work must name a known agent,
   # so a typo cannot create an attribution no tooling recognises.
-  # The value is ONE id, compared whole against each known id: `claude codex`
-  # names no single agent even though it is a substring of the list. An
-  # indented continuation line is part of the value, as Git folds it
-  # (`Agent: codex` + `  other` is `codex other`), so it is validated too.
-  git_guard_unknown_agent="$(awk -v known="$git_guard_known_agents" '
-    BEGIN { nk = split(known, k, " "); for (i = 1; i <= nk; i++) ok[k[i]] = 1; pending = 0; bad = "" }
-    function check(v,   id, base) {
-      sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v)
-      id = tolower(v)
-      base = ""
-      # A lane suffix keeps the base id: gemini-dtm-oto-mesh -> gemini.
-      if (id ~ /^[a-z]+(-[a-z0-9][a-z0-9-]*)?$/) { base = id; sub(/-.*/, "", base) }
-      if (base == "" || !(base in ok)) bad = (v == "" ? "<empty>" : v)
-    }
-    bad != "" { next }
-    pending && /^[ \t]+[^ \t]/ {
-      cont = $0
-      sub(/^[ \t]+/, "", cont); sub(/[[:space:]]+$/, "", cont)
-      value = value " " cont
-      next
-    }
-    pending { check(value); pending = 0; if (bad != "") next }
-    tolower($0) ~ /^agent[[:space:]]*:/ {
-      value = $0
-      sub(/^[^:]*:[[:space:]]*/, "", value)
-      sub(/[[:space:]]+$/, "", value)
-      pending = 1
-    }
-    END { if (bad == "" && pending) check(value); if (bad != "") print bad }
-  ' "$message_file")"
-  if [ -n "$git_guard_unknown_agent" ]; then
-    printf "git-guard prepare-commit-msg: unknown Agent trailer '%s' (known: %s)\n" \
-      "$git_guard_unknown_agent" "$git_guard_known_agents" >&2
-    printf 'Set GIT_GUARD=0 only for an intentional human emergency commit.\n' >&2
-    exit 1
-  fi
+  git_guard_refuse_unknown_agent "$message_file" prepare-commit-msg || exit 1
   exit 0
 fi
 

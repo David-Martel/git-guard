@@ -2,6 +2,9 @@
 #
 # git-guard commit-msg — per-agent authorship cross-check + downstream chaining.
 #
+# 0. Known agents. Every `Agent:` value in the final message must name a known
+#    agent (prepare-commit-msg's rule, run here in its check-only mode). This
+#    catches values typed in the editor, which opens after prepare-commit-msg.
 # 1. Identity (WARN-ONLY by default). Runs BEFORE git signs the commit, so it
 #    checks intent: the principal that `user.signingkey` maps to in
 #    allowed_signers must equal the `Agent:` trailer prepare-commit-msg wrote
@@ -36,6 +39,15 @@ if [ "${GIT_GUARD:-1}" = "0" ]; then
 fi
 
 git_guard_hook_dir="$(cd "$(dirname "$0")" && pwd -P)"
+
+# 0. Agent trailers in the FINAL message must name a known agent. Git opens
+#    the editor after prepare-commit-msg, so that hook never sees a value typed
+#    there (codex review of #106 at 4e6325ea, P2). Its own check runs here
+#    again, in check-only mode, so the rule has one source.
+if [ -f "$git_guard_hook_dir/prepare-commit-msg" ]; then
+  sh "$git_guard_hook_dir/prepare-commit-msg" "$1" --check-agents || exit 1
+fi
+
 git_guard_identity_mode="${GIT_GUARD_IDENTITY:-warn}"
 case "$git_guard_identity_mode" in
   off|warn|enforce) : ;;

@@ -622,5 +622,43 @@ Agent: gemnii-dtm-oto
   (cd "$r" && GIT_GUARD=0 GIT_GUARD_AGENT=gemnii "$hook" "$r/bypass-unknown") >/dev/null 2>&1
   t_expect_rc 0 "$?" "GIT_GUARD=0 bypasses the known-agent checks"
 
+  # The editor runs AFTER prepare-commit-msg, so an Agent value typed there was
+  # never checked: an interactive `Agent: gemnii` landed while the same `-m`
+  # commit was refused (codex review of #106 at 4e6325ea, P2). commit-msg
+  # validates the final message with the same rule. Both hooks are installed,
+  # as `git-guard install` does; the editor is a script so no terminal is needed.
+  full="$r/test-hooks-full"; mkdir -p "$full"
+  cp "$GG_ROOT/hooks/prepare-commit-msg" "$GG_ROOT/hooks/commit-msg" "$full/"
+  cp -R "$GG_ROOT/hooks/common" "$full/common"
+  chmod +x "$full/prepare-commit-msg" "$full/commit-msg"
+  # The editor inserts the trailer right after the subject, as a person would:
+  # appending would land below a `commit.verbose` scissors line, where Git
+  # discards it.
+  for ed in typo:gemnii known:gemini; do
+    # shellcheck disable=SC2016  # "$1" belongs to the generated editor script
+    printf '#!/bin/sh\nawk %s "$1" > "$1.ed" && mv "$1.ed" "$1"\n' \
+      "'NR == 1 { print; print \"\"; print \"Agent: ${ed#*:}\"; next } { print }'" > "$r/${ed%%:*}-editor"
+  done
+  chmod +x "$r/typo-editor" "$r/known-editor"
+  printf 'editor\n' > "$r/editor.txt"
+  git -C "$r" add editor.txt
+  git -C "$r" config core.hooksPath "$full"
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && GIT_EDITOR="$r/typo-editor" LEFTHOOK=0 git commit -q -e -m "editor commit") > "$r/editor.log" 2>&1
+  t_expect_rc 1 "$?" "an unknown Agent value typed in the editor refuses the commit"
+  if [ "$(git -C "$r" rev-parse HEAD)" = "$before" ]; then
+    t_ok "the editor-typed unknown Agent commit does not land"
+  else
+    t_fail "the editor-typed unknown Agent commit does not land"
+  fi
+  grep -q "unknown Agent trailer 'gemnii'" "$r/editor.log"
+  t_assert "$?" "the commit-msg refusal names the editor-typed value"
+  # Control: the same path with a known value lands, carrying it once.
+  (cd "$r" && GIT_EDITOR="$r/known-editor" LEFTHOOK=0 git commit -q -e -m "editor commit") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "a known Agent value typed in the editor lands"
+  n="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse | grep -c '^Agent: gemini$')"
+  t_expect_rc 1 "$n" "the editor-typed known value is recorded once"
+  git -C "$r" config core.hooksPath "$r/test-hooks"
+
   gg_rmrepo "$r"
 }

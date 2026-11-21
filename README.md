@@ -338,7 +338,7 @@ sh bin/git-guard-run gate /path/to/repo  # run the gate against a repo's staged 
 | `GIT_GUARD_BACKEND` | force `docker` \| `wsl` \| `native` (skips auto-detection) |
 | `GIT_GUARD_RULES_DIR` | overlay a private rules dir (mounted `:ro` at `/rules` for Docker) |
 | `GIT_GUARD_IMAGE` | Docker image tag to build/use (default `git-guard:local`) |
-| `GIT_GUARD_AGENT` | explicit commit agent (`codex` or `claude`; any other value disables attribution) |
+| `GIT_GUARD_AGENT` | explicit commit agent (`claude`, `codex`, `gemini` or `copilot`); any other non-empty value refuses the commit, and an `Agent:` trailer, from `-m` or typed in the editor, must name a known agent (`commit-msg` re-checks the final message) |
 
 The `prepare-commit-msg` hook also detects Codex through `CODEX_THREAD_ID` and
 adds `Agent: codex` plus `Co-authored-by: Codex <noreply@openai.com>` (the address
