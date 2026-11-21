@@ -2048,7 +2048,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def utf8_output() -> None:
+    """Write stdout and stderr as UTF-8 whatever the console or pipe encoding.
+
+    Python encodes a piped stream in the locale code page unless UTF-8 mode is
+    on; on Windows that is cp1252, so the em dash in every summary line went out
+    as the raw byte 0x97 and broke callers that decode hook output as UTF-8
+    (pyclarius-vigil#399). mandate_scan.sh runs us with -I, which ignores
+    PYTHONIOENCODING and PYTHONUTF8, so the scanner has to set this itself.
+    Each stream keeps its errors handler (reconfigure would otherwise reset it to
+    strict): stderr's backslashreplace still prints a surrogate-escaped path.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors=stream.errors)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    utf8_output()
     args = build_parser().parse_args(argv)
     if args.list_rules:
         list_rules()

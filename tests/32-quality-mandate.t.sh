@@ -24,6 +24,9 @@
 #     the index at pre-commit, each pushed commit at pre-push.
 #   * qa_gate.sh calls the scanner at pre-commit; QA_KNOWN_KEYS, the
 #     qa-gate.conf defaults and the scanner's RULES table name the same keys.
+#   * the scanner's output is UTF-8 whatever the console or pipe encoding is
+#     (t_case_quality_mandate_utf8): the PASSED and BLOCKED summary lines carry
+#     the em dash as the UTF-8 bytes E2 80 94, not a code-page byte.
 #
 # What a failure means: a mandate rule that cannot fail (a gate that reports
 # clean on the code it exists to refuse), a rule that blocks old debt and so
@@ -1054,6 +1057,82 @@ t_case_quality_mandate() {
   ( cd "$r" && git add .qa-gate.conf )
   gg_run_gate_log "$r" "$log"; rc=$?
   t_expect_rc 0 "$rc" "qa_gate.sh with mandate.enabled=off passes"
+  gg_rmrepo "$r"
+
+  rm -f "$log"
+  return 0
+}
+
+# _qm_utf8_line LOG VERDICT — succeed iff LOG decodes as strict UTF-8 AND its
+# "git-guard mandate: VERDICT" line carries the em dash as the UTF-8 bytes
+# E2 80 94. Decoding alone is not enough: a Latin-1 locale writes the dash as
+# the ASCII escape "—", which decodes cleanly and would pass vacuously.
+# The check runs in Python because iconv and `grep -P` are not in every CI image.
+_qm_utf8_line() {
+  "$(gg_python)" -I -c '
+import sys
+raw = open(sys.argv[1], "rb").read()
+raw.decode("utf-8")
+want = ("git-guard mandate: " + sys.argv[2] + " ").encode("ascii") + b"\xe2\x80\x94 "
+sys.exit(0 if want in raw else 3)
+' "$1" "$2" 2>/dev/null
+}
+
+t_case_quality_mandate_utf8() {
+  t_begin "32 quality mandate: summary lines are UTF-8 under a cp1252 console"
+  log="$(gg_tmp_log)"
+
+  # Protects: callers that decode hook output as UTF-8 (pytest fixtures, CI log
+  #   parsers, agent tooling) can read the mandate's PASSED/BLOCKED lines.
+  # Detects: the scanner writing its stderr in the console or locale code page.
+  #   On Windows a piped stderr defaulted to cp1252 and the em dash went out as
+  #   the raw byte 0x97 ("'utf-8' codec can't decode byte 0x97 in position 26",
+  #   pyclarius-vigil#399). The wrapper runs Python with -I, which ignores
+  #   PYTHONIOENCODING and PYTHONUTF8, so only the scanner itself can fix it.
+  # Needs: Python, ruff and a genuine ast-grep (a real BLOCKED and PASSED run).
+  #   Part 1 forces cp1252 on every host: it runs mandate_scan.py directly
+  #   (no -I) with PYTHONIOENCODING=cp1252, so it fails without the fix on
+  #   Linux, Docker and Windows alike. Part 2 runs the real wrapper; it can only
+  #   fail on native Windows, where the pipe encoding is the ANSI code page.
+  # Breadcrumb: hooks/common/mandate_scan.py utf8_output() and main().
+  if ! gg_has_python; then
+    t_skip "mandate UTF-8 output: no Python interpreter (the scanner needs python3)"
+    return 0
+  fi
+  if ! gg_has_ruff || ! gg_has_astgrep; then
+    t_skip "mandate UTF-8 output: need ruff and a genuine ast-grep (ruff=$(gg_has_ruff && echo y || echo n))"
+    return 0
+  fi
+
+  _qm_py="$(gg_python)"
+  _qm_script="$GG_ROOT/hooks/common/mandate_scan.py"
+  r="$(_qm_repo)"
+  _qm_put "$r" src/app.py "$_QM_SWALLOW"
+  for _qm_how in cp1252 wrapper; do
+    if [ "$_qm_how" = cp1252 ]; then
+      ( cd "$r" && PYTHONIOENCODING=cp1252 PYTHONUTF8=0 "$_qm_py" "$_qm_script" --staged ) \
+        >/dev/null 2>"$log"; rc=$?
+    else
+      _qm_scan "$r" "$log" --staged; rc=$?
+    fi
+    t_expect_rc 1 "$rc" "$_qm_how: the staged swallow blocks (the line under test is real)"
+    _qm_utf8_line "$log" BLOCKED; rc=$?
+    t_expect_rc 0 "$rc" "$_qm_how: the BLOCKED summary is valid UTF-8 with the em dash intact"
+  done
+  _qm_commit "$r" "debt"
+  printf '%b' "$_QM_CLEAN" >> "$r/src/app.py"
+  ( cd "$r" && git add src/app.py )
+  for _qm_how in cp1252 wrapper; do
+    if [ "$_qm_how" = cp1252 ]; then
+      ( cd "$r" && PYTHONIOENCODING=cp1252 PYTHONUTF8=0 "$_qm_py" "$_qm_script" --staged ) \
+        >/dev/null 2>"$log"; rc=$?
+    else
+      _qm_scan "$r" "$log" --staged; rc=$?
+    fi
+    t_expect_rc 0 "$rc" "$_qm_how: pre-existing debt plus a clean added line passes"
+    _qm_utf8_line "$log" PASSED; rc=$?
+    t_expect_rc 0 "$rc" "$_qm_how: the PASSED summary is valid UTF-8 with the em dash intact"
+  done
   gg_rmrepo "$r"
 
   rm -f "$log"

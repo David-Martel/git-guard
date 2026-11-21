@@ -104,6 +104,9 @@ Delete the scratch repo afterwards. Never use a real credential for this.
   override: there is no worktree to run the repo's declared checks in. From a
   bare repo, `git worktree add <dir> <branch>` gives a worktree that shares its
   objects; push from there.
+- **Deleting remote refs** needs no worktree. A push whose every ref update is
+  a deletion publishes nothing, so it passes from a bare repository or a clone
+  without a checkout; the repo's own pre-push gate does not run for it.
 - **Custody of unreviewed work** goes to `preserve/<name>` or
   `refs/preserve/<name>` with a `Preserve-Of: <ref-or-sha>` trailer on every new
   commit. That route is secret-scanned and allowed from bare repositories too.
