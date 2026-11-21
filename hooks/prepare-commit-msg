@@ -45,13 +45,13 @@ fi
 # below, so any made-up selector, or a typo, passed silently.
 git_guard_known_agents='claude codex gemini copilot jules'
 
-# git_guard_unknown_agent FILE — print the first Agent value in FILE that is not
-# one known id, or nothing. The value is ONE id, compared whole against each
-# known id: `claude codex` names no single agent even though it is a substring
-# of the list. An indented continuation line is part of the value, as Git folds
-# it (`Agent: codex` + `  other` is `codex other`), so it is validated too.
-# Reading stops at a scissors line, so a `commit -v` diff below it is ignored.
-git_guard_unknown_agent() {
+# git_guard_scan_agents — print the first Agent value on stdin that is not one
+# known id, or nothing. The value is ONE id, compared whole against each known
+# id: `claude codex` names no single agent even though it is a substring of the
+# list. An indented continuation line is part of the value, as Git folds it
+# (`Agent: codex` + `  other` is `codex other`), so it is validated too. Every
+# line is read: there is no scissors boundary (see git_guard_unknown_agent).
+git_guard_scan_agents() {
   awk -v known="$git_guard_known_agents" '
     BEGIN { nk = split(known, k, " "); for (i = 1; i <= nk; i++) ok[k[i]] = 1; pending = 0; bad = "" }
     function check(v,   id, base) {
@@ -63,7 +63,6 @@ git_guard_unknown_agent() {
       if (base == "" || !(base in ok)) bad = (v == "" ? "<empty>" : v)
     }
     bad != "" { next }
-    substr($0, 2) == " ------------------------ >8 ------------------------" { exit }
     pending && /^[ \t]+[^ \t]/ {
       cont = $0
       sub(/^[ \t]+/, "", cont); sub(/[[:space:]]+$/, "", cont)
@@ -78,11 +77,62 @@ git_guard_unknown_agent() {
       pending = 1
     }
     END { if (bad == "" && pending) check(value); if (bad != "") print bad }
-  ' "$1"
+  '
+}
+
+# git_guard_unknown_agent FILE — print the first unknown Agent value in FILE as
+# Git may record it, or nothing. Returns 2 when the message cannot be read.
+#
+# The hook cannot see `-v`, `--no-verbose` or `--cleanup`, so it cannot know
+# what Git will keep (codex review of #106 at fe8e5f9f, two P2s). It therefore
+# checks every reading Git might make, and refuses if any of them is unknown:
+#   * The raw message, for whitespace and verbatim cleanup, where comment
+#     lines stay in the message as ordinary text and end a folded value.
+#   * The message with comment lines stripped by `git stripspace`, for strip
+#     cleanup. Git strips before it folds, so `Agent: codex` + `# note` +
+#     `  unknown` is recorded as `codex unknown`. stripspace applies the
+#     effective core.commentChar / core.commentString. For `auto` it falls back
+#     to `#`, while Git may pick any of `#;@!$%^&|:`, so each is tried.
+# There is no scissors boundary. Git cuts at its scissors line only in verbose
+# or scissors cleanup, and only when the marker uses its comment character. A
+# `#` marker under core.commentChar=';', or under strip cleanup without `-v`, is
+# not a cut, and an `Agent:` line below it was recorded. Everything Git itself
+# writes below the marker is a comment or a prefixed diff line, so none of it
+# can match. The one cost: an unknown `Agent:` line typed below a real `-v`
+# scissors line, which Git would discard, is still refused.
+git_guard_unknown_agent() {
+  _gg_bad="$(git_guard_scan_agents < "$1")" || return 2
+  if [ -n "$_gg_bad" ]; then
+    printf '%s\n' "$_gg_bad"
+    return 0
+  fi
+  _gg_file="$1"
+  _gg_cc="$(git config --get-regexp '^core\.comment(char|string)$' 2>/dev/null | tail -n 1)"
+  case "$_gg_cc" in
+    *' auto') set -- '#' ';' '@' '!' '$' '%' '^' '&' '|' ':' ;;
+    *) set -- '' ;;
+  esac
+  for _gg_c in "$@"; do
+    if [ -n "$_gg_c" ]; then
+      _gg_stripped="$(git -c core.commentChar="$_gg_c" stripspace --strip-comments < "$_gg_file")" || return 2
+    else
+      _gg_stripped="$(git stripspace --strip-comments < "$_gg_file")" || return 2
+    fi
+    _gg_bad="$(printf '%s\n' "$_gg_stripped" | git_guard_scan_agents)" || return 2
+    if [ -n "$_gg_bad" ]; then
+      printf '%s\n' "$_gg_bad"
+      return 0
+    fi
+  done
 }
 
 git_guard_refuse_unknown_agent() {
   _gg_bad="$(git_guard_unknown_agent "$1")"
+  _gg_rc=$?
+  if [ "$_gg_rc" -ne 0 ]; then
+    printf 'git-guard %s: cannot read the commit message to check its Agent trailers\n' "$2" >&2
+    return 1
+  fi
   [ -n "$_gg_bad" ] || return 0
   printf "git-guard %s: unknown Agent trailer '%s' (known: %s)\n" \
     "$2" "$_gg_bad" "$git_guard_known_agents" >&2

@@ -658,6 +658,83 @@ Agent: gemnii-dtm-oto
   t_expect_rc 0 "$?" "a known Agent value typed in the editor lands"
   n="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse | grep -c '^Agent: gemini$')"
   t_expect_rc 1 "$n" "the editor-typed known value is recorded once"
+
+  # The hooks cannot see `-v`, `--no-verbose` or `--cleanup`, so they cannot
+  # know where Git will cut or which lines it will strip (codex review of #106
+  # at fe8e5f9f, two P2s). Each commit below pins verbose explicitly: a global
+  # `commit.verbose=true` makes Git cut at the scissors line even for `-F`.
+  # gg_kc_refused LABEL LOG — the commit must fail, leave HEAD, and name a value.
+  gg_kc_refused() {
+    t_expect_rc 1 "$_gg_kc_rc" "$1 refuses the commit"
+    if [ "$(git -C "$r" rev-parse HEAD)" = "$before" ]; then
+      t_ok "$1 does not land"
+    else
+      t_fail "$1 does not land"
+      git -C "$r" reset -q --soft "$before"
+    fi
+    grep -q "unknown Agent trailer '$2'" "$r/kc.log"
+    t_assert "$?" "$1 names '$2'"
+  }
+  printf 'cleanup\n' > "$r/cleanup.txt"
+  git -C "$r" add cleanup.txt
+
+  # (a) A scissors-shaped line is a boundary only with the comment character Git
+  # uses, and only in verbose or scissors cleanup. With core.commentChar=';' a
+  # `#` marker is ordinary text, and `Agent: gemnii` under it is a trailer Git
+  # records. The old check stopped at any `X -------- >8 --------` line.
+  git -C "$r" config core.commentChar ';'
+  printf 'scissors\n\n# ------------------------ >8 ------------------------\n\nAgent: gemnii\n' > "$r/fake-scissors"
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose -F "$r/fake-scissors") > "$r/kc.log" 2>&1
+  _gg_kc_rc=$?; gg_kc_refused "a #-scissors line under core.commentChar=';'" gemnii
+  git -C "$r" config --unset core.commentChar
+  # Even with the matching `#`, Git does not cut without verbose: strip cleanup
+  # removes the marker as a comment and keeps the trailer below it.
+  printf 'scissors\n\n# ------------------------ >8 ------------------------\nAgent: gemnii\n' > "$r/strip-scissors"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose --cleanup=strip -F "$r/strip-scissors") > "$r/kc.log" 2>&1
+  _gg_kc_rc=$?; gg_kc_refused "a #-scissors line without verbose" gemnii
+
+  # (b) Strip cleanup removes comment lines BEFORE Git folds continuations, so
+  # `Agent: codex` + `# note` + `  unknown` is recorded as `codex unknown`.
+  printf 'comment fold\n\nAgent: codex\n# note\n  unknown\n' > "$r/comment-fold"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose --cleanup=strip -F "$r/comment-fold") > "$r/kc.log" 2>&1
+  _gg_kc_rc=$?; gg_kc_refused "a value folded across a stripped comment" 'codex unknown'
+  # The comment is whatever core.commentChar names, not always `#`.
+  git -C "$r" config core.commentChar ';'
+  printf 'comment fold\n\nAgent: codex\n; note\n  unknown\n' > "$r/semi-fold"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose --cleanup=strip -F "$r/semi-fold") > "$r/kc.log" 2>&1
+  _gg_kc_rc=$?; gg_kc_refused "a value folded across a ';' comment" 'codex unknown'
+  # core.commentChar=auto lets Git pick any of `#;@!$%^&|:`, so each is checked.
+  git -C "$r" config core.commentChar auto
+  printf 'auto fold\n\nAgent: codex\n%% note\n  unknown\n' > "$r/auto-fold"
+  (cd "$r" && "$full/prepare-commit-msg" "$r/auto-fold" --check-agents) > "$r/kc.log" 2>&1
+  t_expect_rc 1 "$?" "core.commentChar=auto checks a fold across a '%' comment"
+  git -C "$r" config --unset core.commentChar
+
+  # Controls: these must still land.
+  # A real `-v` commit whose staged diff carries Agent-shaped text: every diff
+  # line is prefixed, so nothing below the scissors line can match.
+  printf 'Agent: gemnii\n  unknown\n' > "$r/agent-shaped.txt"
+  git -C "$r" add agent-shaped.txt
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && GIT_EDITOR=true LEFTHOOK=0 git commit -q -v -e -m "verbose control" -m "Agent: codex") > "$r/kc.log" 2>&1
+  t_expect_rc 0 "$?" "a -v commit with Agent-shaped diff text lands"
+  n="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse | grep -c '^Agent: codex$')"
+  t_expect_rc 1 "$n" "the -v commit records only its own Agent: codex"
+  # A known value folded onto an empty first line lands.
+  printf 'fold control\n' > "$r/fold-control.txt"
+  git -C "$r" add fold-control.txt
+  printf 'fold control\n\nAgent:\n  codex\n' > "$r/fold-ok"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose -F "$r/fold-ok") > "$r/kc.log" 2>&1
+  t_expect_rc 0 "$?" "a known value folded onto an empty Agent line lands"
+  # A comment between a known value and the next trailer changes nothing.
+  printf 'comment control\n' > "$r/comment-control.txt"
+  git -C "$r" add comment-control.txt
+  printf 'comment control\n\nAgent: codex\n# note\nSigned-off-by: A <a@example.invalid>\n' > "$r/comment-ok"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose --cleanup=strip -F "$r/comment-ok") > "$r/kc.log" 2>&1
+  t_expect_rc 0 "$?" "a comment between a known value and the next trailer lands"
+  n="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse | grep -c '^Agent: codex$')"
+  t_expect_rc 1 "$n" "the comment control records Agent: codex once"
   git -C "$r" config core.hooksPath "$r/test-hooks"
 
   gg_rmrepo "$r"

@@ -19,14 +19,28 @@ t_case_downstream_chaining() {
 
   # Allowlist only the commands needed by Git and our hooks. Keeping /usr/bin
   # or /usr/local/bin on PATH would expose a system-installed lefthook too.
-  GG_T_PATH_NO_LEFTHOOK="$GG_T_TMPROOT/no-lefthook-bin"
-  mkdir -p "$GG_T_PATH_NO_LEFTHOOK"
+  #
+  # On Git Bash the directory also holds a copied sh.exe and its MSYS DLLs, and
+  # MSYS takes its root from the DLL's directory, two levels up. `/bin/sh`
+  # (mounted on `/usr/bin`) and `/usr/bin/<tool>` then name files under that
+  # root. The directory is therefore `<root>/usr/bin`, so `/bin/sh` is the
+  # copied sh.exe rather than a wrapper script; the wrappers exec Windows
+  # paths; and the root gets a `tmp`. Before this, every wrapper failed with
+  # `bad interpreter`, so the hooks ran with no working awk or dirname, and the
+  # known-agent check, which now fails closed, refused every commit.
+  GG_T_PATH_NO_LEFTHOOK="$GG_T_TMPROOT/no-lefthook/usr/bin"
+  mkdir -p "$GG_T_PATH_NO_LEFTHOOK" "$GG_T_TMPROOT/no-lefthook/tmp"
   for tool in git sh dirname basename cat sed grep awk sort uniq tr cut head tail \
       wc find xargs mkdir rm mv cp chmod mktemp date uname sleep touch stat id timeout; do
     tool_path="$(command -v "$tool")" || {
       t_fail "required fixture command missing: $tool"
       return 1
     }
+    if gg_is_windows; then
+      # sh.exe is copied below; a `sh` script here would become `/bin/sh`.
+      [ "$tool" != sh ] || continue
+      tool_path="$(cygpath -m "$tool_path")"
+    fi
     # Wrappers preserve DLL lookup beside the real executable on Git Bash.
     tool_path="$(printf '%s' "$tool_path" | sed "s/'/'\\\\''/g")"
     {
