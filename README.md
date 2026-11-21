@@ -15,8 +15,10 @@ It works on Git-Bash (Windows), WSL, Linux, and macOS, and is **severable**: it
 ships standalone with a bundled example rule set, and optionally overlays a
 larger private rule corpus on machines that have one.
 
-Signature attestation on Linux and other POSIX hosts needs only `timeout(1)` with `-k`
-(GNU or uutils coreutils), and runs no interpreter. Windows additionally needs uv and an
+Signature attestation and the quality mandate on Linux and other POSIX hosts need only
+`timeout(1)` with `-k` (GNU or uutils coreutils), and run no interpreter. A host
+without it, such as stock macOS, gets a documented TOOL ERROR rather than an unbounded
+run ([prerequisite](docs/QA_TOOLING.md)). Windows additionally needs uv and an
 existing Python 3.10+ for its contained worker. Its
 [finite verifier and platform containment contract](docs/IDENTITY.md#verify-ci-and-manual)
 fails closed without downloading software. Test it with
