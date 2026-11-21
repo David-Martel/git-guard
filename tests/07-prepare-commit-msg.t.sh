@@ -791,6 +791,51 @@ Agent: gemnii-dtm-oto
   t_expect_rc 1 "$?" "an unreadable Git configuration refuses the commit"
   grep -q "cannot check the Agent trailers" "$r/kc.log"
   t_assert "$?" "the configuration refusal says why"
+
+  # A trailer alias (`trailer.ai.key=Agent`) makes Git record `ai: gemnii` as
+  # the Agent trailer `gemnii`; the line scan knew only the `Agent` token
+  # (codex review of #106 at 94560a8f, P2). The check now also validates Git's
+  # own parse, so aliases, separators and folding are covered by construction.
+  git -C "$r" config trailer.ai.key Agent
+  printf 'alias\n\nai: gemnii\n' > "$r/alias-typo"
+  n="$(git -C "$r" interpret-trailers --parse --no-divider < "$r/alias-typo" | grep -c '^Agent: gemnii$')"
+  t_expect_rc 1 "$n" "Git reads ai: gemnii as Agent: gemnii under trailer.ai.key=Agent"
+  gg_kc_commit alias-typo
+  gg_kc_refused "ai: gemnii under trailer.ai.key=Agent" gemnii
+  git -C "$r" reset -q
+  # Alias plus a custom separator, and a folded alias value.
+  git -C "$r" config trailer.separators ':='
+  printf 'alias\n\nai=gemnii\n' > "$r/alias-eq-typo"
+  gg_kc_commit alias-eq-typo
+  gg_kc_refused "ai=gemnii under trailer.ai.key=Agent and separators :=" gemnii
+  git -C "$r" reset -q
+  git -C "$r" config --unset trailer.separators
+  printf 'alias\n\nai: codex\n  unknown\n' > "$r/alias-fold"
+  gg_kc_commit alias-fold
+  gg_kc_refused "a folded alias value" 'codex unknown'
+  git -C "$r" reset -q
+  # The agent-shell conflict check reads Git's parse too.
+  printf 'alias\n\nai: codex\n' > "$r/alias-conflict"
+  (cd "$r" && CLAUDECODE=1 "$full/prepare-commit-msg" "$r/alias-conflict") > "$r/kc.log" 2>&1
+  t_expect_rc 1 "$?" "a Claude shell refuses ai: codex under trailer.ai.key=Agent"
+  grep -q "conflicting Agent trailer: codex" "$r/kc.log"
+  t_assert "$?" "the alias conflict refusal names codex"
+  # Control: a known value through the alias lands, and Git's record of the
+  # landed commit agrees with its parse.
+  printf 'alias\n\nai: gemini\n' > "$r/alias-known"
+  gg_kc_commit alias-known
+  t_expect_rc 0 "$_gg_kc_rc" "ai: gemini under trailer.ai.key=Agent lands"
+  v="$(git -C "$r" log -1 --format='%(trailers:key=Agent,valueonly)' | sed '/^$/d')"
+  if [ "$v" = gemini ]; then t_ok "Git records the landed alias as the Agent trailer gemini"
+  else t_fail "Git records the landed alias as the Agent trailer gemini (got '$v')"; fi
+  git -C "$r" config --unset trailer.ai.key
+  # Control: without the alias, `ai:` is not an Agent trailer and lands.
+  printf 'alias\n\nai: gemnii\n' > "$r/alias-default"
+  gg_kc_commit alias-default
+  t_expect_rc 0 "$_gg_kc_rc" "ai: gemnii without an alias lands"
+  v="$(git -C "$r" log -1 --format='%(trailers:key=Agent,valueonly)' | sed '/^$/d')"
+  if [ -z "$v" ]; then t_ok "Git records no Agent trailer for ai: without an alias"
+  else t_fail "Git records no Agent trailer for ai: without an alias (got '$v')"; fi
   git -C "$r" config core.hooksPath "$r/test-hooks"
 
   gg_rmrepo "$r"

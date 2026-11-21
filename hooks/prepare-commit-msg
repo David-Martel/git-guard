@@ -136,14 +136,36 @@ git_guard_scan_agents() {
 # writes below the marker is a comment or a prefixed diff line, so none of it
 # can match. The one cost: an unknown `Agent:` line typed below a real `-v`
 # scissors line, which Git would discard, is still refused.
+# git_guard_check_text TEXT — print the first unknown Agent value in TEXT, one
+# version of the message, or nothing. Returns 2 when Git cannot parse it.
+#   1. The line scan above: every `Agent` line anywhere in TEXT, defence in
+#      depth for body lines Git does not record as trailers.
+#   2. Git's own parse, `git interpret-trailers --parse --no-divider`, which is
+#      what `%(trailers:key=Agent)` reports for the commit. It applies trailer
+#      aliases (`trailer.ai.key=Agent` makes `ai: gemnii` the Agent trailer),
+#      trailer.separators, folding and comment lines, and prints each trailer
+#      unfolded under its configured key, so validating its Agent lines covers
+#      every key, separator and alias form by construction (codex review of #106
+#      at 94560a8f, P2). `--no-divider` matches how Git reads a commit message:
+#      a `---` line does not end it.
+git_guard_check_text() {
+  _gg_bad="$(printf '%s\n' "$1" | git_guard_scan_agents)" || return 2
+  if [ -z "$_gg_bad" ]; then
+    _gg_parsed="$(printf '%s\n' "$1" | git interpret-trailers --parse --no-divider)" || return 2
+    _gg_bad="$(printf '%s\n' "$_gg_parsed" | git_guard_scan_agents)" || return 2
+  fi
+  [ -z "$_gg_bad" ] || printf '%s\n' "$_gg_bad"
+}
+
 git_guard_unknown_agent() {
   _gg_seps="$(git_guard_trailer_seps)" || return 2
-  _gg_bad="$(git_guard_scan_agents < "$1")" || return 2
+  _gg_file="$1"
+  _gg_text="$(cat "$_gg_file")" || return 2
+  _gg_bad="$(git_guard_check_text "$_gg_text")" || return 2
   if [ -n "$_gg_bad" ]; then
     printf '%s\n' "$_gg_bad"
     return 0
   fi
-  _gg_file="$1"
   _gg_cc="$(git config --get-regexp '^core\.comment(char|string)$')"
   case $? in
     0) _gg_cc="$(printf '%s\n' "$_gg_cc" | tail -n 1)" ;;
@@ -160,7 +182,7 @@ git_guard_unknown_agent() {
     else
       _gg_stripped="$(git stripspace --strip-comments < "$_gg_file")" || return 2
     fi
-    _gg_bad="$(printf '%s\n' "$_gg_stripped" | git_guard_scan_agents)" || return 2
+    _gg_bad="$(git_guard_check_text "$_gg_stripped")" || return 2
     if [ -n "$_gg_bad" ]; then
       printf '%s\n' "$_gg_bad"
       return 0
@@ -225,11 +247,15 @@ fi
 # trailer.separators forms Git accepts. Multiple `git commit -m` paragraphs can
 # put blank lines between trailers, so checking only `interpret-trailers
 # --parse` is insufficient.
-if ! _gg_seps="$(git_guard_trailer_seps)"; then
-  printf 'git-guard prepare-commit-msg: cannot check the Agent trailers: Git could not read its configuration\n' >&2
+# Git's own parse is read too, so an alias (`trailer.ai.key=Agent` with
+# `ai: codex`) is seen as the Agent trailer it records.
+if ! _gg_seps="$(git_guard_trailer_seps)" ||
+  ! _gg_parsed="$(git interpret-trailers --parse --no-divider < "$message_file")"; then
+  printf 'git-guard prepare-commit-msg: cannot check the Agent trailers: Git could not read its configuration or the message\n' >&2
   exit 1
 fi
-conflicting_agent="$(GG_TRAILER_SEPS="$_gg_seps" awk -v agent="$agent" "$git_guard_awk_agent_trailer"'
+conflicting_agent="$({ cat "$message_file"; printf '%s\n' "$_gg_parsed"; } |
+  GG_TRAILER_SEPS="$_gg_seps" awk -v agent="$agent" "$git_guard_awk_agent_trailer"'
   BEGIN { conflict = "" }
   agent_trailer($0) {
     if (tolower(AV) != agent && conflict == "") {
@@ -237,7 +263,7 @@ conflicting_agent="$(GG_TRAILER_SEPS="$_gg_seps" awk -v agent="$agent" "$git_gua
     }
   }
   END { printf "%s\n", conflict }
-' "$message_file")"
+')"
 
 if [ -n "$conflicting_agent" ]; then
   printf 'git-guard prepare-commit-msg: conflicting Agent trailer: %s (detected agent: %s)\n' \
