@@ -735,6 +735,62 @@ Agent: gemnii-dtm-oto
   t_expect_rc 0 "$?" "a comment between a known value and the next trailer lands"
   n="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse | grep -c '^Agent: codex$')"
   t_expect_rc 1 "$n" "the comment control records Agent: codex once"
+
+  # trailer.separators adds separator characters, and Git then reads
+  # `Agent=gemnii` as the Agent trailer `gemnii`. The check matched only `:`
+  # (codex review of #106 at cbd9dc60, P2). Each case also asks Git's own
+  # parser what it records, so the hook and Git agree on which lines count.
+  # gg_kc_commit FILE — stage a fresh file and commit with message FILE.
+  gg_kc_commit() {
+    printf '%s\n' "$1" > "$r/sep-$1.txt"
+    git -C "$r" add "sep-$1.txt"
+    before="$(git -C "$r" rev-parse HEAD)"
+    (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose -F "$r/$1") > "$r/kc.log" 2>&1
+    _gg_kc_rc=$?
+  }
+  git -C "$r" config trailer.separators ':='
+  printf 'separator\n\nAgent=gemnii\n' > "$r/eq-typo"
+  n="$(git -C "$r" interpret-trailers --parse < "$r/eq-typo" | grep -c '^Agent: gemnii$')"
+  t_expect_rc 1 "$n" "Git reads Agent=gemnii as an Agent trailer under trailer.separators=:="
+  gg_kc_commit eq-typo
+  gg_kc_refused "Agent=gemnii under trailer.separators=:=" gemnii
+  git -C "$r" reset -q
+  printf 'separator\n\nAgent=gemini\n' > "$r/eq-known"
+  gg_kc_commit eq-known
+  t_expect_rc 0 "$_gg_kc_rc" "Agent=gemini under trailer.separators=:= lands"
+  n="$(git -C "$r" log -1 --format=%B | git -C "$r" interpret-trailers --parse | grep -c '^Agent: gemini$')"
+  t_expect_rc 1 "$n" "Git records the landed Agent=gemini as Agent: gemini"
+  # The agent-shell conflict check reads the same separators: `Agent=codex`
+  # in a Claude shell is a second agent, not body text.
+  printf 'separator\n\nAgent=codex\n' > "$r/eq-conflict"
+  (cd "$r" && CLAUDECODE=1 "$full/prepare-commit-msg" "$r/eq-conflict") > "$r/kc.log" 2>&1
+  t_expect_rc 1 "$?" "a Claude shell refuses Agent=codex under trailer.separators=:="
+  grep -q "conflicting Agent trailer: codex" "$r/kc.log"
+  t_assert "$?" "the conflict refusal names the = trailer"
+  git -C "$r" config trailer.separators '#'
+  printf 'separator\n\nAgent #gemnii\n' > "$r/hash-typo"
+  n="$(git -C "$r" interpret-trailers --parse < "$r/hash-typo" | grep -c '^Agent# gemnii$')"
+  t_expect_rc 1 "$n" "Git reads Agent #gemnii as an Agent trailer under trailer.separators=#"
+  gg_kc_commit hash-typo
+  gg_kc_refused "Agent #gemnii under trailer.separators=#" gemnii
+  git -C "$r" reset -q
+  printf 'separator\n\nAgent #codex\n' > "$r/hash-known"
+  gg_kc_commit hash-known
+  t_expect_rc 0 "$_gg_kc_rc" "Agent #codex under trailer.separators=# lands"
+  git -C "$r" config --unset trailer.separators
+  # Control: by default `=` is no separator, so Git records no Agent trailer
+  # and the commit lands untouched.
+  printf 'separator\n\nAgent=gemnii\n' > "$r/eq-default"
+  n="$(git -C "$r" interpret-trailers --parse < "$r/eq-default" | grep -c '^Agent')"
+  t_expect_rc 0 "$n" "by default Git reads no Agent trailer in Agent=gemnii"
+  gg_kc_commit eq-default
+  t_expect_rc 0 "$_gg_kc_rc" "Agent=gemnii under the default separators lands"
+  # A configuration Git cannot read refuses rather than checking nothing.
+  printf 'unreadable\n\nAgent: codex\n' > "$r/bad-config"
+  (cd "$r" && GIT_CONFIG_PARAMETERS="'bogus" "$full/prepare-commit-msg" "$r/bad-config" --check-agents) > "$r/kc.log" 2>&1
+  t_expect_rc 1 "$?" "an unreadable Git configuration refuses the commit"
+  grep -q "cannot check the Agent trailers" "$r/kc.log"
+  t_assert "$?" "the configuration refusal says why"
   git -C "$r" config core.hooksPath "$r/test-hooks"
 
   gg_rmrepo "$r"

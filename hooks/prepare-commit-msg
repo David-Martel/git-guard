@@ -45,14 +45,55 @@ fi
 # below, so any made-up selector, or a typo, passed silently.
 git_guard_known_agents='claude codex gemini copilot jules'
 
+# git_guard_trailer_seps — print every character Git may read as a trailer
+# separator: `:` plus trailer.separators. Git then reads `Agent=gemnii` as the
+# Agent trailer `gemnii` under `trailer.separators=:=` (codex review of #106 at
+# cbd9dc60, P2). `:` is always kept, although a setting without it stops Git
+# reading `Agent: x`, so the check never loosens. Fails when Git cannot read
+# its configuration, so the callers refuse instead of checking nothing.
+git_guard_trailer_seps() {
+  _gg_ts="$(git config --get trailer.separators)"
+  case $? in
+    0) ;;
+    1) _gg_ts="" ;;
+    *) return 1 ;;
+  esac
+  printf ':%s' "$_gg_ts"
+}
+
+# awk function shared by both Agent scans. agent_trailer(line) is 1 when line
+# is an Agent trailer as Git reads it, and sets AV to the value. Like Git's
+# find_separator, a separator straight after the token wins over whitespace,
+# then spaces or tabs may sit between the token and the separator. The token is
+# matched case-insensitively. Separators come from ENVIRON["GG_TRAILER_SEPS"]:
+# -v would expand backslash escapes in them.
+git_guard_awk_agent_trailer='
+  function agent_trailer(line,   rest, c, seps) {
+    seps = ENVIRON["GG_TRAILER_SEPS"]
+    if (tolower(substr(line, 1, 5)) != "agent") return 0
+    rest = substr(line, 6)
+    c = substr(rest, 1, 1)
+    if (c == "" || index(seps, c) == 0) {
+      if (c != " " && c != "\t") return 0
+      sub(/^[ \t]+/, "", rest)
+      c = substr(rest, 1, 1)
+      if (c == "" || index(seps, c) == 0) return 0
+    }
+    AV = substr(rest, 2)
+    sub(/^[[:space:]]+/, "", AV); sub(/[[:space:]]+$/, "", AV)
+    return 1
+  }
+'
+
 # git_guard_scan_agents — print the first Agent value on stdin that is not one
 # known id, or nothing. The value is ONE id, compared whole against each known
 # id: `claude codex` names no single agent even though it is a substring of the
 # list. An indented continuation line is part of the value, as Git folds it
 # (`Agent: codex` + `  other` is `codex other`), so it is validated too. Every
 # line is read: there is no scissors boundary (see git_guard_unknown_agent).
+# An Agent line is one Git reads as a trailer with any separator in $_gg_seps.
 git_guard_scan_agents() {
-  awk -v known="$git_guard_known_agents" '
+  GG_TRAILER_SEPS="$_gg_seps" awk -v known="$git_guard_known_agents" "$git_guard_awk_agent_trailer"'
     BEGIN { nk = split(known, k, " "); for (i = 1; i <= nk; i++) ok[k[i]] = 1; pending = 0; bad = "" }
     function check(v,   id, base) {
       sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v)
@@ -70,12 +111,7 @@ git_guard_scan_agents() {
       next
     }
     pending { check(value); pending = 0; if (bad != "") next }
-    tolower($0) ~ /^agent[[:space:]]*:/ {
-      value = $0
-      sub(/^[^:]*:[[:space:]]*/, "", value)
-      sub(/[[:space:]]+$/, "", value)
-      pending = 1
-    }
+    agent_trailer($0) { value = AV; pending = 1 }
     END { if (bad == "" && pending) check(value); if (bad != "") print bad }
   '
 }
@@ -101,13 +137,19 @@ git_guard_scan_agents() {
 # can match. The one cost: an unknown `Agent:` line typed below a real `-v`
 # scissors line, which Git would discard, is still refused.
 git_guard_unknown_agent() {
+  _gg_seps="$(git_guard_trailer_seps)" || return 2
   _gg_bad="$(git_guard_scan_agents < "$1")" || return 2
   if [ -n "$_gg_bad" ]; then
     printf '%s\n' "$_gg_bad"
     return 0
   fi
   _gg_file="$1"
-  _gg_cc="$(git config --get-regexp '^core\.comment(char|string)$' 2>/dev/null | tail -n 1)"
+  _gg_cc="$(git config --get-regexp '^core\.comment(char|string)$')"
+  case $? in
+    0) _gg_cc="$(printf '%s\n' "$_gg_cc" | tail -n 1)" ;;
+    1) _gg_cc="" ;;
+    *) return 2 ;;
+  esac
   case "$_gg_cc" in
     *' auto') set -- '#' ';' '@' '!' '$' '%' '^' '&' '|' ':' ;;
     *) set -- '' ;;
@@ -130,7 +172,7 @@ git_guard_refuse_unknown_agent() {
   _gg_bad="$(git_guard_unknown_agent "$1")"
   _gg_rc=$?
   if [ "$_gg_rc" -ne 0 ]; then
-    printf 'git-guard %s: cannot read the commit message to check its Agent trailers\n' "$2" >&2
+    printf 'git-guard %s: cannot check the Agent trailers: Git could not read its configuration or the message\n' "$2" >&2
     return 1
   fi
   [ -n "$_gg_bad" ] || return 0
@@ -179,21 +221,19 @@ if [ -z "$agent" ]; then
   exit 0
 fi
 
-# Inspect every trailer-shaped Agent line, including case and whitespace forms
-# Git accepts. Multiple `git commit -m` paragraphs can put blank lines between
-# trailers, so checking only `interpret-trailers --parse` is insufficient.
-conflicting_agent="$(awk -v agent="$agent" '
+# Inspect every trailer-shaped Agent line, including case, whitespace and
+# trailer.separators forms Git accepts. Multiple `git commit -m` paragraphs can
+# put blank lines between trailers, so checking only `interpret-trailers
+# --parse` is insufficient.
+if ! _gg_seps="$(git_guard_trailer_seps)"; then
+  printf 'git-guard prepare-commit-msg: cannot check the Agent trailers: Git could not read its configuration\n' >&2
+  exit 1
+fi
+conflicting_agent="$(GG_TRAILER_SEPS="$_gg_seps" awk -v agent="$agent" "$git_guard_awk_agent_trailer"'
   BEGIN { conflict = "" }
-  {
-    line = $0
-    lower = tolower(line)
-    if (lower ~ /^agent[[:space:]]*:/) {
-      sub(/^[^:]*:[[:space:]]*/, "", line)
-      sub(/^[[:space:]]+/, "", line)
-      sub(/[[:space:]]+$/, "", line)
-      if (tolower(line) != agent && conflict == "") {
-        conflict = (line == "" ? "<empty>" : line)
-      }
+  agent_trailer($0) {
+    if (tolower(AV) != agent && conflict == "") {
+      conflict = (AV == "" ? "<empty>" : AV)
     }
   }
   END { printf "%s\n", conflict }
