@@ -20,7 +20,19 @@
 #   * Default off: without hygiene.syncRemove, nothing is removed.
 #   * sync --dry-run with removal on removes nothing.
 #   * A failed fetch of any remote in the repo keeps everything: drain runs
-#     as a dry run and the report says removal was withheld.
+#     as a dry run and the report says removal was withheld. So does an
+#     upstream remote with no URL, and a hygiene.baseRef that is no remote's
+#     (a local branch); a local upstream (remote ".") does not.
+#   * The integration ref's own remote is fetched (codex review of #107 at
+#     9ce7fe3, P1): with hygiene.baseRef on a second remote (lab/integ, a
+#     slash in its name) that rolled main back after integrating sq, sq is
+#     judged against the refreshed ref and kept. The positive control, the
+#     same fixture left fresh, removes both worktrees and names main as the
+#     default branch (hyg_base_name strips the whole remote name).
+#   * index.lock (claude review of #107 at 9ce7fe3): a worktree whose index
+#     is locked is kept by drain's own inspection, and one locked after
+#     inspection is kept by the recheck right before removal; the unlocked
+#     worktree in the same run is removed.
 #   * Refusals, each keeping every item: no custody.grants file; a grants file
 #     that names another repo; a claim naming the branch; a claims read that
 #     fails; no agent-bus CLI; ignored data in the worktree; a repo-local
@@ -196,6 +208,64 @@ sys.exit(0 if ok else 1)' "$report" "$manifest" \
   grep -Fq "has its cwd in the tree) at removal" "$report" && t_ok "report names the in-use veto at removal" \
     || { t_fail "report lacks the at-removal veto"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
   [ -z "$rm_pid" ] || { kill "$rm_pid" 2>/dev/null; :; }
+
+  # --- index.lock taken after inspection (claude review of #107 at 9ce7fe3):
+  # a `git -C` process can hold a worktree's index.lock with its cwd
+  # elsewhere, so the cwd veto does not see it. The hook locks both
+  # worktrees' indexes at the first removal pause (worktree order is the
+  # filesystem's), so one is caught by the recheck right before removal.
+  t_rm_fixture idxlock-late || t_fail "fixture idxlock-late"
+  rm_gdd="$SY_REPO/.git/worktrees/repo-done"; rm_gds="$SY_REPO/.git/worktrees/repo-sq"
+  ( GIT_GUARD_HYGIENE_TEST_PAUSE_AT=remove \
+      GIT_GUARD_HYGIENE_TEST_HOOK="touch '$rm_gdd/index.lock' '$rm_gds/index.lock'" \
+      t_sync_run "$sylog" )
+  [ -d "$RM_DONE" ] && [ -d "$RM_SQ" ] && t_ok "worktrees whose index.lock appeared after inspection kept" \
+    || { t_fail "a worktree whose index.lock appeared after inspection was removed"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
+  grep -Fq "(locked: index.lock at removal" "$report" && t_ok "report names the index.lock veto at removal" \
+    || { t_fail "report lacks the index.lock veto at removal"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
+  rm -f "$rm_gdd/index.lock" "$rm_gds/index.lock"
+
+  # --- integration ref on a second remote (codex review of #107 at 9ce7fe3,
+  # P1): the positive control. hygiene.baseRef names a ref of remote
+  # lab/integ (a slash in the name, matched against `git remote`), written
+  # short; origin/HEAD is gone and stays gone, so baseRef is the base. Sync
+  # fetches lab/integ and removes the integrated items.
+  t_rm_baseref_fixture baseref-ok || t_fail "fixture baseref-ok"
+  git -C "$SY_REPO" config hygiene.baseRef lab/integ/main
+  t_sync_run "$sylog"
+  [ ! -e "$RM_DONE" ] && [ ! -e "$RM_SQ" ] && t_ok "baseRef on a fresh second remote: integrated worktrees removed" \
+    || { t_fail "baseRef on a fresh second remote: integrated worktrees kept"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
+  grep -Fq '"remote":"lab/integ","result":"ok"' "$report" && t_ok "baseRef on a fresh second remote: that remote was fetched" \
+    || t_fail "baseRef on a fresh second remote: that remote was not fetched"
+  # hyg_base_name strips the whole remote name: the primary on main is the
+  # default branch, not "integ/main".
+  grep -Fq "not-default-branch" "$report" && t_fail "baseRef on a slashed remote misnames the default branch" \
+    || t_ok "baseRef on a slashed remote: the primary on main is the default branch"
+
+  # --- index.lock at inspection, with the control in the same run: the
+  # locked worktree is kept, the unlocked one is removed.
+  t_rm_fixture idxlock-ctl || t_fail "fixture idxlock-ctl"
+  : > "$SY_REPO/.git/worktrees/repo-done/index.lock"
+  t_sync_run "$sylog"
+  [ ! -e "$RM_SQ" ] && t_ok "index.lock run still removes the unlocked worktree" \
+    || t_fail "index.lock run kept the unlocked worktree too"
+  rm -f "$SY_REPO/.git/worktrees/repo-done/index.lock"
+}
+
+# t_rm_baseref_fixture NAME — t_rm_fixture plus a second remote, lab/integ,
+# cloned from origin after the squash (so its main integrates sq), with
+# origin/HEAD removed and kept removed (remote.origin.followRemoteHEAD=never:
+# Git 2.48+ fetch otherwise recreates it, and origin/HEAD outranks
+# hygiene.baseRef). The caller sets hygiene.baseRef. Sets RM_INTEG.
+t_rm_baseref_fixture() {
+  t_rm_fixture "$1" || return 1
+  RM_INTEG="$SY_ROOT/../integ.git"; rm -rf "$RM_INTEG"
+  git clone -q --bare "$SY_ORIGIN" "$RM_INTEG" 2>/dev/null || return 1
+  git -C "$SY_REPO" remote add lab/integ "$RM_INTEG" || return 1
+  git -C "$SY_REPO" fetch -q lab/integ || return 1
+  git -C "$SY_REPO" config remote.origin.followRemoteHEAD never
+  git -C "$SY_REPO" remote set-head origin -d >/dev/null 2>&1 || return 1
+  return 0
 }
 
 t_rm_refusals() {
@@ -241,6 +311,46 @@ t_rm_refusals() {
     || { t_fail "branch whose unfetched upstream resumed was removed"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
   grep -Fq "keep   branch old  (upstream moved after the merge)" "$report" && t_ok "report names the resumed upstream" \
     || t_fail "report lacks the resumed-upstream reason"
+  # The integration ref's own remote must be fetched too (codex review of #107
+  # at 9ce7fe3, P1). hygiene.baseRef names lab/integ/main, which integrated sq
+  # when last fetched; lab/integ then rolled main back to before the squash.
+  # No branch tracks lab/integ, so a sync that fetches only origin judges sq
+  # squash-merged from the stale ref and removes it. Drain prints the
+  # integration verdict before custody and the cwd check, so the report line
+  # discriminates off Linux too. The positive control (baseref-ok, Linux)
+  # removes from the same fixture with lab/integ left fresh.
+  t_rm_baseref_fixture baseref-rolled || t_fail "fixture baseref-rolled"
+  git -C "$SY_REPO" config hygiene.baseRef refs/remotes/lab/integ/main
+  git -C "$RM_INTEG" update-ref refs/heads/main "$(git -C "$SY_REPO" rev-parse old)"
+  t_sync_run "$sylog"
+  [ -d "$RM_SQ" ] && t_ok "worktree the rolled-back integration ref no longer holds kept" \
+    || { t_fail "worktree the rolled-back integration ref no longer holds was removed"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
+  grep -Fq "repo-sq  (commits not on refs/remotes/lab/integ/main)" "$report" \
+    && t_ok "report judges sq against the refreshed integration ref" \
+    || { t_fail "report does not judge sq against the refreshed integration ref"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
+  # An integration ref that is no remote's cannot be refreshed by a fetch.
+  t_rm_baseref_fixture baseref-local || t_fail "fixture baseref-local"
+  git -C "$SY_REPO" config hygiene.baseRef refs/heads/main
+  t_rm_expect_kept "hygiene.baseRef is a local branch" \
+    "removal withheld: integration ref refs/heads/main is not a remote-tracking ref"
+  # A branch's upstream remote that has no URL is never fetched (claude review
+  # of #107 at 9ce7fe3): removal is withheld, not silently judged stale.
+  t_rm_fixture nourl || t_fail "fixture nourl"
+  git -C "$SY_REPO" config remote.ghost.fetch '+refs/heads/*:refs/remotes/ghost/*'
+  git -C "$SY_REPO" config branch.old.remote ghost
+  git -C "$SY_REPO" config branch.old.merge refs/heads/old
+  t_rm_expect_kept "an upstream remote has no URL" "removal withheld: fetch failed (ghost: no-url)"
+  # Control: a branch tracking a local branch (remote ".") needs no fetch and
+  # does not withhold removal.
+  t_rm_fixture localup || t_fail "fixture localup"
+  git -C "$SY_REPO" branch -q --set-upstream-to=main old
+  t_sync_run "$sylog"
+  grep -Fq "removal withheld" "$report" && t_fail "a local upstream withheld removal" \
+    || t_ok "a local upstream (remote .) does not withhold removal"
+  if t_sync_can_ff; then
+    [ ! -e "$RM_DONE" ] && t_ok "local-upstream run removes the integrated worktree" \
+      || t_fail "local-upstream run kept the integrated worktree"
+  fi
 
   # --- custody refusals ---------------------------------------------------------
   t_rm_fixture nogrants || t_fail "fixture nogrants"
@@ -315,6 +425,17 @@ t_rm_refusals() {
     grep -Fq "skip-worktree or assume-unchanged entries" "$report" && t_ok "$rm_flag entry: report names the reason" \
       || t_fail "$rm_flag entry: report lacks the reason"
   done
+  # index.lock (claude review of #107 at 9ce7fe3): a git process holding a
+  # worktree's index keeps it, in drain's own inspection, not only in sync's
+  # checkout pass. The drain-format line distinguishes the two. Off Linux the
+  # lock check runs before the cwd check, so the line discriminates there too.
+  t_rm_fixture idxlock || t_fail "fixture idxlock"
+  : > "$SY_REPO/.git/worktrees/repo-done/index.lock"
+  t_sync_run "$sylog"
+  [ -d "$RM_DONE" ] && t_ok "worktree with an index.lock kept" || t_fail "worktree with an index.lock removed"
+  grep -Fq "repo-done  (locked: index.lock" "$report" && t_ok "drain names the index.lock" \
+    || { t_fail "drain does not name the index.lock"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
+  rm -f "$SY_REPO/.git/worktrees/repo-done/index.lock"
   t_rm_fixture young || t_fail "fixture young"
   git -C "$SY_REPO" config hygiene.drainMinAgeMinutes 0
   touch "$SY_REPO/.git/worktrees/repo-done/logs/HEAD" "$SY_REPO/.git/logs/refs/heads/old"

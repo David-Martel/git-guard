@@ -883,10 +883,15 @@ without proof of custody. With `hygiene.syncRemove=true` set globally, each
 pass runs `drain --apply --unattended` in place of the dry run (`sync
 --dry-run` runs `drain --dry-run --unattended`, which shows the custody
 verdicts and removes nothing). With removal on, sync fetches every remote that
-a local branch's upstream lives on, plus the integration remote, not only the
-remotes of checked-out branches. A repository where any of those fetches
-failed or timed out, or where nothing was fetched, keeps the plain dry run,
-and the report says `removal withheld`. Drain judges integration from
+a local branch's upstream lives on, plus the remote that owns the integration
+ref drain will use (`<remote>/HEAD`, else `hygiene.baseRef`, which may name
+any remote, including one whose name has a slash), not only the remotes of
+checked-out branches. A repository keeps the plain dry run, and the report
+says `removal withheld`, when any of those fetches failed or timed out, when an
+upstream's remote has no URL (it cannot be fetched), when nothing was fetched,
+or when the integration ref is unknown, is not a remote-tracking ref (a local
+branch, a tag, a commit) or belongs to a remote this pass did not fetch. An
+upstream that is a local branch (remote `.`) needs no fetch. Drain judges integration from
 remote-tracking refs, and after a failed fetch those refs are stale: they can
 miss an upstream that resumed after its merge. `--unattended` is ordinary drain plus:
 
@@ -918,7 +923,11 @@ miss an upstream that resumed after its merge. `--unattended` is ordinary drain 
 
 Every drain, attended or not, also keeps a worktree whose index has
 `skip-worktree` or `assume-unchanged` entries: they hide modified bytes from
-`git status`, so its clean check cannot see them.
+`git status`, so its clean check cannot see them. It also keeps a worktree
+whose `index.lock` exists, checked at inspection and again as the last step
+before `git worktree remove` (`locked: index.lock`): a git process run with
+`git -C` can hold that lock while its cwd is elsewhere, where the in-use check
+cannot see it.
 
 Each drain line names the tip's `Agent:` trailer and the custody verdict.
 Each removal is recorded in the report's `removals` array and appended to

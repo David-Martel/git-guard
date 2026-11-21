@@ -165,13 +165,34 @@ hyg_base() {
   printf '%s' "$_b"
 }
 
+# hyg_ref_remote REF — the configured remote whose remote-tracking refs hold
+# REF (refs/remotes/<remote>/...), after resolving a short name such as
+# origin/main to its full name. Remote names may contain a slash (lab/integ),
+# so the longest `git remote` name that prefixes the ref wins. Empty when REF
+# is not a remote-tracking ref of a configured remote (a local branch, a tag,
+# a commit, an unknown name).
+hyg_ref_remote() {
+  _rf="$(git rev-parse --symbolic-full-name "${1:-}" 2>/dev/null)" || _rf=""
+  case "$_rf" in refs/remotes/?*) ;; *) return 0 ;; esac
+  git remote 2>/dev/null | awk -v r="${_rf#refs/remotes/}" '
+    index(r, $0 "/") == 1 && length($0) > length(best) { best = $0 }
+    END { if (best != "") print best }'
+}
+
 # hyg_base_name BASE — the short branch name of the base (refs/remotes/o/main
-# -> main), used to exempt the default branch itself.
+# -> main), used to exempt the default branch itself. A short BASE (from
+# hygiene.baseRef) is resolved first, and the remote's own name is stripped
+# whole, so refs/remotes/lab/integ/main -> main.
 hyg_base_name() {
-  case "${1:-}" in
-    refs/remotes/*/*) _n="${1#refs/remotes/}"; printf '%s' "${_n#*/}" ;;
-    refs/heads/*) printf '%s' "${1#refs/heads/}" ;;
-    *) printf '%s' "${1:-}" ;;
+  _bn="$(git rev-parse --symbolic-full-name "${1:-}" 2>/dev/null)" || _bn=""
+  [ -n "$_bn" ] || _bn="${1:-}"
+  case "$_bn" in
+    refs/remotes/*/*)
+      _bnr="$(hyg_ref_remote "$_bn")"
+      if [ -n "$_bnr" ]; then printf '%s' "${_bn#"refs/remotes/$_bnr/"}"
+      else _n="${_bn#refs/remotes/}"; printf '%s' "${_n#*/}"; fi ;;
+    refs/heads/*) printf '%s' "${_bn#refs/heads/}" ;;
+    *) printf '%s' "$_bn" ;;
   esac
 }
 
@@ -794,6 +815,11 @@ hyg_drain() {
       fi
     fi
     if hyg_op_in_progress "$_gd"; then echo "  keep   $_path  (merge/rebase/cherry-pick in progress)"; continue; fi
+    # A git process is writing this worktree's index, possibly through
+    # `git -C` with its cwd elsewhere, where the cwd veto cannot see it
+    # (claude review of #107 at 9ce7fe3). Checked before the `git status`
+    # below, which takes the lock itself while it runs.
+    if [ -e "$_gd/index.lock" ]; then echo "  keep   $_path  (locked: index.lock; a git process may be writing its index)"; continue; fi
     if [ -n "$(git -C "$_path" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
       echo "  keep   $_path  (uncommitted or untracked changes)"; continue
     fi
@@ -850,6 +876,11 @@ hyg_drain() {
     # A process that entered the tree since inspection also keeps it.
     if [ "$_unatt" = "1" ] && ! _inuse="$(hyg_drain_cwd_free "$_path")"; then
       echo "  keep   $_path  ($_inuse at removal; nothing removed)"; continue
+    fi
+    # Last: an index.lock taken since inspection (the recheck's own `git
+    # status` above has released any lock it took by now).
+    if [ -e "$_gd/index.lock" ]; then
+      echo "  keep   $_path  (locked: index.lock at removal; nothing removed)"; continue
     fi
     if ! git worktree remove "$_path" >/dev/null 2>&1; then
       echo "  keep   $_path  (git worktree remove refused)"; continue
@@ -1161,8 +1192,11 @@ hyg_sync_repo() {
   fi
   # Fetch once per remote that origin or any checked-out branch tracks. When
   # removal is on, also every remote a local branch's upstream lives on and the
-  # integration remote: drain reads each branch's upstream (hyg_remote_moved)
-  # and the base, and an unfetched remote would leave them stale.
+  # remote that owns the integration ref drain will use (hyg_base, which may
+  # come from hygiene.baseRef and name any remote; codex review of #107 at
+  # 9ce7fe3, P1): drain reads each branch's upstream (hyg_remote_moved) and the
+  # base, and an unfetched remote would leave them stale. "." is a local
+  # upstream, which no fetch refreshes and none needs.
   : > "$HYG_TMP/fetched"
   { git -C "$1" config --get remote.origin.url >/dev/null 2>&1 && echo origin
     while IFS='	' read -r _p _x _y; do
@@ -1171,12 +1205,17 @@ hyg_sync_repo() {
     done < "$HYG_TMP/checkouts"
     if [ "$_rm_on" = "1" ]; then
       git -C "$1" for-each-ref --format='%(upstream:remotename)' refs/heads/ 2>/dev/null
-      (cd "$1" && hyg_remote ""; echo)
+      (cd "$1" && hyg_ref_remote "$(hyg_base "$(hyg_remote "")")"; echo)
     fi
-  } | awk 'NF && !seen[$0]++' > "$HYG_TMP/remotes"
+  } | awk 'NF && $0 != "." && !seen[$0]++' > "$HYG_TMP/remotes"
   _to="$(cd "$1" && hyg_int hygiene.syncFetchTimeout "$HYG_SYNC_DEFAULT_FETCH_TIMEOUT")"
   while IFS= read -r _r; do
-    git -C "$1" config --get "remote.$_r.url" >/dev/null 2>&1 || continue
+    # A remote with no URL cannot be fetched, so its refs stay as they were:
+    # record it as not fetched, which withholds removal (claude review of #107
+    # at 9ce7fe3). Checkouts that track it are already skipped as no-upstream.
+    if ! git -C "$1" config --get "remote.$_r.url" >/dev/null 2>&1; then
+      printf '%s\t%s\n' "$_r" no-url >> "$HYG_TMP/fetched"; continue
+    fi
     hyg_sync_bounded "$_to" git -C "$1" -c gc.auto=0 fetch --prune --quiet "$_r" </dev/null >/dev/null 2>&1
     case $? in 0) _res=ok ;; 124) _res=timeout ;; *) _res=failed ;; esac
     printf '%s\t%s\n' "$_r" "$_res" >> "$HYG_TMP/fetched"
@@ -1196,9 +1235,17 @@ hyg_sync_repo() {
       # merge (codex review of #107 at dd0452f, P1), so any fetch in this repo
       # that did not succeed keeps the drain a dry run. So does a run that
       # fetched nothing.
+      # The integration ref is resolved again after the fetches, as drain
+      # will resolve it (a fetch can create <remote>/HEAD, which outranks
+      # hygiene.baseRef), and its remote must be one fetched in this pass.
       _ffail="$(awk -F '\t' '$2 != "ok" { printf "%s%s%s", (n++ ? ", " : ""), $1, ($2 == "failed" ? "" : ": " $2) }' "$HYG_TMP/fetched" 2>/dev/null)"
+      _ib="$(cd "$1" && hyg_base "$(hyg_remote "")")"
+      _ibr=""; [ -z "$_ib" ] || _ibr="$(cd "$1" && hyg_ref_remote "$_ib")"
       if [ -n "$_ffail" ]; then _dwhy="  (removal withheld: fetch failed ($_ffail); drained as a dry run)"
       elif [ ! -s "$HYG_TMP/fetched" ]; then _dwhy="  (removal withheld: no remote was fetched; drained as a dry run)"
+      elif [ -z "$_ib" ]; then _dwhy="  (removal withheld: integration ref unknown; drained as a dry run)"
+      elif [ -z "$_ibr" ]; then _dwhy="  (removal withheld: integration ref $_ib is not a remote-tracking ref; drained as a dry run)"
+      elif [ "$(hyg_sync_fetched "$_ibr")" != "ok" ]; then _dwhy="  (removal withheld: integration remote $_ibr was not fetched; drained as a dry run)"
       elif [ "$HYG_SYNC_DRY" = "1" ]; then _dmode="--dry-run --unattended"
       else _dmode="--apply --unattended"; fi
     fi
