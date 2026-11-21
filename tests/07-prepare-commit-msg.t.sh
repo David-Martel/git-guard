@@ -481,3 +481,362 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>")
 
   gg_rmrepo "$r"
 }
+
+# Known-agent set. Why: the hook used to treat any GIT_GUARD_AGENT other than
+# claude/codex, and any Agent trailer on a commit made outside an agent shell,
+# as "human" and exit 0 without looking. A gemini commit made from a Claude
+# shell therefore had to pick an unrecognised selector to get through, and that
+# same path let a typo such as `Agent: gemnii` land unchecked. The known set is
+# claude, codex, gemini and jules (docs/IDENTITY.md); gemini is stamped like
+# claude; an unknown selector or an unknown Agent value refuses the commit
+# with a message that names it; a human commit with no trailer is untouched
+# and GIT_GUARD=0 still bypasses everything.
+t_case_attribution_known_agents() {
+  t_begin "prepare-commit-msg known-agent set"
+
+  r="$(gg_mktemp_repo)" || { t_fail "create known-agent repo"; return; }
+  mkdir -p "$r/test-hooks"
+  cp "$GG_ROOT/hooks/prepare-commit-msg" "$r/test-hooks/prepare-commit-msg"
+  chmod +x "$r/test-hooks/prepare-commit-msg"
+  git -C "$r" config core.hooksPath "$r/test-hooks"
+  hook="$r/test-hooks/prepare-commit-msg"
+
+  # gemini selector: a real commit gets exactly one `Agent: gemini`.
+  printf 'gemini\n' > "$r/gemini.txt"
+  git -C "$r" add gemini.txt
+  (cd "$r" && GIT_GUARD_AGENT=gemini git commit -q -m "gemini commit") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "GIT_GUARD_AGENT=gemini commit lands"
+  n="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse | grep -c '^Agent: gemini$')"
+  t_expect_rc 1 "$n" "gemini commit carries exactly one Agent: gemini"
+
+  # A gemini commit made from a Claude shell, with the explicit selector and
+  # Gemini's own trailer, is not a conflict and is not duplicated.
+  printf 'on behalf\n\nAgent: gemini\n' > "$r/behalf-message"
+  (cd "$r" && CLAUDECODE=1 GIT_GUARD_AGENT=gemini "$hook" "$r/behalf-message") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "explicit gemini selector in a Claude shell accepts Agent: gemini"
+  n="$(git interpret-trailers --parse "$r/behalf-message" | grep -c '^Agent: gemini$')"
+  t_expect_rc 1 "$n" "on-behalf gemini trailer is not duplicated"
+
+  # Control: the detected Claude shell without the selector still refuses it.
+  printf 'no selector\n\nAgent: gemini\n' > "$r/noselector-message"
+  (cd "$r" && CLAUDECODE=1 "$hook" "$r/noselector-message") >/dev/null 2>&1
+  t_expect_rc 1 "$?" "Claude shell without the selector still refuses Agent: gemini"
+
+  # An unknown selector refuses and names itself.
+  printf 'bad selector\n' > "$r/badsel-message"
+  (cd "$r" && GIT_GUARD_AGENT=gemnii "$hook" "$r/badsel-message") > "$r/badsel.log" 2>&1
+  t_expect_rc 1 "$?" "unknown GIT_GUARD_AGENT refuses the commit"
+  grep -q "unknown GIT_GUARD_AGENT 'gemnii'" "$r/badsel.log"
+  t_assert "$?" "the refusal names the unknown selector"
+
+  # Outside any agent shell, an unknown Agent value refuses; a known one passes
+  # byte-identically (a human recording an agent's work).
+  printf 'typo\n' > "$r/typo.txt"
+  git -C "$r" add typo.txt
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && git commit -q -m "typo commit" -m "Agent: gemnii") > "$r/typo.log" 2>&1
+  t_expect_rc 1 "$?" "unknown Agent trailer refuses a human-shell commit"
+  if [ "$(git -C "$r" rev-parse HEAD)" = "$before" ]; then
+    t_ok "the refused commit does not land"
+  else
+    t_fail "the refused commit does not land"
+  fi
+  grep -q "unknown Agent trailer 'gemnii'" "$r/typo.log"
+  t_assert "$?" "the refusal names the unknown Agent value"
+
+  # Lane-suffixed ids are what fleet history uses (vigil-oto gemini-dtm-oto-mesh,
+  # vigil-spark codex-asus); copilot is a stable fleet agent id.
+  for known in claude codex gemini copilot jules gemini-dtm-oto-mesh codex-asus; do
+    printf 'recorded\n\nAgent: %s\n' "$known" > "$r/known-message"
+    cp "$r/known-message" "$r/known-before"
+    (cd "$r" && "$hook" "$r/known-message") >/dev/null 2>&1
+    t_expect_rc 0 "$?" "human shell accepts a known Agent: $known"
+    cmp -s "$r/known-before" "$r/known-message"
+    t_assert "$?" "known Agent: $known message is byte-identical"
+  done
+
+  # A lane suffix does not launder a misspelt base id.
+  printf 'lane typo
+
+Agent: gemnii-dtm-oto
+' > "$r/lanetypo-message"
+  (cd "$r" && "$hook" "$r/lanetypo-message") >/dev/null 2>&1
+  t_expect_rc 1 "$?" "a lane suffix on an unknown base id is refused"
+
+  # The value must be ONE known id, not a run of them. Adjacent names used to
+  # pass because ` claude codex ` is a substring of the space-delimited set.
+  for combined in 'claude codex' 'codex gemini' 'claude codex gemini copilot jules' 'codex-asus gemini'; do
+    printf 'combined\n\nAgent: %s\n' "$combined" > "$r/combined-message"
+    (cd "$r" && "$hook" "$r/combined-message") > "$r/combined.log" 2>&1
+    t_expect_rc 1 "$?" "human shell refuses combined Agent: $combined"
+  done
+  grep -q "unknown Agent trailer 'codex-asus gemini'" "$r/combined.log"
+  t_assert "$?" "the combined-name refusal names the whole value"
+
+  # Git folds an indented continuation into the trailer value, so
+  # `Agent: codex` + `  unrecognized-principal` is the value
+  # `codex unrecognized-principal`. Validate the logical value, not each line.
+  printf 'folded\n\nAgent: codex\n  unrecognized-principal\n' > "$r/folded-message"
+  (cd "$r" && "$hook" "$r/folded-message") > "$r/folded.log" 2>&1
+  t_expect_rc 1 "$?" "human shell refuses a folded Agent value"
+  grep -q "unknown Agent trailer 'codex unrecognized-principal'" "$r/folded.log"
+  t_assert "$?" "the folded refusal names the logical value"
+  # Real commit, so Git's own parse is what is guarded.
+  printf 'folded\n' > "$r/folded.txt"
+  git -C "$r" add folded.txt
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && git commit -q -F "$r/folded-message") >/dev/null 2>&1
+  t_expect_rc 1 "$?" "a folded unknown Agent value refuses a real commit"
+  if [ "$(git -C "$r" rev-parse HEAD)" = "$before" ]; then
+    t_ok "the refused folded commit does not land"
+  else
+    t_fail "the refused folded commit does not land"
+  fi
+  git -C "$r" reset -q
+  # Control: a known value followed by an unindented body line is unchanged.
+  printf 'unfolded\n\nAgent: codex\nSigned-off-by: A <a@example.invalid>\n' > "$r/unfolded-message"
+  cp "$r/unfolded-message" "$r/unfolded-before"
+  (cd "$r" && "$hook" "$r/unfolded-message") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "a known Agent value followed by another trailer passes"
+  cmp -s "$r/unfolded-before" "$r/unfolded-message"
+  t_assert "$?" "the unfolded message is byte-identical"
+
+  # copilot selector: stamped like gemini.
+  printf 'copilot
+' > "$r/copilot-message"
+  (cd "$r" && GIT_GUARD_AGENT=copilot "$hook" "$r/copilot-message") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "GIT_GUARD_AGENT=copilot is accepted"
+  n="$(git interpret-trailers --parse "$r/copilot-message" | grep -c '^Agent: copilot$')"
+  t_expect_rc 1 "$n" "copilot commit carries exactly one Agent: copilot"
+
+  # A human commit with no trailer stays untouched.
+  printf 'plain human\n' > "$r/human-message"
+  cp "$r/human-message" "$r/human-before"
+  (cd "$r" && "$hook" "$r/human-message") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "human commit without a trailer passes"
+  cmp -s "$r/human-before" "$r/human-message"
+  t_assert "$?" "human commit message is byte-identical"
+
+  # GIT_GUARD=0 still bypasses an unknown selector and an unknown trailer.
+  printf 'bypass\n\nAgent: gemnii\n' > "$r/bypass-unknown"
+  (cd "$r" && GIT_GUARD=0 GIT_GUARD_AGENT=gemnii "$hook" "$r/bypass-unknown") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "GIT_GUARD=0 bypasses the known-agent checks"
+
+  # The editor runs AFTER prepare-commit-msg, so an Agent value typed there was
+  # never checked: an interactive `Agent: gemnii` landed while the same `-m`
+  # commit was refused (codex review of #106 at 4e6325ea, P2). commit-msg
+  # validates the final message with the same rule. Both hooks are installed,
+  # as `git-guard install` does; the editor is a script so no terminal is needed.
+  full="$r/test-hooks-full"; mkdir -p "$full"
+  cp "$GG_ROOT/hooks/prepare-commit-msg" "$GG_ROOT/hooks/commit-msg" "$full/"
+  cp -R "$GG_ROOT/hooks/common" "$full/common"
+  chmod +x "$full/prepare-commit-msg" "$full/commit-msg"
+  # The editor inserts the trailer right after the subject, as a person would:
+  # appending would land below a `commit.verbose` scissors line, where Git
+  # discards it.
+  for ed in typo:gemnii known:gemini; do
+    # shellcheck disable=SC2016  # "$1" belongs to the generated editor script
+    printf '#!/bin/sh\nawk %s "$1" > "$1.ed" && mv "$1.ed" "$1"\n' \
+      "'NR == 1 { print; print \"\"; print \"Agent: ${ed#*:}\"; next } { print }'" > "$r/${ed%%:*}-editor"
+  done
+  chmod +x "$r/typo-editor" "$r/known-editor"
+  printf 'editor\n' > "$r/editor.txt"
+  git -C "$r" add editor.txt
+  git -C "$r" config core.hooksPath "$full"
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && GIT_EDITOR="$r/typo-editor" LEFTHOOK=0 git commit -q -e -m "editor commit") > "$r/editor.log" 2>&1
+  t_expect_rc 1 "$?" "an unknown Agent value typed in the editor refuses the commit"
+  if [ "$(git -C "$r" rev-parse HEAD)" = "$before" ]; then
+    t_ok "the editor-typed unknown Agent commit does not land"
+  else
+    t_fail "the editor-typed unknown Agent commit does not land"
+  fi
+  grep -q "unknown Agent trailer 'gemnii'" "$r/editor.log"
+  t_assert "$?" "the commit-msg refusal names the editor-typed value"
+  # Control: the same path with a known value lands, carrying it once.
+  (cd "$r" && GIT_EDITOR="$r/known-editor" LEFTHOOK=0 git commit -q -e -m "editor commit") >/dev/null 2>&1
+  t_expect_rc 0 "$?" "a known Agent value typed in the editor lands"
+  n="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse | grep -c '^Agent: gemini$')"
+  t_expect_rc 1 "$n" "the editor-typed known value is recorded once"
+
+  # The hooks cannot see `-v`, `--no-verbose` or `--cleanup`, so they cannot
+  # know where Git will cut or which lines it will strip (codex review of #106
+  # at fe8e5f9f, two P2s). Each commit below pins verbose explicitly: a global
+  # `commit.verbose=true` makes Git cut at the scissors line even for `-F`.
+  # gg_kc_refused LABEL LOG — the commit must fail, leave HEAD, and name a value.
+  gg_kc_refused() {
+    t_expect_rc 1 "$_gg_kc_rc" "$1 refuses the commit"
+    if [ "$(git -C "$r" rev-parse HEAD)" = "$before" ]; then
+      t_ok "$1 does not land"
+    else
+      t_fail "$1 does not land"
+      git -C "$r" reset -q --soft "$before"
+    fi
+    grep -q "unknown Agent trailer '$2'" "$r/kc.log"
+    t_assert "$?" "$1 names '$2'"
+  }
+  printf 'cleanup\n' > "$r/cleanup.txt"
+  git -C "$r" add cleanup.txt
+
+  # (a) A scissors-shaped line is a boundary only with the comment character Git
+  # uses, and only in verbose or scissors cleanup. With core.commentChar=';' a
+  # `#` marker is ordinary text, and `Agent: gemnii` under it is a trailer Git
+  # records. The old check stopped at any `X -------- >8 --------` line.
+  git -C "$r" config core.commentChar ';'
+  printf 'scissors\n\n# ------------------------ >8 ------------------------\n\nAgent: gemnii\n' > "$r/fake-scissors"
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose -F "$r/fake-scissors") > "$r/kc.log" 2>&1
+  _gg_kc_rc=$?; gg_kc_refused "a #-scissors line under core.commentChar=';'" gemnii
+  git -C "$r" config --unset core.commentChar
+  # Even with the matching `#`, Git does not cut without verbose: strip cleanup
+  # removes the marker as a comment and keeps the trailer below it.
+  printf 'scissors\n\n# ------------------------ >8 ------------------------\nAgent: gemnii\n' > "$r/strip-scissors"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose --cleanup=strip -F "$r/strip-scissors") > "$r/kc.log" 2>&1
+  _gg_kc_rc=$?; gg_kc_refused "a #-scissors line without verbose" gemnii
+
+  # (b) Strip cleanup removes comment lines BEFORE Git folds continuations, so
+  # `Agent: codex` + `# note` + `  unknown` is recorded as `codex unknown`.
+  printf 'comment fold\n\nAgent: codex\n# note\n  unknown\n' > "$r/comment-fold"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose --cleanup=strip -F "$r/comment-fold") > "$r/kc.log" 2>&1
+  _gg_kc_rc=$?; gg_kc_refused "a value folded across a stripped comment" 'codex unknown'
+  # The comment is whatever core.commentChar names, not always `#`.
+  git -C "$r" config core.commentChar ';'
+  printf 'comment fold\n\nAgent: codex\n; note\n  unknown\n' > "$r/semi-fold"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose --cleanup=strip -F "$r/semi-fold") > "$r/kc.log" 2>&1
+  _gg_kc_rc=$?; gg_kc_refused "a value folded across a ';' comment" 'codex unknown'
+  # core.commentChar=auto lets Git pick any of `#;@!$%^&|:`, so each is checked.
+  git -C "$r" config core.commentChar auto
+  printf 'auto fold\n\nAgent: codex\n%% note\n  unknown\n' > "$r/auto-fold"
+  (cd "$r" && "$full/prepare-commit-msg" "$r/auto-fold" --check-agents) > "$r/kc.log" 2>&1
+  t_expect_rc 1 "$?" "core.commentChar=auto checks a fold across a '%' comment"
+  git -C "$r" config --unset core.commentChar
+
+  # Controls: these must still land.
+  # A real `-v` commit whose staged diff carries Agent-shaped text: every diff
+  # line is prefixed, so nothing below the scissors line can match.
+  printf 'Agent: gemnii\n  unknown\n' > "$r/agent-shaped.txt"
+  git -C "$r" add agent-shaped.txt
+  before="$(git -C "$r" rev-parse HEAD)"
+  (cd "$r" && GIT_EDITOR=true LEFTHOOK=0 git commit -q -v -e -m "verbose control" -m "Agent: codex") > "$r/kc.log" 2>&1
+  t_expect_rc 0 "$?" "a -v commit with Agent-shaped diff text lands"
+  n="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse | grep -c '^Agent: codex$')"
+  t_expect_rc 1 "$n" "the -v commit records only its own Agent: codex"
+  # A known value folded onto an empty first line lands.
+  printf 'fold control\n' > "$r/fold-control.txt"
+  git -C "$r" add fold-control.txt
+  printf 'fold control\n\nAgent:\n  codex\n' > "$r/fold-ok"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose -F "$r/fold-ok") > "$r/kc.log" 2>&1
+  t_expect_rc 0 "$?" "a known value folded onto an empty Agent line lands"
+  # A comment between a known value and the next trailer changes nothing.
+  printf 'comment control\n' > "$r/comment-control.txt"
+  git -C "$r" add comment-control.txt
+  printf 'comment control\n\nAgent: codex\n# note\nSigned-off-by: A <a@example.invalid>\n' > "$r/comment-ok"
+  (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose --cleanup=strip -F "$r/comment-ok") > "$r/kc.log" 2>&1
+  t_expect_rc 0 "$?" "a comment between a known value and the next trailer lands"
+  n="$(git -C "$r" log -1 --format=%B | git interpret-trailers --parse | grep -c '^Agent: codex$')"
+  t_expect_rc 1 "$n" "the comment control records Agent: codex once"
+
+  # trailer.separators adds separator characters, and Git then reads
+  # `Agent=gemnii` as the Agent trailer `gemnii`. The check matched only `:`
+  # (codex review of #106 at cbd9dc60, P2). Each case also asks Git's own
+  # parser what it records, so the hook and Git agree on which lines count.
+  # gg_kc_commit FILE — stage a fresh file and commit with message FILE.
+  gg_kc_commit() {
+    printf '%s\n' "$1" > "$r/sep-$1.txt"
+    git -C "$r" add "sep-$1.txt"
+    before="$(git -C "$r" rev-parse HEAD)"
+    (cd "$r" && LEFTHOOK=0 git commit -q --no-verbose -F "$r/$1") > "$r/kc.log" 2>&1
+    _gg_kc_rc=$?
+  }
+  git -C "$r" config trailer.separators ':='
+  printf 'separator\n\nAgent=gemnii\n' > "$r/eq-typo"
+  n="$(git -C "$r" interpret-trailers --parse < "$r/eq-typo" | grep -c '^Agent: gemnii$')"
+  t_expect_rc 1 "$n" "Git reads Agent=gemnii as an Agent trailer under trailer.separators=:="
+  gg_kc_commit eq-typo
+  gg_kc_refused "Agent=gemnii under trailer.separators=:=" gemnii
+  git -C "$r" reset -q
+  printf 'separator\n\nAgent=gemini\n' > "$r/eq-known"
+  gg_kc_commit eq-known
+  t_expect_rc 0 "$_gg_kc_rc" "Agent=gemini under trailer.separators=:= lands"
+  n="$(git -C "$r" log -1 --format=%B | git -C "$r" interpret-trailers --parse | grep -c '^Agent: gemini$')"
+  t_expect_rc 1 "$n" "Git records the landed Agent=gemini as Agent: gemini"
+  # The agent-shell conflict check reads the same separators: `Agent=codex`
+  # in a Claude shell is a second agent, not body text.
+  printf 'separator\n\nAgent=codex\n' > "$r/eq-conflict"
+  (cd "$r" && CLAUDECODE=1 "$full/prepare-commit-msg" "$r/eq-conflict") > "$r/kc.log" 2>&1
+  t_expect_rc 1 "$?" "a Claude shell refuses Agent=codex under trailer.separators=:="
+  grep -q "conflicting Agent trailer: codex" "$r/kc.log"
+  t_assert "$?" "the conflict refusal names the = trailer"
+  git -C "$r" config trailer.separators '#'
+  printf 'separator\n\nAgent #gemnii\n' > "$r/hash-typo"
+  n="$(git -C "$r" interpret-trailers --parse < "$r/hash-typo" | grep -c '^Agent# gemnii$')"
+  t_expect_rc 1 "$n" "Git reads Agent #gemnii as an Agent trailer under trailer.separators=#"
+  gg_kc_commit hash-typo
+  gg_kc_refused "Agent #gemnii under trailer.separators=#" gemnii
+  git -C "$r" reset -q
+  printf 'separator\n\nAgent #codex\n' > "$r/hash-known"
+  gg_kc_commit hash-known
+  t_expect_rc 0 "$_gg_kc_rc" "Agent #codex under trailer.separators=# lands"
+  git -C "$r" config --unset trailer.separators
+  # Control: by default `=` is no separator, so Git records no Agent trailer
+  # and the commit lands untouched.
+  printf 'separator\n\nAgent=gemnii\n' > "$r/eq-default"
+  n="$(git -C "$r" interpret-trailers --parse < "$r/eq-default" | grep -c '^Agent')"
+  t_expect_rc 0 "$n" "by default Git reads no Agent trailer in Agent=gemnii"
+  gg_kc_commit eq-default
+  t_expect_rc 0 "$_gg_kc_rc" "Agent=gemnii under the default separators lands"
+  # A configuration Git cannot read refuses rather than checking nothing.
+  printf 'unreadable\n\nAgent: codex\n' > "$r/bad-config"
+  (cd "$r" && GIT_CONFIG_PARAMETERS="'bogus" "$full/prepare-commit-msg" "$r/bad-config" --check-agents) > "$r/kc.log" 2>&1
+  t_expect_rc 1 "$?" "an unreadable Git configuration refuses the commit"
+  grep -q "cannot check the Agent trailers" "$r/kc.log"
+  t_assert "$?" "the configuration refusal says why"
+
+  # A trailer alias (`trailer.ai.key=Agent`) makes Git record `ai: gemnii` as
+  # the Agent trailer `gemnii`; the line scan knew only the `Agent` token
+  # (codex review of #106 at 94560a8f, P2). The check now also validates Git's
+  # own parse, so aliases, separators and folding are covered by construction.
+  git -C "$r" config trailer.ai.key Agent
+  printf 'alias\n\nai: gemnii\n' > "$r/alias-typo"
+  n="$(git -C "$r" interpret-trailers --parse --no-divider < "$r/alias-typo" | grep -c '^Agent: gemnii$')"
+  t_expect_rc 1 "$n" "Git reads ai: gemnii as Agent: gemnii under trailer.ai.key=Agent"
+  gg_kc_commit alias-typo
+  gg_kc_refused "ai: gemnii under trailer.ai.key=Agent" gemnii
+  git -C "$r" reset -q
+  # Alias plus a custom separator, and a folded alias value.
+  git -C "$r" config trailer.separators ':='
+  printf 'alias\n\nai=gemnii\n' > "$r/alias-eq-typo"
+  gg_kc_commit alias-eq-typo
+  gg_kc_refused "ai=gemnii under trailer.ai.key=Agent and separators :=" gemnii
+  git -C "$r" reset -q
+  git -C "$r" config --unset trailer.separators
+  printf 'alias\n\nai: codex\n  unknown\n' > "$r/alias-fold"
+  gg_kc_commit alias-fold
+  gg_kc_refused "a folded alias value" 'codex unknown'
+  git -C "$r" reset -q
+  # The agent-shell conflict check reads Git's parse too.
+  printf 'alias\n\nai: codex\n' > "$r/alias-conflict"
+  (cd "$r" && CLAUDECODE=1 "$full/prepare-commit-msg" "$r/alias-conflict") > "$r/kc.log" 2>&1
+  t_expect_rc 1 "$?" "a Claude shell refuses ai: codex under trailer.ai.key=Agent"
+  grep -q "conflicting Agent trailer: codex" "$r/kc.log"
+  t_assert "$?" "the alias conflict refusal names codex"
+  # Control: a known value through the alias lands, and Git's record of the
+  # landed commit agrees with its parse.
+  printf 'alias\n\nai: gemini\n' > "$r/alias-known"
+  gg_kc_commit alias-known
+  t_expect_rc 0 "$_gg_kc_rc" "ai: gemini under trailer.ai.key=Agent lands"
+  v="$(git -C "$r" log -1 --format='%(trailers:key=Agent,valueonly)' | sed '/^$/d')"
+  if [ "$v" = gemini ]; then t_ok "Git records the landed alias as the Agent trailer gemini"
+  else t_fail "Git records the landed alias as the Agent trailer gemini (got '$v')"; fi
+  git -C "$r" config --unset trailer.ai.key
+  # Control: without the alias, `ai:` is not an Agent trailer and lands.
+  printf 'alias\n\nai: gemnii\n' > "$r/alias-default"
+  gg_kc_commit alias-default
+  t_expect_rc 0 "$_gg_kc_rc" "ai: gemnii without an alias lands"
+  v="$(git -C "$r" log -1 --format='%(trailers:key=Agent,valueonly)' | sed '/^$/d')"
+  if [ -z "$v" ]; then t_ok "Git records no Agent trailer for ai: without an alias"
+  else t_fail "Git records no Agent trailer for ai: without an alias (got '$v')"; fi
+  git -C "$r" config core.hooksPath "$r/test-hooks"
+
+  gg_rmrepo "$r"
+}

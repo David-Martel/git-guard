@@ -4,7 +4,9 @@
 #   Codex       -> `Agent: codex` + `Co-authored-by: Codex <noreply@openai.com>`
 #   Claude Code -> `Agent: claude` (Claude writes its own Co-authored-by, which
 #                  names the model, so the hook never adds or duplicates one)
-#   human       -> no trailer
+#   Gemini      -> `Agent: gemini` (selected with GIT_GUARD_AGENT=gemini)
+#   Copilot     -> `Agent: copilot` (selected with GIT_GUARD_AGENT=copilot)
+#   human       -> no trailer; an Agent trailer must name a known agent
 #
 # Git always runs prepare-commit-msg, even with --no-verify. A human who must
 # make an emergency commit can bypass this hook explicitly with GIT_GUARD=0.
@@ -32,9 +34,190 @@ fi
 # Codex outranks Claude: a Codex process launched from inside Claude Code
 # inherits CLAUDECODE=1 but carries its own CODEX_THREAD_ID, and the
 # per-process marker beats the inherited ancestor marker.
+#
+# Known agents are the fleet's stable agent ids (agent-bus presence and
+# docs/IDENTITY.md): claude, codex, gemini, copilot and jules. A trailer may add
+# a lane suffix to one of them (`gemini-dtm-oto-mesh`, `codex-asus`), as fleet
+# history does. Only claude and codex are detected from the environment
+# (Antigravity and Copilot export no marker of their own), so gemini and copilot
+# are selected explicitly with GIT_GUARD_AGENT. An unknown selector is refused
+# rather than read as "human": treating it as human used to skip every check
+# below, so any made-up selector, or a typo, passed silently.
+git_guard_known_agents='claude codex gemini copilot jules'
+
+# git_guard_trailer_seps — print every character Git may read as a trailer
+# separator: `:` plus trailer.separators. Git then reads `Agent=gemnii` as the
+# Agent trailer `gemnii` under `trailer.separators=:=` (codex review of #106 at
+# cbd9dc60, P2). `:` is always kept, although a setting without it stops Git
+# reading `Agent: x`, so the check never loosens. Fails when Git cannot read
+# its configuration, so the callers refuse instead of checking nothing.
+git_guard_trailer_seps() {
+  _gg_ts="$(git config --get trailer.separators)"
+  case $? in
+    0) ;;
+    1) _gg_ts="" ;;
+    *) return 1 ;;
+  esac
+  printf ':%s' "$_gg_ts"
+}
+
+# awk function shared by both Agent scans. agent_trailer(line) is 1 when line
+# is an Agent trailer as Git reads it, and sets AV to the value. Like Git's
+# find_separator, a separator straight after the token wins over whitespace,
+# then spaces or tabs may sit between the token and the separator. The token is
+# matched case-insensitively. Separators come from ENVIRON["GG_TRAILER_SEPS"]:
+# -v would expand backslash escapes in them.
+git_guard_awk_agent_trailer='
+  function agent_trailer(line,   rest, c, seps) {
+    seps = ENVIRON["GG_TRAILER_SEPS"]
+    if (tolower(substr(line, 1, 5)) != "agent") return 0
+    rest = substr(line, 6)
+    c = substr(rest, 1, 1)
+    if (c == "" || index(seps, c) == 0) {
+      if (c != " " && c != "\t") return 0
+      sub(/^[ \t]+/, "", rest)
+      c = substr(rest, 1, 1)
+      if (c == "" || index(seps, c) == 0) return 0
+    }
+    AV = substr(rest, 2)
+    sub(/^[[:space:]]+/, "", AV); sub(/[[:space:]]+$/, "", AV)
+    return 1
+  }
+'
+
+# git_guard_scan_agents — print the first Agent value on stdin that is not one
+# known id, or nothing. The value is ONE id, compared whole against each known
+# id: `claude codex` names no single agent even though it is a substring of the
+# list. An indented continuation line is part of the value, as Git folds it
+# (`Agent: codex` + `  other` is `codex other`), so it is validated too. Every
+# line is read: there is no scissors boundary (see git_guard_unknown_agent).
+# An Agent line is one Git reads as a trailer with any separator in $_gg_seps.
+git_guard_scan_agents() {
+  GG_TRAILER_SEPS="$_gg_seps" awk -v known="$git_guard_known_agents" "$git_guard_awk_agent_trailer"'
+    BEGIN { nk = split(known, k, " "); for (i = 1; i <= nk; i++) ok[k[i]] = 1; pending = 0; bad = "" }
+    function check(v,   id, base) {
+      sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v)
+      id = tolower(v)
+      base = ""
+      # A lane suffix keeps the base id: gemini-dtm-oto-mesh -> gemini.
+      if (id ~ /^[a-z]+(-[a-z0-9][a-z0-9-]*)?$/) { base = id; sub(/-.*/, "", base) }
+      if (base == "" || !(base in ok)) bad = (v == "" ? "<empty>" : v)
+    }
+    bad != "" { next }
+    pending && /^[ \t]+[^ \t]/ {
+      cont = $0
+      sub(/^[ \t]+/, "", cont); sub(/[[:space:]]+$/, "", cont)
+      value = value " " cont
+      next
+    }
+    pending { check(value); pending = 0; if (bad != "") next }
+    agent_trailer($0) { value = AV; pending = 1 }
+    END { if (bad == "" && pending) check(value); if (bad != "") print bad }
+  '
+}
+
+# git_guard_unknown_agent FILE — print the first unknown Agent value in FILE as
+# Git may record it, or nothing. Returns 2 when the message cannot be read.
+#
+# The hook cannot see `-v`, `--no-verbose` or `--cleanup`, so it cannot know
+# what Git will keep (codex review of #106 at fe8e5f9f, two P2s). It therefore
+# checks every reading Git might make, and refuses if any of them is unknown:
+#   * The raw message, for whitespace and verbatim cleanup, where comment
+#     lines stay in the message as ordinary text and end a folded value.
+#   * The message with comment lines stripped by `git stripspace`, for strip
+#     cleanup. Git strips before it folds, so `Agent: codex` + `# note` +
+#     `  unknown` is recorded as `codex unknown`. stripspace applies the
+#     effective core.commentChar / core.commentString. For `auto` it falls back
+#     to `#`, while Git may pick any of `#;@!$%^&|:`, so each is tried.
+# There is no scissors boundary. Git cuts at its scissors line only in verbose
+# or scissors cleanup, and only when the marker uses its comment character. A
+# `#` marker under core.commentChar=';', or under strip cleanup without `-v`, is
+# not a cut, and an `Agent:` line below it was recorded. Everything Git itself
+# writes below the marker is a comment or a prefixed diff line, so none of it
+# can match. The one cost: an unknown `Agent:` line typed below a real `-v`
+# scissors line, which Git would discard, is still refused.
+# git_guard_check_text TEXT — print the first unknown Agent value in TEXT, one
+# version of the message, or nothing. Returns 2 when Git cannot parse it.
+#   1. The line scan above: every `Agent` line anywhere in TEXT, defence in
+#      depth for body lines Git does not record as trailers.
+#   2. Git's own parse, `git interpret-trailers --parse --no-divider`, which is
+#      what `%(trailers:key=Agent)` reports for the commit. It applies trailer
+#      aliases (`trailer.ai.key=Agent` makes `ai: gemnii` the Agent trailer),
+#      trailer.separators, folding and comment lines, and prints each trailer
+#      unfolded under its configured key, so validating its Agent lines covers
+#      every key, separator and alias form by construction (codex review of #106
+#      at 94560a8f, P2). `--no-divider` matches how Git reads a commit message:
+#      a `---` line does not end it.
+git_guard_check_text() {
+  _gg_bad="$(printf '%s\n' "$1" | git_guard_scan_agents)" || return 2
+  if [ -z "$_gg_bad" ]; then
+    _gg_parsed="$(printf '%s\n' "$1" | git interpret-trailers --parse --no-divider)" || return 2
+    _gg_bad="$(printf '%s\n' "$_gg_parsed" | git_guard_scan_agents)" || return 2
+  fi
+  [ -z "$_gg_bad" ] || printf '%s\n' "$_gg_bad"
+}
+
+git_guard_unknown_agent() {
+  _gg_seps="$(git_guard_trailer_seps)" || return 2
+  _gg_file="$1"
+  _gg_text="$(cat "$_gg_file")" || return 2
+  _gg_bad="$(git_guard_check_text "$_gg_text")" || return 2
+  if [ -n "$_gg_bad" ]; then
+    printf '%s\n' "$_gg_bad"
+    return 0
+  fi
+  _gg_cc="$(git config --get-regexp '^core\.comment(char|string)$')"
+  case $? in
+    0) _gg_cc="$(printf '%s\n' "$_gg_cc" | tail -n 1)" ;;
+    1) _gg_cc="" ;;
+    *) return 2 ;;
+  esac
+  case "$_gg_cc" in
+    *' auto') set -- '#' ';' '@' '!' '$' '%' '^' '&' '|' ':' ;;
+    *) set -- '' ;;
+  esac
+  for _gg_c in "$@"; do
+    if [ -n "$_gg_c" ]; then
+      _gg_stripped="$(git -c core.commentChar="$_gg_c" stripspace --strip-comments < "$_gg_file")" || return 2
+    else
+      _gg_stripped="$(git stripspace --strip-comments < "$_gg_file")" || return 2
+    fi
+    _gg_bad="$(git_guard_check_text "$_gg_stripped")" || return 2
+    if [ -n "$_gg_bad" ]; then
+      printf '%s\n' "$_gg_bad"
+      return 0
+    fi
+  done
+}
+
+git_guard_refuse_unknown_agent() {
+  _gg_bad="$(git_guard_unknown_agent "$1")"
+  _gg_rc=$?
+  if [ "$_gg_rc" -ne 0 ]; then
+    printf 'git-guard %s: cannot check the Agent trailers: Git could not read its configuration or the message\n' "$2" >&2
+    return 1
+  fi
+  [ -n "$_gg_bad" ] || return 0
+  printf "git-guard %s: unknown Agent trailer '%s' (known: %s)\n" \
+    "$2" "$_gg_bad" "$git_guard_known_agents" >&2
+  printf 'Set GIT_GUARD=0 only for an intentional human emergency commit.\n' >&2
+  return 1
+}
+
+# commit-msg runs `prepare-commit-msg FILE --check-agents` on the FINAL
+# message. The editor opens after this hook, so a value typed there was never
+# checked: an interactive `Agent: gemnii` landed while the same `-m` commit was
+# refused (codex review of #106 at 4e6325ea, P2). This mode runs only the
+# known-agent check, in every shell, and never edits FILE. Git's own second
+# argument is a message source (message, template, merge, squash, commit),
+# never this flag.
+if [ "${2:-}" = "--check-agents" ]; then
+  git_guard_refuse_unknown_agent "$message_file" commit-msg || exit 1
+  exit 0
+fi
+
 case "${GIT_GUARD_AGENT:-}" in
-  codex) agent=codex ;;
-  claude) agent=claude ;;
+  codex|claude|gemini|copilot) agent="$GIT_GUARD_AGENT" ;;
   "")
     if [ -n "${CODEX_THREAD_ID:-}" ]; then
       agent=codex
@@ -44,32 +227,43 @@ case "${GIT_GUARD_AGENT:-}" in
       agent=""
     fi
     ;;
-  *) agent="" ;;
+  *)
+    printf "git-guard prepare-commit-msg: unknown GIT_GUARD_AGENT '%s' (known: claude codex gemini copilot)\n" \
+      "$GIT_GUARD_AGENT" >&2
+    printf 'Set GIT_GUARD=0 only for an intentional human emergency commit.\n' >&2
+    exit 1
+    ;;
 esac
 
 if [ -z "$agent" ]; then
+  # Human shell. A commit with no Agent trailer is the owner's own and passes
+  # untouched; a trailer that records an agent's work must name a known agent,
+  # so a typo cannot create an attribution no tooling recognises.
+  git_guard_refuse_unknown_agent "$message_file" prepare-commit-msg || exit 1
   exit 0
 fi
 
-# Inspect every trailer-shaped Agent line, including case and whitespace forms
-# Git accepts. Multiple `git commit -m` paragraphs can put blank lines between
-# trailers, so checking only `interpret-trailers --parse` is insufficient.
-conflicting_agent="$(awk -v agent="$agent" '
+# Inspect every trailer-shaped Agent line, including case, whitespace and
+# trailer.separators forms Git accepts. Multiple `git commit -m` paragraphs can
+# put blank lines between trailers, so checking only `interpret-trailers
+# --parse` is insufficient.
+# Git's own parse is read too, so an alias (`trailer.ai.key=Agent` with
+# `ai: codex`) is seen as the Agent trailer it records.
+if ! _gg_seps="$(git_guard_trailer_seps)" ||
+  ! _gg_parsed="$(git interpret-trailers --parse --no-divider < "$message_file")"; then
+  printf 'git-guard prepare-commit-msg: cannot check the Agent trailers: Git could not read its configuration or the message\n' >&2
+  exit 1
+fi
+conflicting_agent="$({ cat "$message_file"; printf '%s\n' "$_gg_parsed"; } |
+  GG_TRAILER_SEPS="$_gg_seps" awk -v agent="$agent" "$git_guard_awk_agent_trailer"'
   BEGIN { conflict = "" }
-  {
-    line = $0
-    lower = tolower(line)
-    if (lower ~ /^agent[[:space:]]*:/) {
-      sub(/^[^:]*:[[:space:]]*/, "", line)
-      sub(/^[[:space:]]+/, "", line)
-      sub(/[[:space:]]+$/, "", line)
-      if (tolower(line) != agent && conflict == "") {
-        conflict = (line == "" ? "<empty>" : line)
-      }
+  agent_trailer($0) {
+    if (tolower(AV) != agent && conflict == "") {
+      conflict = (AV == "" ? "<empty>" : AV)
     }
   }
   END { printf "%s\n", conflict }
-' "$message_file")"
+')"
 
 if [ -n "$conflicting_agent" ]; then
   printf 'git-guard prepare-commit-msg: conflicting Agent trailer: %s (detected agent: %s)\n' \
@@ -182,11 +376,14 @@ case "$agent" in
       --trailer 'Agent: codex' \
       "$message_file"
     ;;
-  claude)
+  claude|gemini|copilot)
+    # None gets a hook-written co-author: Claude writes its own (it names the
+    # model); Gemini's and Copilot's attribution is their signing key plus this
+    # trailer.
     git_guard_trailers --in-place \
       --if-exists replace \
       --if-missing add \
-      --trailer 'Agent: claude' \
+      --trailer "Agent: $agent" \
       "$message_file"
     ;;
 esac
