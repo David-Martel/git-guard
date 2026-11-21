@@ -882,7 +882,11 @@ remove what drain already proves integrated, but never another lane's work
 without proof of custody. With `hygiene.syncRemove=true` set globally, each
 pass runs `drain --apply --unattended` in place of the dry run (`sync
 --dry-run` runs `drain --dry-run --unattended`, which shows the custody
-verdicts and removes nothing). `--unattended` is ordinary drain plus:
+verdicts and removes nothing). A repository where any fetch in that pass
+failed or timed out, or where nothing was fetched, keeps the plain dry run,
+and the report says `removal withheld`. Drain judges integration from
+remote-tracking refs, and after a failed fetch those refs are stale: they can
+miss an upstream that resumed after its merge. `--unattended` is ordinary drain plus:
 
 - it refuses `--allow-ignored` outright. A tree holding ignored data (a venv,
   build output) is always kept, because nothing is ever archived; only

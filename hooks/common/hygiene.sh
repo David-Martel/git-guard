@@ -60,7 +60,9 @@
 #   hygiene.syncRemove         true, global/system only: sync removes what
 #                              `drain --unattended` proves integrated AND
 #                              ~/.config/git-guard/custody.grants grants
-#                              (default off; a repo's false opts it out)
+#                              (default off; a repo's false opts it out).
+#                              A repo whose fetch failed in this pass keeps
+#                              the dry run ("removal withheld")
 #   hygiene.custodyBus         false, global only: grant without the agent-bus
 #                              claims check (default: the check is required)
 #   hygiene.custodyBusCommand  global only: the agent-bus CLI to ask (agent-bus)
@@ -1175,9 +1177,18 @@ hyg_sync_repo() {
   if [ "$HYG_SYNC_DRAIN" = "1" ]; then
     _dto="$(cd "$1" && hyg_int hygiene.syncDrainTimeout "$HYG_SYNC_DEFAULT_DRAIN_TIMEOUT")"
     # Removal needs the global opt-in; a repository can only opt itself out.
-    _dmode="--dry-run"
+    _dmode="--dry-run"; _dwhy=""
     if [ "$HYG_SYNC_REMOVE" = "1" ] && [ "$(git -C "$1" config --bool --get hygiene.syncRemove 2>/dev/null)" = "true" ]; then
-      if [ "$HYG_SYNC_DRY" = "1" ]; then _dmode="--dry-run --unattended"; else _dmode="--apply --unattended"; fi
+      # Drain judges integration from remote-tracking refs. After a failed
+      # fetch they are stale and can miss an upstream that resumed after its
+      # merge (codex review of #107 at dd0452f, P1), so any fetch in this repo
+      # that did not succeed keeps the drain a dry run. So does a run that
+      # fetched nothing.
+      _ffail="$(awk -F '\t' '$2 != "ok" { printf "%s%s%s", (n++ ? ", " : ""), $1, ($2 == "failed" ? "" : ": " $2) }' "$HYG_TMP/fetched" 2>/dev/null)"
+      if [ -n "$_ffail" ]; then _dwhy="  (removal withheld: fetch failed ($_ffail); drained as a dry run)"
+      elif [ ! -s "$HYG_TMP/fetched" ]; then _dwhy="  (removal withheld: no remote was fetched; drained as a dry run)"
+      elif [ "$HYG_SYNC_DRY" = "1" ]; then _dmode="--dry-run --unattended"
+      else _dmode="--apply --unattended"; fi
     fi
     : > "$HYG_TMP/removed"
     # shellcheck disable=SC2086  # _dmode is one or two flags
@@ -1185,6 +1196,7 @@ hyg_sync_repo() {
     _drc=$?
     awk -v r="$1" '{ printf "R\t%s\t%s\n", r, $0 }' "$HYG_TMP/removed" >> "$HYG_SYNC_REC"
     [ "$_drc" = "124" ] && echo "  (drain dry run timed out after ${_dto}s: hygiene.syncDrainTimeout)" >> "$HYG_TMP/drain"
+    [ -z "$_dwhy" ] || printf '%s\n' "$_dwhy" >> "$HYG_TMP/drain"
     awk -v r="$1" -v rc="$_drc" '{ printf "D\t%s\t%s\t%s\n", r, rc, $0 } END { if (NR == 0) printf "D\t%s\t%s\t\n", r, rc }' "$HYG_TMP/drain" >> "$HYG_SYNC_REC"
   fi
   return 0

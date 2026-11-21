@@ -19,6 +19,8 @@
 #     same fixture, so a refusal that never fires cannot pass by accident.
 #   * Default off: without hygiene.syncRemove, nothing is removed.
 #   * sync --dry-run with removal on removes nothing.
+#   * A failed fetch of any remote in the repo keeps everything: drain runs
+#     as a dry run and the report says removal was withheld.
 #   * Refusals, each keeping every item: no custody.grants file; a grants file
 #     that names another repo; a claim naming the branch; a claims read that
 #     fails; no agent-bus CLI; ignored data in the worktree; a repo-local
@@ -208,6 +210,14 @@ t_rm_refusals() {
   t_rm_fixture optout || t_fail "fixture optout"
   git -C "$SY_REPO" config hygiene.syncRemove false
   t_rm_expect_kept "repo-local hygiene.syncRemove=false" "would remove"
+  # A failed fetch keeps everything (codex review of #107 at dd0452f, P1).
+  # Integration is judged from remote-tracking refs, so after a failed fetch
+  # they are stale and can miss an upstream that resumed after its merge. The
+  # drain then runs as a dry run. Every other refusal starts from the same
+  # fixture with a working origin, so this one cannot pass by accident.
+  t_rm_fixture fetchfail || t_fail "fixture fetchfail"
+  git -C "$SY_REPO" remote set-url origin "$SY_ROOT/no-such-origin.git"
+  t_rm_expect_kept "a fetch failed in this run" "removal withheld: fetch failed (origin)"
 
   # --- custody refusals ---------------------------------------------------------
   t_rm_fixture nogrants || t_fail "fixture nogrants"
