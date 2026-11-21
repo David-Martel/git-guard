@@ -29,6 +29,12 @@
 #     judged against the refreshed ref and kept. The positive control, the
 #     same fixture left fresh, removes both worktrees and names main as the
 #     default branch (hyg_base_name strips the whole remote name).
+#   * A successful fetch is not proof of freshness (codex review of #107 at
+#     0dca80a4, P1): with a narrow refspec that never refreshes the rolled-back
+#     integration ref, and with a negative refspec that hides an upstream which
+#     resumed, removal is withheld ("... is stale"). Their controls, the same
+#     refspecs with nothing moved, are proven fresh by ls-remote and remove the
+#     merged stale branch.
 #   * index.lock (claude review of #107 at 9ce7fe3): a worktree whose index
 #     is locked is kept by drain's own inspection, and one locked after
 #     inspection is kept by the recheck right before removal; the unlocked
@@ -252,6 +258,20 @@ sys.exit(0 if ok else 1)' "$report" "$manifest" \
   rm -f "$SY_REPO/.git/worktrees/repo-done/index.lock"
 }
 
+# t_rm_resume_old REMOTE_REPO — add a commit to branch old in the bare
+# REMOTE_REPO through a throwaway clone (an upstream that resumed after its
+# merge).
+t_rm_resume_old() {
+  rm -rf "$1.work"
+  (
+    git clone -q -b old "$1" "$1.work" 2>/dev/null && cd "$1.work" || exit 1
+    git config user.email tester@git-guard.local; git config user.name git-guard-tester
+    git config commit.gpgsign false; git config core.hooksPath "$GG_T_TMPROOT/no-hooks"
+    printf 'resumed\n' > resumed.txt; git add resumed.txt; git commit -q -m "resumed after merge" || exit 1
+    git push -q origin old 2>/dev/null
+  )
+}
+
 # t_rm_baseref_fixture NAME — t_rm_fixture plus a second remote, lab/integ,
 # cloned from origin after the squash (so its main integrates sq), with
 # origin/HEAD removed and kept removed (remote.origin.followRemoteHEAD=never:
@@ -333,6 +353,46 @@ t_rm_refusals() {
   git -C "$SY_REPO" config hygiene.baseRef refs/heads/main
   t_rm_expect_kept "hygiene.baseRef is a local branch" \
     "removal withheld: integration ref refs/heads/main is not a remote-tracking ref"
+  # A fetch that succeeds is not proof (codex review of #107 at 0dca80a4, P1):
+  # a narrow or negative refspec leaves the refs drain reads untouched. Sync
+  # compares each one with `git ls-remote` and withholds removal on any
+  # mismatch. Off Linux the merged stale branch "old" is still deletable
+  # (branches need no cwd check), so each case discriminates there too.
+  # (1) Narrow refspec: lab/integ fetches only release/*, so its main is never
+  # refreshed after the rollback.
+  t_rm_baseref_fixture narrow || t_fail "fixture narrow"
+  git -C "$SY_REPO" config hygiene.baseRef refs/remotes/lab/integ/main
+  git -C "$SY_REPO" config remote.lab/integ.fetch '+refs/heads/release/*:refs/remotes/lab/integ/release/*'
+  git -C "$RM_INTEG" update-ref refs/heads/main "$(git -C "$SY_REPO" rev-parse old)"
+  t_rm_expect_kept "narrow refspec: integration ref rolled back but never refreshed" \
+    "removal withheld: the integration ref refs/remotes/lab/integ/main is stale"
+  # Control: the same narrow refspec with lab/integ unchanged proves the ref
+  # fresh, so nothing is withheld and the merged stale branch is removed.
+  t_rm_baseref_fixture narrow-ok || t_fail "fixture narrow-ok"
+  git -C "$SY_REPO" config hygiene.baseRef refs/remotes/lab/integ/main
+  git -C "$SY_REPO" config remote.lab/integ.fetch '+refs/heads/release/*:refs/remotes/lab/integ/release/*'
+  t_sync_run "$sylog"
+  ! grep -Fq "removal withheld" "$report" && ! git -C "$SY_REPO" rev-parse -q --verify refs/heads/old >/dev/null \
+    && t_ok "narrow refspec, integration ref unchanged: proven fresh, merged branch removed" \
+    || { t_fail "narrow refspec, integration ref unchanged: removal withheld or branch kept"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
+  # (2) Negative refspec: origin excludes old, whose upstream resumed after
+  # the merge; the tracking ref stays at the merged tip, so hyg_remote_moved
+  # sees nothing.
+  t_rm_fixture negative || t_fail "fixture negative"
+  git -C "$SY_REPO" push -q -u origin old 2>/dev/null
+  git -C "$SY_REPO" config --add remote.origin.fetch '^refs/heads/old'
+  t_rm_resume_old "$SY_ORIGIN" || t_fail "negative: could not resume old on origin"
+  touch -t 202001010000 "$SY_REPO/.git/logs/refs/heads/old"
+  t_rm_expect_kept "negative refspec hides an upstream that resumed" "removal withheld: the upstream of old is stale"
+  # Control: the same negative refspec with old not resumed is fresh.
+  t_rm_fixture negative-ok || t_fail "fixture negative-ok"
+  git -C "$SY_REPO" push -q -u origin old 2>/dev/null
+  git -C "$SY_REPO" config --add remote.origin.fetch '^refs/heads/old'
+  touch -t 202001010000 "$SY_REPO/.git/logs/refs/heads/old"
+  t_sync_run "$sylog"
+  ! grep -Fq "removal withheld" "$report" && ! git -C "$SY_REPO" rev-parse -q --verify refs/heads/old >/dev/null \
+    && t_ok "negative refspec, upstream unchanged: proven fresh, merged branch removed" \
+    || { t_fail "negative refspec, upstream unchanged: removal withheld or branch kept"; grep -F '"lines"' "$report" | head -c 2000 >&2; }
   # A branch's upstream remote that has no URL is never fetched (claude review
   # of #107 at 9ce7fe3): removal is withheld, not silently judged stale.
   t_rm_fixture nourl || t_fail "fixture nourl"

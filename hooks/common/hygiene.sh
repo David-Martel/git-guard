@@ -1168,6 +1168,73 @@ hyg_sync_checkout() {
   return 0
 }
 
+# hyg_sync_ls REPO REMOTE TIMEOUT — list REMOTE's refs once per pass into
+# $HYG_TMP/lsr (<remote>\t<sha>\t<ref>), bounded like a fetch. Fails when
+# the listing fails.
+hyg_sync_ls() {
+  _lst="$(awk -F '\t' -v r="$2" '$1 == r { print $2; exit }' "$HYG_TMP/lsr-done" 2>/dev/null)"
+  if [ -z "$_lst" ]; then
+    if hyg_sync_bounded "$3" git -C "$1" ls-remote --refs "$2" </dev/null > "$HYG_TMP/lsr.part" 2>/dev/null; then
+      awk -v r="$2" 'NF >= 2 { printf "%s\t%s\t%s\n", r, $1, $2 }' "$HYG_TMP/lsr.part" >> "$HYG_TMP/lsr"; _lst=ok
+    else _lst=failed; fi
+    printf '%s\t%s\n' "$2" "$_lst" >> "$HYG_TMP/lsr-done"
+  fi
+  [ "$_lst" = ok ]
+}
+
+# hyg_sync_unfresh REPO BASE TIMEOUT — prints why removal cannot trust the
+# remote-tracking refs drain will read, or nothing when every one is proven
+# fresh. A successful fetch is not proof: a narrow or negative refspec
+# (remote.<r>.fetch) leaves a ref untouched (codex review of #107 at 0dca80a4,
+# P1). So each ref is compared with the remote's own listing: the
+# integration ref BASE against refs/heads/<name> on its remote, and every
+# local branch's upstream (branch.<b>.remote and .merge, a local "." upstream
+# excepted) against what <b>@{upstream} resolves to here, the ref
+# hyg_remote_moved reads. Absent on both sides is consistent (the upstream is
+# gone); any other difference, or a remote that cannot be listed, is not.
+hyg_sync_unfresh() {
+  : > "$HYG_TMP/lsr"; : > "$HYG_TMP/lsr-done"
+  _ubf="$(git -C "$1" rev-parse --symbolic-full-name "$2" 2>/dev/null)" || _ubf=""
+  _ubr=""; [ -z "$_ubf" ] || _ubr="$(cd "$1" && hyg_ref_remote "$_ubf")"
+  if [ -z "$_ubr" ]; then printf 'integration ref %s is not a remote-tracking ref' "$2"; return 0; fi
+  git -C "$1" for-each-ref --format='%(refname)%09%(objectname)' refs/remotes/ > "$HYG_TMP/rtrefs" 2>/dev/null
+  git -C "$1" for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/ > "$HYG_TMP/ups" 2>/dev/null
+  {
+    printf '%s\trefs/heads/%s\tthe integration ref %s\t%s\n' "$_ubr" "${_ubf#"refs/remotes/$_ubr/"}" "$_ubf" \
+      "$(git -C "$1" rev-parse -q --verify "$_ubf" 2>/dev/null)"
+    # Config keys are branch.<name>.<var>; <name> may hold dots, <var> not.
+    git -C "$1" config --get-regexp '^branch\..*\.(remote|merge)$' 2>/dev/null |
+      awk -v rt="$HYG_TMP/rtrefs" -v up="$HYG_TMP/ups" '
+        BEGIN {
+          while ((getline l < rt) > 0) { split(l, a, "\t"); sha[a[1]] = a[2] }
+          while ((getline l < up) > 0) { split(l, a, "\t"); trk[a[1]] = a[2]; has[a[1]] = 1 }
+        }
+        {
+          k = $1; v = substr($0, length(k) + 2); sub(/^branch\./, "", k)
+          n = k; sub(/\.[^.]*$/, "", n); var = substr(k, length(n) + 2)
+          if (var == "remote") rem[n] = v; else mg[n] = v
+        }
+        END {
+          for (b in rem) if ((b in has) && (b in mg) && rem[b] != "" && rem[b] != ".")
+            printf "%s\t%s\tthe upstream of %s\t%s\n", rem[b], mg[b], b, (trk[b] == "" ? "" : sha[trk[b]])
+        }'
+  } > "$HYG_TMP/ureq"
+  cut -f1 "$HYG_TMP/ureq" | awk 'NF && !s[$0]++' > "$HYG_TMP/uremotes"
+  while IFS= read -r _ulr; do
+    hyg_sync_ls "$1" "$_ulr" "$3" || { printf 'cannot list remote %s to prove its refs fresh' "$_ulr"; return 0; }
+  done < "$HYG_TMP/uremotes"
+  awk -F '\t' -v ls="$HYG_TMP/lsr" '
+    BEGIN { while ((getline l < ls) > 0) { split(l, a, "\t"); rs[a[1] SUBSEP a[3]] = a[2] } }
+    {
+      r = rs[$1 SUBSEP $2]
+      if (r != $4) {
+        printf "%s is stale (%s %s: %s on the remote, %s here)", $3, $1, $2,
+          (r == "" ? "absent" : substr(r, 1, 8)), ($4 == "" ? "absent" : substr($4, 1, 8))
+        exit
+      }
+    }' "$HYG_TMP/ureq"
+}
+
 # hyg_sync_repo REPO — fetch, then decide the primary and each linked worktree,
 # then record the drain dry run.
 hyg_sync_repo() {
@@ -1246,6 +1313,8 @@ hyg_sync_repo() {
       elif [ -z "$_ib" ]; then _dwhy="  (removal withheld: integration ref unknown; drained as a dry run)"
       elif [ -z "$_ibr" ]; then _dwhy="  (removal withheld: integration ref $_ib is not a remote-tracking ref; drained as a dry run)"
       elif [ "$(hyg_sync_fetched "$_ibr")" != "ok" ]; then _dwhy="  (removal withheld: integration remote $_ibr was not fetched; drained as a dry run)"
+      elif _fwhy="$(cd "$1" && hyg_sync_unfresh "$1" "$_ib" "$_to")" && [ -n "$_fwhy" ]; then
+        _dwhy="  (removal withheld: $_fwhy; drained as a dry run)"
       elif [ "$HYG_SYNC_DRY" = "1" ]; then _dmode="--dry-run --unattended"
       else _dmode="--apply --unattended"; fi
     fi

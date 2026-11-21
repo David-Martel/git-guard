@@ -891,7 +891,16 @@ says `removal withheld`, when any of those fetches failed or timed out, when an
 upstream's remote has no URL (it cannot be fetched), when nothing was fetched,
 or when the integration ref is unknown, is not a remote-tracking ref (a local
 branch, a tag, a commit) or belongs to a remote this pass did not fetch. An
-upstream that is a local branch (remote `.`) needs no fetch. Drain judges integration from
+upstream that is a local branch (remote `.`) needs no fetch. A successful
+fetch is not taken as proof either, since a narrow or negative refspec
+(`remote.<r>.fetch`) can leave a ref untouched. Each ref that drain reads is
+compared with `git ls-remote` of its remote: the integration ref
+`refs/remotes/<r>/<b>` against `refs/heads/<b>`, and every local branch's
+upstream (`branch.<b>.remote` and `.merge`) against what `<b>@{upstream}`
+resolves to. Removal is withheld (`... is stale`) on any difference, or when a
+remote cannot be listed. An upstream that is absent on both sides is
+consistent: it is gone. An integration ref whose remote-side name differs
+under a custom refspec cannot be proven fresh, so removal is withheld. Drain judges integration from
 remote-tracking refs, and after a failed fetch those refs are stale: they can
 miss an upstream that resumed after its merge. `--unattended` is ordinary drain plus:
 
