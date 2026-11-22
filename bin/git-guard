@@ -282,14 +282,15 @@ dr_wsl_list() {
 }
 # Required hooks of a git-guard hooks dir, as one sh script so the host check
 # and the per-distro --wsl probe cannot drift. $1 = hooks dir. Prints
-# "<physical dir>|<bad hooks>|<yes|no: VERSION beside it>", or "|unresolved|".
+# "<physical dir>|<bad hooks>|<yes|no: VERSION beside it>|<replaced hooks>",
+# or "|unresolved||".
 # pre-commit and pre-push are required (pre-push carries the pushed-range
 # secret scan), and so are the blocking engines the hooks run only when they
 # are executable (`[ -x ]` in hooks/pre-commit): without them a hook passes
 # having checked nothing. A shipped commit-msg / prepare-commit-msg must be
 # runnable.
 # shellcheck disable=SC2016  # expanded by the probing sh, not here
-DR_HOOKS_PROBE='p="$(cd "$1" 2>/dev/null && pwd -P)" || { echo "|unresolved|"; exit 0; }
+DR_HOOKS_PROBE='p="$(cd "$1" 2>/dev/null && pwd -P)" || { echo "|unresolved||"; exit 0; }
 bad=""
 for h in pre-commit pre-push common/secret_scan.sh common/nul-cleanup.sh common/qa_gate.sh; do
   [ -x "$p/$h" ] || bad="$bad $h"
@@ -297,8 +298,22 @@ done
 for h in commit-msg prepare-commit-msg; do
   if [ -e "$p/$h" ] && [ ! -x "$p/$h" ]; then bad="$bad $h"; fi
 done
-if [ -r "${p%/*}/VERSION" ]; then v=yes; else v=no; fi
-echo "$p|${bad# }|$v"
+replaced=""
+if [ -r "${p%/*}/VERSION" ]; then
+  v=yes
+  # The Lefthook installer can replace an executable in-place while leaving
+  # VERSION and the engines untouched. Recognize its generated function
+  # without running the suspect hook.
+  for h in pre-commit pre-push commit-msg prepare-commit-msg post-commit; do
+    if [ -f "$p/$h" ] &&
+       grep -Eq "^[[:space:]]*call_lefthook[[:space:]]*[(][[:space:]]*[)]" "$p/$h"; then
+      replaced="$replaced $h"
+    fi
+  done
+else
+  v=no
+fi
+printf "%s|%s|%s|%s\n" "$p" "${bad# }" "$v" "${replaced# }"
 '
 # Script run inside a distro: "nogit", "<git version>|" (no hooksPath), or
 # "<git version>|<hooksPath>|" followed by DR_HOOKS_PROBE's line.
@@ -331,7 +346,7 @@ dr_check_wsl() {
     case "$dr_out" in
       nogit) printf '  [--]   wsl            %s: git not installed; nothing to cover\n' "$dr_d"; continue ;;
       ?*'|') : ;;                    # git, no hooksPath
-      ?*'|'*'|'*'|'*'|'*) : ;;        # git, hooksPath, probe line
+      ?*'|'*'|'*'|'*'|'*'|'*) : ;;    # git, hooksPath, probe line
       *) dr_fail "wsl            $dr_d: could not query git in the distro"; continue ;;
     esac
     dr_v="${dr_out%%|*}"; dr_rest="${dr_out#*|}"
@@ -345,11 +360,14 @@ dr_check_wsl() {
     fi
     dr_hp="${dr_rest%%|*}"; dr_rest="${dr_rest#*|}"
     dr_p="${dr_rest%%|*}"; dr_rest="${dr_rest#*|}"
-    dr_pbad="${dr_rest%%|*}"; dr_pver="${dr_rest#*|}"
+    dr_pbad="${dr_rest%%|*}"; dr_rest="${dr_rest#*|}"
+    dr_pver="${dr_rest%%|*}"; dr_preplaced="${dr_rest#*|}"
     if [ -z "$dr_p" ]; then
       dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp does not resolve; no hooks run there"
     elif [ -n "$dr_pbad" ]; then
       dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp, but $dr_pbad MISSING or not executable"
+    elif [ -n "$dr_preplaced" ]; then
+      dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp: $dr_preplaced replaced by Lefthook wrappers (restore the Git Guard release hooks)"
     elif [ "$dr_pver" != yes ]; then
       if [ "$doctor_require" = 1 ]; then
         dr_fail "wsl            $dr_d (git $dr_v): core.hooksPath=$dr_hp has no git-guard VERSION beside it (stale copy; install git-guard in the distro)"
@@ -418,17 +436,20 @@ cmd_doctor() {
     # shellcheck disable=SC2088  # intentional literal "~/" match, see bin/git-guard's other use.
     case "$ghp" in "~/"*) ghp="$HOME/${ghp#\~/}" ;; esac
     # The same probe runs inside each WSL distro (--wsl), so the host and the
-    # distros apply one rule set. Output: "<physical dir>|<bad hooks>|<yes|no>".
+    # distros apply one rule set.
     dr_probe="$(sh -c "$DR_HOOKS_PROBE" sh "$ghp")"
     hooks_phys="${dr_probe%%|*}"; dr_rest="${dr_probe#*|}"
-    dr_bad="${dr_rest%%|*}"; dr_has_version="${dr_rest#*|}"
+    dr_bad="${dr_rest%%|*}"; dr_rest="${dr_rest#*|}"
+    dr_has_version="${dr_rest%%|*}"; dr_replaced="${dr_rest#*|}"
     if [ -n "$hooks_phys" ]; then
-      if [ -z "$dr_bad" ]; then
-        printf '  [ok]   hooks-path     %s -> %s (pre-commit, pre-push present + executable)\n' "$ghp" "$hooks_phys"
-        doctor_gg_phys="$hooks_phys"
-      else
+      if [ -n "$dr_bad" ]; then
         printf '  [FAIL] hooks-path     %s -> %s, but %s MISSING or not executable\n' "$ghp" "$hooks_phys" "$dr_bad"
         doctor_rc=1
+      elif [ -n "$dr_replaced" ]; then
+        dr_fail "hooks-provider $ghp -> $hooks_phys: $dr_replaced replaced by Lefthook wrappers (restore the Git Guard release hooks)"
+      else
+        printf '  [ok]   hooks-path     %s -> %s (pre-commit, pre-push present + executable)\n' "$ghp" "$hooks_phys"
+        doctor_gg_phys="$hooks_phys"
       fi
       # A release carries VERSION beside hooks/. A real directory without one
       # is a stale legacy copy that install.sh did not replace (Carbon,

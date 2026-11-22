@@ -40,6 +40,22 @@ t_dr_engines() {
   done
 }
 
+# Executable provider-only replacement. Doctor must inspect it without running it.
+t_dr_lefthook_wrapper() {
+  cat > "$1" <<'LEFTHOOK_WRAPPER'
+#!/bin/sh
+call_lefthook() {
+  lefthook "$@"
+}
+call_lefthook run pre-push "$@"
+LEFTHOOK_WRAPPER
+  chmod +x "$1"
+}
+
+# Protects: installed host and WSL coverage verdicts for Git Guard entrypoints.
+# Detects: Lefthook wrappers still executable in a versioned Git Guard release.
+# Needs: POSIX sh and Git plus a stub WSL executable with an isolated HOME.
+# Breadcrumb: bin/git-guard, DR_HOOKS_PROBE, cmd_doctor and dr_check_wsl.
 t_case_doctor_coverage() {
   t_begin "39 doctor: host coverage is checkable (--require-installed/--repo/--strict/--wsl)"
   dr_root="$(mktemp -d "$GG_T_TMPROOT/doctor39.XXXXXX")" || { t_fail "mktemp"; return 1; }
@@ -131,6 +147,24 @@ t_case_doctor_coverage() {
   t_dr_run "$dr_home" "$dr_log" --repo "$dr_inherit"; rc=$?
   t_expect_rc 0 "$rc" "--repo: a repo inheriting the global hooks path passes"
   t_dr_has "$dr_log" '^  \[ok\]   repo-hooks .*\(global: .*-> git-guard hooks' "--repo reports the effective global hooks path"
+
+  # The overwrite leaves the real release's directory, VERSION and engines in
+  # place. Replacing only one hook at a time proves all five are inspected.
+  dr_managed_hooks="pre-commit pre-push commit-msg prepare-commit-msg post-commit"
+  for dr_hook in $dr_managed_hooks; do
+    cp "$GG_ROOT/hooks/$dr_hook" "$dr_rel/hooks/$dr_hook"
+  done
+  t_dr_run "$dr_home" "$dr_log" --require-installed --repo "$dr_inherit"; rc=$?
+  t_expect_rc 0 "$rc" "native Git Guard entrypoints pass doctor"
+  for dr_hook in $dr_managed_hooks; do
+    t_dr_lefthook_wrapper "$dr_rel/hooks/$dr_hook"
+    t_dr_run "$dr_home" "$dr_log" --require-installed --repo "$dr_inherit"; rc=$?
+    t_expect_rc 1 "$rc" "native $dr_hook Lefthook wrapper makes the host NOT COVERED"
+    t_dr_has "$dr_log" "^  \[FAIL\] hooks-provider .* $dr_hook .*Lefthook" "native doctor names overwritten $dr_hook"
+    t_dr_lacks "$dr_log" '^  \[ok\]   repo-hooks' "inherited repo lacks a coverage verdict when $dr_hook was replaced"
+    t_dr_has "$dr_log" '^git-guard doctor: NOT COVERED' "native verdict is NOT COVERED"
+    cp "$GG_ROOT/hooks/$dr_hook" "$dr_rel/hooks/$dr_hook"
+  done
 
   dr_local="$(gg_mktemp_repo)"
   mkdir -p "$dr_local/.githooks"
@@ -324,6 +358,20 @@ STUB
   ( GG_T_WSL_ONLY="Alpha"; export GG_T_WSL_ONLY; dr_wsl_run --wsl --require-installed --strict ); rc=$?
   t_expect_rc 0 "$rc" "--wsl --require-installed --strict passes a fully covered distro"
   t_dr_has "$dr_log" '^git-guard doctor: COVERED$' "a fully covered distro gives COVERED"
+  dr_alpha_hooks="$dr_distro_root/Alpha/.local/share/git-guard/v1/hooks"
+  for dr_hook in $dr_managed_hooks; do
+    cp "$GG_ROOT/hooks/$dr_hook" "$dr_alpha_hooks/$dr_hook"
+  done
+  ( GG_T_WSL_ONLY="Alpha"; export GG_T_WSL_ONLY; dr_wsl_run --wsl --require-installed ); rc=$?
+  t_expect_rc 0 "$rc" "WSL Git Guard entrypoints pass doctor"
+  for dr_hook in $dr_managed_hooks; do
+    t_dr_lefthook_wrapper "$dr_alpha_hooks/$dr_hook"
+    ( GG_T_WSL_ONLY="Alpha"; export GG_T_WSL_ONLY; dr_wsl_run --wsl --require-installed ); rc=$?
+    t_expect_rc 1 "$rc" "WSL $dr_hook Lefthook wrapper makes the host NOT COVERED"
+    t_dr_has "$dr_log" "^  \[FAIL\] wsl +Alpha .* $dr_hook .*Lefthook" "WSL doctor names overwritten $dr_hook"
+    t_dr_has "$dr_log" '^git-guard doctor: NOT COVERED' "WSL verdict is NOT COVERED"
+    cp "$GG_ROOT/hooks/$dr_hook" "$dr_alpha_hooks/$dr_hook"
+  done
   ( GG_T_WSL_ONLY="Epsilon"; export GG_T_WSL_ONLY; dr_wsl_run --wsl ); rc=$?
   t_expect_rc 1 "$rc" "a distro missing pre-push alone makes the host NOT COVERED"
   t_dr_has "$dr_log" '^git-guard doctor: NOT COVERED' "the verdict is NOT COVERED"
