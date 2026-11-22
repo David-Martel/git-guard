@@ -685,7 +685,8 @@ t_hyg_body() {
   # delete nothing, and must now carry git's message so the cause is visible.
   r13="$(t_hyg_repo)" || { t_fail "fixture r13"; return 0; }
   git -C "$r13" branch gone-merged
-  ( cd "$r13" && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.gguardprobe sh "$hyg" drain --apply >"$log" 2>&1 ); rc=$?
+  ( unset GIT_CONFIG_VALUE_0
+    cd "$r13" && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.gguardprobe sh "$hyg" drain --apply >"$log" 2>&1 ); rc=$?
   [ "$rc" -ne 0 ] && t_ok "broken GIT_CONFIG env: drain exits non-zero (rc=$rc)" || t_fail "broken GIT_CONFIG env: drain exited 0"
   if grep -q 'git: .*GIT_CONFIG_VALUE_0' "$log"; then
     t_ok "broken GIT_CONFIG env: the refusal shows git's error"
