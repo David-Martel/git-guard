@@ -132,6 +132,33 @@ t_case_native_staged_mandate() {
   _qm_has "$log" "suppresses a mandate rule with no reason" "index walk: the staged file's own content was scanned"
   _nm_clean "odd committed names"
   gg_rmrepo "$r2"
+  # The same walk with a TAB: the index records keep their tab separator, and reading the
+  # path as the second tab field cut "src/x.rs<TAB>zzz" to "src/x.rs", whose clean blob id
+  # then replaced the staged file's (codex autopilot review of #121 at 3a869f9, f284d0a).
+  r2="$(gg_mktemp_repo)" || { t_fail "repo"; rm -rf "$_nm_lab"; return; }
+  git -C "$r2" config core.protectNTFS false
+  _nm_clean_oid="$(printf 'pub fn ok() {}\n' | git -C "$r2" hash-object -w --stdin)"
+  git -C "$r2" update-index --add --cacheinfo "100644,$_nm_clean_oid,src/x.rs${_nm_tab}zzz"
+  git -C "$r2" -c core.hooksPath="$GG_T_TMPROOT/qm-no-hooks" commit -q -m "an odd committed name"
+  _qm_put "$r2" src/x.rs '// ast-grep-ignore: mandate-rust-panic\nfn p() {}\n'
+  ( cd "$r2" && NM_STUB_LINES="" PATH="$_nm_lab/stubsg:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+  t_expect_rc 1 "$?" "index walk: a committed name with a tab never replaces a staged Rust file's content"
+  _qm_has "$log" "suppresses a mandate rule with no reason" "index walk (tab): the staged file's own content was scanned"
+  _nm_clean "odd committed names (tab)"
+  gg_rmrepo "$r2"
+  # A backslash in a staged Rust name is an ordinary byte on POSIX. awk -v expanded it as an
+  # escape, so the comment records carried another path than the changed-line records and
+  # an unjustified suppression passed (codex autopilot review of #121 at 3a869f9, f284d0a).
+  # Measured on Windows Git Bash too: the old route returned 0 there as well.
+  r2="$(gg_mktemp_repo)" || { t_fail "repo"; rm -rf "$_nm_lab"; return; }
+  git -C "$r2" config core.protectNTFS false
+  _nm_bs_oid="$(printf '// ast-grep-ignore: mandate-rust-panic\nfn p() {}\n' | git -C "$r2" hash-object -w --stdin)"
+  git -C "$r2" update-index --add --cacheinfo "100644,$_nm_bs_oid,src/a\\b.rs"
+  ( cd "$r2" && NM_STUB_LINES="" PATH="$_nm_lab/stubsg:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+  t_expect_rc 1 "$?" "backslash name: an unjustified ignore in src/a\\b.rs is BLOCKED"
+  _qm_has "$log" "suppresses a mandate rule with no reason" "backslash name: the missing reason is named"
+  _nm_clean "backslash name"
+  gg_rmrepo "$r2"
   # A GitHub-escaped newline (%0A) or a tab in an ast-grep message must not split the
   # tab- and newline-separated findings records (same-class sweep).
   printf '#!/bin/sh\ncase "$1" in --version) echo "ast-grep 0.39.5"; exit 0 ;; esac\nprintf "::warning file=src/lib.rs,line=1,endLine=1,title=mandate-rust-panic::Panicking%%0Acall\\there\\n"\n' > "$_nm_lab/stubsg-msg"

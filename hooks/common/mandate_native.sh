@@ -122,7 +122,10 @@ fi
 # "enabled=on|off", "vendored=<prefix>" lines and "sev <key> <severity>" lines, or an
 # "error <message>" line.
 printf '%s\n' "$NM_RULES" > "$nm_tmp/rules"
-awk -F'|' -v src="$nm_source" '
+# Paths reach awk through ENVIRON, never -v: -v expands backslash escapes, so a Windows
+# path such as C:\tools would print with a tab (same-class sweep of the #121 review).
+NM_AWK_SRC="$nm_source" awk -F'|' '
+  BEGIN { src = ENVIRON["NM_AWK_SRC"] }
   FNR == NR { def[$1] = $2; codes[$1] = $3; order[++n] = $1; next }
   {
     eq = index($0, "="); if (eq == 0) next
@@ -268,7 +271,10 @@ tr '\000\012' '\012\002' < "$nm_tmp/ls" | awk '
     if (m[3] == "0" && (m[1] == "100644" || m[1] == "100755")) print m[2] "\t" substr($0, tab + 1) }' > "$nm_tmp/index"
 awk -F'\t' '
   FILENAME == ARGV[1] { vend[++nv] = $0; next }
-  FILENAME == ARGV[2] { oid[$2] = $1; next }
+  # The whole path after the first tab: $2 stopped at a tab inside the name, so an unchanged
+  # entry "src/x.rs<TAB>zzz" replaced the blob id of a staged src/x.rs (codex autopilot
+  # review of #121 at 3a869f9 and f284d0a).
+  FILENAME == ARGV[2] { oid[substr($0, index($0, "\t") + 1)] = $1; next }
   { if (!($1 in oid) || ($1 !~ /\.rs$/) || done[$1]++) next
     n = split($1, parts, "/"); v = 0
     for (i = 1; i < n; i++) if (parts[i] ~ /^(vendor|_vendor|third_party|node_modules|\.venv|site-packages)$/ || parts[i] ~ /^external/) v = 1
@@ -356,7 +362,11 @@ fi
 # Comment text per line: one-line "..." string literals are blanked, then the text from
 # the first // on (mandate_scan.py marker_comments with RUST_STRING_RE).
 while IFS= read -r nm_path; do
-  awk -v p="$nm_path" -v OFS='\t' '
+  # The path goes through ENVIRON: -v expanded backslash escapes, so src/a\b.rs became
+  # another path whose comment records never met its changed lines (codex autopilot review
+  # of #121 at 3a869f9 and f284d0a).
+  NM_AWK_PATH="$nm_path" awk -v OFS='\t' '
+    BEGIN { p = ENVIRON["NM_AWK_PATH"] }
     { line = $0; sub(/\r$/, "", line); bare = ""
       i = 1; L = length(line)
       while (i <= L) {
