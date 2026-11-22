@@ -343,7 +343,12 @@ if [ "$nm_panic_sev" != "off" ]; then
         if (!match(rest, /,line=[0-9]+,endLine=[0-9]+,title=[^:]*::/)) { bad = "unparseable ast-grep line " FNR; exit }
         file = substr(rest, 1, RSTART - 1); meta = substr(rest, RSTART + 1, RLENGTH - 3); msg = substr(rest, RSTART + RLENGTH)
         split(meta, kv, ","); line = substr(kv[1], 6) + 0; endl = substr(kv[2], 9) + 0; id = substr(kv[3], 7)
-        gsub(/\\/, "/", file)
+        # The exact path first: on POSIX src\x.rs and src/x.rs are different files, and
+        # folding every backslash moved a finding in a new src\x.rs onto src/x.rs, where
+        # its line was unchanged and the panic passed (codex autopilot review of #121 at
+        # 640a9da). Only a path that was not scanned as written is read with / separators,
+        # which is how ast-grep reports paths on Windows.
+        if (!(file in want)) gsub(/\\/, "/", file)
         # GitHub workflow-command escapes in the message.
         gsub(/%0A/, "\n", msg); gsub(/%0D/, "\r", msg); gsub(/%25/, "%", msg)
         if (!(file in want)) { bad = "ast-grep reported a file that was not scanned: " file; exit }

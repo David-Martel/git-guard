@@ -159,6 +159,31 @@ t_case_native_staged_mandate() {
   _qm_has "$log" "suppresses a mandate rule with no reason" "backslash name: the missing reason is named"
   _nm_clean "backslash name"
   gg_rmrepo "$r2"
+  # The ast-grep finding for a staged src\x.rs must stay on that file. Folding every
+  # backslash to / moved it onto src/x.rs, where line 2 was unchanged, and a new panic
+  # passed (codex autopilot review of #121 at 640a9da). A stub ast-grep reports the
+  # backslash path. POSIX only: on Windows the backslash is a directory separator.
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) t_skip "backslash finding path: POSIX file names only" ;;
+    *)
+      r2="$(gg_mktemp_repo)" || { t_fail "repo"; rm -rf "$_nm_lab"; return; }
+      _qm_put "$r2" src/x.rs 'pub fn a() {}\npub fn b() {}\n'
+      git -C "$r2" -c core.hooksPath="$GG_T_TMPROOT/qm-no-hooks" commit -q -m "base"
+      _qm_put "$r2" src/x.rs 'pub fn a2() {}\npub fn b() {}\n'
+      _nm_bs2_oid="$(printf 'pub fn a() {}\nfn p() { panic!("x"); }\n' | git -C "$r2" hash-object -w --stdin)"
+      git -C "$r2" update-index --add --cacheinfo "100644,$_nm_bs2_oid,src\\x.rs"
+      mkdir -p "$_nm_lab/stubsgbs"
+      cat > "$_nm_lab/stubsgbs/ast-grep" <<'STUB'
+#!/bin/sh
+case "$1" in --version) echo "ast-grep 0.39.5"; exit 0 ;; esac
+printf '%s\n' '::warning file=src\x.rs,line=2,endLine=2,title=mandate-rust-panic::Panicking call'
+STUB
+      chmod +x "$_nm_lab/stubsgbs/ast-grep"
+      ( cd "$r2" && PATH="$_nm_lab/stubsgbs:$_nm_lab/trip:$PATH" sh "$GG_ROOT/hooks/common/mandate_scan.sh" --staged ) >/dev/null 2>"$log"
+      t_expect_rc 1 "$?" "backslash finding path: a panic in a new src\\x.rs is BLOCKED, not moved to src/x.rs"
+      _nm_clean "backslash finding path"
+      gg_rmrepo "$r2" ;;
+  esac
   # A GitHub-escaped newline (%0A) or a tab in an ast-grep message must not split the
   # tab- and newline-separated findings records (same-class sweep).
   printf '#!/bin/sh\ncase "$1" in --version) echo "ast-grep 0.39.5"; exit 0 ;; esac\nprintf "::warning file=src/lib.rs,line=1,endLine=1,title=mandate-rust-panic::Panicking%%0Acall\\there\\n"\n' > "$_nm_lab/stubsg-msg"
