@@ -46,6 +46,7 @@ so CI can run `doctor` on an uninstalled checkout.
 | Check | Fails when |
 |---|---|
 | `hooks-path` | global/system `core.hooksPath` is unset (with `--require-installed`), dangling, or lacks an executable `pre-commit`, `pre-push`, `common/secret_scan.sh`, `common/nul-cleanup.sh` or `common/qa_gate.sh` (the hooks skip an engine that is not executable); a shipped `commit-msg`/`prepare-commit-msg` must be executable too |
+| `hooks-provider` | a versioned Git Guard hooks directory contains a Lefthook-generated wrapper in place of `pre-commit`, `pre-push`, `commit-msg`, `prepare-commit-msg` or `post-commit` |
 | `hooks-bypass` | `GIT_GUARD=0` or `LEFTHOOK=0` is set in the environment doctor runs in: every hook exits at once |
 | `timeout` | `timeout -k 1 5 sh -c :` fails, because `timeout(1)` is missing or rejects `-k` (stock macOS has none). The pre-push mandate (every platform) and the POSIX identity query (#119) need it, and each push would be refused with a TOOL ERROR. Fix: GNU or uutils coreutils, or on macOS `brew install coreutils` with its `timeout` on PATH. This is checked with and without `--require-installed`, so run doctor on each host before rolling out a release |
 | `hooks-version` | the hooks dir has no git-guard `VERSION` beside it: a stale legacy copy (FAIL with `--require-installed`, warning otherwise) |
@@ -54,7 +55,17 @@ so CI can run `doctor` on an uninstalled checkout.
 | `pyyaml` (`--repo`) | the interpreter the gate selects (`hooks/common/qa_python.sh`: `python`, else `python3`) cannot import `yaml` (warning; FAIL with `--strict`) |
 | `wsl` (`--wsl`) | a running distro has no global `core.hooksPath`, or its hooks dir fails the same check as `hooks-path` (one shared probe); no `VERSION` beside it is a warning (FAIL with `--require-installed`) |
 
-`--strict` turns every coverage warning into a failure.
+`--strict` turns every coverage warning into a failure. The WSL check also
+reports overwritten hooks through the [same probe](../bin/git-guard).
+
+Running `lefthook install` in a repository that inherits the shared
+`core.hooksPath` can overwrite entrypoints in the versioned Git Guard
+release. Git Guard already invokes `lefthook run` when it selects Lefthook
+as the repository's provider. Leave that dispatch to Git Guard. If doctor
+reports an overwrite, restore the entrypoints from the matching signed release tag.
+The [coverage suite](../tests/39-doctor-coverage.t.sh) verifies that the
+original hooks pass and a provider-only replacement fails in the host check
+and the simulated WSL probe.
 
 ### Repo-local hooks paths
 
