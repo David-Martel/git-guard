@@ -133,6 +133,30 @@ if [ "$#" -eq 1 ] && [ "${1:-}" = "--staged" ]; then
       "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
     exit 2
   fi
+  # During a merge both scanners scan the paths changed against EVERY parent, so the
+  # route is chosen from that same set. Against HEAD alone, Python new only against the
+  # other parent took the Rust-only route and skipped whole-file Python rules (codex
+  # autopilot review of #121 at 58f1da9).
+  if ! mandate_merge_head="$(mandate_git rev-parse --git-path MERGE_HEAD)"; then
+    printf '%s\n' "git-guard mandate TOOL ERROR [git]: cannot locate MERGE_HEAD" \
+      "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
+    exit 2
+  fi
+  if [ -f "$mandate_merge_head" ]; then
+    mandate_cr="$(printf '\r')"
+    # Builtins only (see above): one parent id per line, a trailing CR tolerated.
+    while IFS=' 	' read -r mandate_parent _ || [ -n "$mandate_parent" ]; do
+      mandate_parent="${mandate_parent%"$mandate_cr"}"
+      [ -n "$mandate_parent" ] || continue
+      if ! mandate_more="$(mandate_git -c core.quotePath=true diff --cached --name-only -M --diff-filter=d "$mandate_parent")"; then
+        printf '%s\n' "git-guard mandate TOOL ERROR [git]: cannot list the staged files against merge parent $mandate_parent" \
+          "git-guard mandate: TOOL ERROR — the quality mandate could not be evaluated, so the result is refused (fail closed); this is NOT a clean scan." >&2
+        exit 2
+      fi
+      mandate_names="$mandate_names
+$mandate_more"
+    done < "$mandate_merge_head"
+  fi
   # A name git had to C-quote ends in .py" rather than .py; both route to the scanner.
   case "
 $mandate_names

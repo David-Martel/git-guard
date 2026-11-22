@@ -281,6 +281,27 @@ STUB
   fi
   gg_rmrepo "$r"
 
+  # During a merge the route is chosen from the names changed against EVERY parent, as
+  # both scanners scan them. Python that is unchanged against HEAD but new against the
+  # other parent used to send the merge down the Rust-only route, skipping whole-file
+  # Python rules (codex autopilot review of #121 at 58f1da9). Control: the marker appears.
+  r="$(gg_mktemp_repo)" || { t_fail "repo"; rm -rf "$_nm_lab"; return; }
+  _qm_put "$r" src/lib.rs 'pub fn a() {}\n'
+  _qm_commit "$r" "base"
+  ( cd "$r" && git checkout -q -b side )
+  _qm_put "$r" src/side.rs 'pub fn s() {}\n'
+  _qm_commit "$r" "side rust"
+  ( cd "$r" && git checkout -q - )
+  _qm_put "$r" app.py 'x = 1\n'
+  _qm_commit "$r" "ours python"
+  ( cd "$r" && git -c core.hooksPath="$GG_T_TMPROOT/qm-no-hooks" merge -q --no-commit --no-ff side >/dev/null 2>&1 )
+  : > "$_nm_marker"
+  _nm_scan "$r" "$log"
+  if [ -s "$_nm_marker" ]; then t_ok "merge: Python new against another parent still goes to the scanner"
+  else t_fail "merge: Python new against another parent still goes to the scanner"; fi
+  : > "$_nm_marker"
+  gg_rmrepo "$r"
+
   if ! gg_has_astgrep; then
     if [ "${CI:-}" = "true" ]; then t_fail "native staged mandate needs ast-grep in CI"; else t_skip "native staged mandate: no genuine ast-grep"; fi
     rm -rf "$_nm_lab"; return
