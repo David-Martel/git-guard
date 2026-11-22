@@ -29,6 +29,8 @@
 #     the path named) when the in-use scan cannot read <common>/worktrees
 #     (a-r or a-x), a rebase state dir or file, or a linked worktree's HEAD;
 #     positive control: the same merged branch drains with normal modes.
+#   * when `git worktree list` itself fails (a broken GIT_CONFIG_* env), the
+#     refusal also prints git's own error; positive control without it.
 #   * `hygiene.sh defaults` sets global defaults only when unset.
 # shellcheck shell=sh
 
@@ -674,6 +676,31 @@ t_hyg_body() {
     else t_ok "positive control: merged rb is deleted once no worktree uses it"; fi
     gg_rmrepo "$r12"
   fi
+
+  # --- a failing `git worktree list` shows git's own error ------------------
+  # On dtm-p1gen9 (2026-11-22) a dry run in PC-AI refused with only "git
+  # worktree list failed" and advice to restore permissions. The real cause
+  # was an agent shell with GIT_CONFIG_COUNT set but GIT_CONFIG_VALUE_0
+  # missing, which makes every git command exit 128. The refusal must still
+  # delete nothing, and must now carry git's message so the cause is visible.
+  r13="$(t_hyg_repo)" || { t_fail "fixture r13"; return 0; }
+  git -C "$r13" branch gone-merged
+  ( unset GIT_CONFIG_VALUE_0
+    cd "$r13" && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.gguardprobe sh "$hyg" drain --apply >"$log" 2>&1 ); rc=$?
+  [ "$rc" -ne 0 ] && t_ok "broken GIT_CONFIG env: drain exits non-zero (rc=$rc)" || t_fail "broken GIT_CONFIG env: drain exited 0"
+  if grep -q 'git: .*GIT_CONFIG_VALUE_0' "$log"; then
+    t_ok "broken GIT_CONFIG env: the refusal shows git's error"
+  else
+    t_fail "broken GIT_CONFIG env: git's error is missing from the refusal"; head -c 2000 "$log" >&2
+  fi
+  git -C "$r13" rev-parse -q --verify refs/heads/gone-merged >/dev/null \
+    && t_ok "broken GIT_CONFIG env: nothing removed" || t_fail "broken GIT_CONFIG env: a branch was removed"
+  # Positive control: the same repo drains once the environment is sound.
+  ( cd "$r13" && sh "$hyg" drain --apply >"$log" 2>&1 ); rc=$?
+  t_expect_rc 0 "$rc" "positive control: drain --apply exits 0 without the broken env"
+  git -C "$r13" rev-parse -q --verify refs/heads/gone-merged >/dev/null \
+    && t_fail "positive control: merged gone-merged kept with a sound env" || t_ok "positive control: merged gone-merged is deleted with a sound env"
+  gg_rmrepo "$r13"
 
   # --- stale-branch dimension --------------------------------------------
   r2="$(t_hyg_repo)" || { t_fail "fixture r2"; return 0; }

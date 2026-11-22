@@ -776,6 +776,10 @@ search `.git/worktrees`, a worktree's git dir or rebase state directory, or
 cannot read a HEAD or state file that exists, it cannot tell which branches
 are in use, so it treats every branch as in use: the dry run and `--apply`
 both exit non-zero, remove nothing and name the path that could not be read.
+If `git worktree list` itself fails, the refusal repeats git's own error
+lines (prefixed `git:`); a common cause is a shell that sets
+`GIT_CONFIG_COUNT` without every `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`
+pair, which makes every git command fail.
 
 A tip that is not an ancestor is preserved before anything is removed: it is
 pinned to a temporary ref, bundled, verified with `git bundle verify`, a

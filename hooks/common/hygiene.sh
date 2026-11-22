@@ -246,7 +246,14 @@ hyg_worktrees() {
 # cannot be read: callers must then treat every branch as in use. A state
 # file that does not exist means that operation is not in progress.
 hyg_in_use() {
-  _iu_wl="$(git worktree list --porcelain 2>/dev/null)" || { hyg_say "git-guard hygiene: git worktree list failed"; return 1; }
+  # On failure, run it once more to show git's own error: without it the
+  # refusal cannot be told apart from a permission problem (a broken
+  # GIT_CONFIG_COUNT/KEY/VALUE environment fails every git command this way).
+  _iu_wl="$(git worktree list --porcelain 2>/dev/null)" || {
+    hyg_say "git-guard hygiene: git worktree list failed"
+    git worktree list --porcelain 2>&1 >/dev/null | sed 's/^/  git: /' >&2
+    return 1
+  }
   [ -n "$_iu_wl" ] || { hyg_say "git-guard hygiene: git worktree list printed nothing"; return 1; }
   printf '%s\n' "$_iu_wl" | sed -n 's|^branch refs/heads/||p'
   _iu_cd="$(git rev-parse --git-common-dir 2>/dev/null)" || { hyg_say "git-guard hygiene: cannot find the common git dir"; return 1; }
@@ -777,7 +784,7 @@ hyg_drain() {
   if ! hyg_in_use > "$HYG_TMP/in-use" 2> "$HYG_TMP/in-use-err"; then
     cat "$HYG_TMP/in-use-err" >&2
     hyg_say "git-guard hygiene drain: refused: cannot tell which branches worktrees are using, so every branch is treated as in use; nothing removed."
-    hyg_say "  Restore read and search permission on the path above (or finish that worktree's operation), then rerun."
+    hyg_say "  Fix what is named above (read and search permission on a path, an unfinished worktree operation, or the git error shown), then rerun."
     return 1
   fi
   _min_age="$(hyg_int hygiene.drainMinAgeMinutes "$HYG_DEFAULT_MIN_AGE")"
