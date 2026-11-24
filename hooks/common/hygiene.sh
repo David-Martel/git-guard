@@ -589,7 +589,8 @@ hyg_preserve() {
   _dir="$(git config --get hygiene.preserveDir 2>/dev/null || true)"
   [ -n "$_dir" ] || _dir="${XDG_STATE_HOME:-$HOME/.local/state}/git-guard/preserve"
   _repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")"
-  _slug="$(printf '%s' "$1" | tr '/' '-')"
+  # Git Bash can rewrite a standalone slash for a native Windows executable.
+  _slug="$(printf '%s' "$1" | sed 's#/#-#g')" || return 1
   _short="$(git rev-parse --short "$2" 2>/dev/null)" || return 1
   _out="$_dir/$_repo/$_slug-$_short.bundle"
   if [ -f "$_out" ] && [ -f "$_out.sha256" ] && hyg_bundle_has_tip "$_out" "$2" &&
