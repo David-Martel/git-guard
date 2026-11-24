@@ -513,19 +513,19 @@ hyg_integrated() {
   if git merge-base --is-ancestor "$_tip" "$_base" 2>/dev/null; then printf 'ancestor'; return 0; fi
   _cherry="$(git cherry "$_base" "$_tip" 2>/dev/null)" || return 0
   if [ -n "$_cherry" ] && ! printf '%s\n' "$_cherry" | grep -q '^+'; then printf 'patch-equivalent'; return 0; fi
-  # Squash merge: every path the branch touched has the same blob on BASE as
-  # on TIP (both absent = deleted on both). Compared per path by object id, so
-  # globs and spaces are inert; a C-quoted name (control characters, quotes,
-  # backslashes) cannot be compared safely and means "not integrated".
+  # Squash merge: compare each touched path's full tree entry, including mode,
+  # type and object ID. Empty on both sides means absent on both sides. Use
+  # literal root-relative paths to keep globs and spaces inert. A C-quoted
+  # path (control characters, quotes, backslashes) leaves integration unproven.
   [ -n "$HYG_TMP" ] || return 0
   _mb="$(git merge-base "$_tip" "$_base" 2>/dev/null)" || return 0
-  git -c core.quotePath=false diff --name-only "$_mb" "$_tip" > "$HYG_TMP/touched" 2>/dev/null || return 0
+  git -c core.quotePath=false diff --no-relative --name-only "$_mb" "$_tip" > "$HYG_TMP/touched" 2>/dev/null || return 0
   [ -s "$HYG_TMP/touched" ] || return 0
   _eq=1
   while IFS= read -r _f; do
     case "$_f" in \"*) _eq=0; break ;; esac
-    _a="$(git rev-parse -q --verify "$_tip:$_f" 2>/dev/null || true)"
-    _c="$(git rev-parse -q --verify "$_base:$_f" 2>/dev/null || true)"
+    _a="$(git --literal-pathspecs ls-tree --full-tree "$_tip" -- "$_f" 2>/dev/null)" || return 0
+    _c="$(git --literal-pathspecs ls-tree --full-tree "$_base" -- "$_f" 2>/dev/null)" || return 0
     [ "$_a" = "$_c" ] || { _eq=0; break; }
   done < "$HYG_TMP/touched"
   [ "$_eq" = "1" ] && printf 'content-equivalent'
@@ -570,6 +570,14 @@ hyg_sha256() {
   fi
 }
 
+# hyg_bundle_has_tip BUNDLE TIP — verify the bundle and its advertised tip.
+hyg_bundle_has_tip() {
+  git bundle verify -q "$1" >/dev/null 2>&1 || return 1
+  _bundle_heads="$(git bundle list-heads "$1" 2>/dev/null)" || return 1
+  printf '%s\n' "$_bundle_heads" |
+    awk -v tip="$2" '("x" $1) == ("x" tip) { found = 1 } END { exit !found }'
+}
+
 # hyg_preserve NAME TIP — preserve TIP as a verified bundle and print its path.
 # `git bundle create <file> <raw-sha>` refuses ("empty bundle"), so TIP is
 # pinned to a temporary ref, the ref is bundled (minus BASE when that leaves
@@ -584,7 +592,7 @@ hyg_preserve() {
   _slug="$(printf '%s' "$1" | tr '/' '-')"
   _short="$(git rev-parse --short "$2" 2>/dev/null)" || return 1
   _out="$_dir/$_repo/$_slug-$_short.bundle"
-  if [ -f "$_out" ] && [ -f "$_out.sha256" ] && git bundle verify -q "$_out" >/dev/null 2>&1 &&
+  if [ -f "$_out" ] && [ -f "$_out.sha256" ] && hyg_bundle_has_tip "$_out" "$2" &&
      [ "$(hyg_sha256 "$_out")" = "$(awk '{print $1}' "$_out.sha256")" ]; then
     printf '%s' "$_out"; return 0
   fi
@@ -594,7 +602,7 @@ hyg_preserve() {
   _ok=0
   if { [ -n "$HYG_BASE" ] && git bundle create -q "$_out" "$_tmpref" "^$HYG_BASE" >/dev/null 2>&1; } ||
      git bundle create -q "$_out" "$_tmpref" >/dev/null 2>&1; then
-    if git bundle verify -q "$_out" >/dev/null 2>&1 && _sum="$(hyg_sha256 "$_out")" && [ -n "$_sum" ] &&
+    if hyg_bundle_has_tip "$_out" "$2" && _sum="$(hyg_sha256 "$_out")" && [ -n "$_sum" ] &&
        printf '%s  %s\n' "$_sum" "$(basename "$_out")" > "$_out.sha256"; then
       _ok=1
     fi
