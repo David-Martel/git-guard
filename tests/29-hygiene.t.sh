@@ -362,22 +362,46 @@ t_hyg_body() {
     || t_fail "drain --apply removed a LOCKED worktree"
   git -C "$r" worktree unlock "$wtp/w3"
 
-  # Unique work: a stale branch whose upstream is gone and whose commit is not
-  # on main is bundled, never deleted.
-  t_hyg_branch "$r" gone-unique
-  git -C "$r" push -q origin gone-unique 2>/dev/null
-  git -C "$r" branch -q --set-upstream-to=origin/gone-unique gone-unique
-  git -C "$r" push -q origin --delete gone-unique 2>/dev/null
-  git -C "$r" fetch -q --prune origin
+  # Protects: custody of unique work after its upstream is deleted.
+  # Detects: a native tr under Git Bash treating the slash as a path argument.
+  # Needs: Git, sh and a SHA-256 tool; the PATH shim models native argument conversion.
+  # Breadcrumb: hooks/common/hygiene.sh, hyg_preserve.
+  unique_branch=fix/stable-rsa-pin
+  t_hyg_branch "$r" gone-unique &&
+    git -C "$r" branch -m gone-unique "$unique_branch" &&
+    git -C "$r" push -q origin "$unique_branch" 2>/dev/null &&
+    git -C "$r" branch -q --set-upstream-to="origin/$unique_branch" "$unique_branch" &&
+    git -C "$r" push -q origin --delete "$unique_branch" 2>/dev/null &&
+    git -C "$r" fetch -q --prune origin ||
+    t_fail "could not build the slash-named unique branch fixture"
+  unique_tip="$(git -C "$r" rev-parse "refs/heads/$unique_branch")"
+  unique_short="$(git -C "$r" rev-parse --short "$unique_tip")"
   pres="$GG_T_TMPROOT/hyg-preserve"
   git -C "$r" config hygiene.preserveDir "$pres"
-  ( cd "$r" && sh "$hyg" drain --apply >"$log" 2>&1 ); rc=$?
-  git -C "$r" rev-parse -q --verify refs/heads/gone-unique >/dev/null \
+  shadow_bin="$GG_T_TMPROOT/hyg-shadow-bin"
+  real_tr="$(command -v tr)"
+  mkdir -p "$shadow_bin"
+  cat > "$shadow_bin/tr" <<'EOF'
+#!/bin/sh
+if [ "$#" -eq 2 ] && [ "$1" = / ] && [ "$2" = - ]; then
+  exec "$HYG_TEST_REAL_TR" 'C:/Program Files/Git/' -
+fi
+exec "$HYG_TEST_REAL_TR" "$@"
+EOF
+  chmod +x "$shadow_bin/tr"
+  converted="$(printf '%s' "$unique_branch" | HYG_TEST_REAL_TR="$real_tr" "$shadow_bin/tr" / -)"
+  [ "$converted" = "f-x----b-------p-n" ] && t_ok "native tr shim reproduces Git Bash path conversion" \
+    || t_fail "native tr shim did not reproduce Git Bash path conversion"
+  ( cd "$r" && PATH="$shadow_bin:$PATH" HYG_TEST_REAL_TR="$real_tr" sh "$hyg" drain --apply >"$log" 2>&1 ); rc=$?
+  t_expect_rc 0 "$rc" "drain preserves a unique branch with native tr on PATH"
+  git -C "$r" rev-parse -q --verify "refs/heads/$unique_branch" >/dev/null \
     && t_ok "branch with unique commits is kept" || t_fail "branch with UNIQUE commits was deleted"
-  ls "$pres"/*/gone-unique*.bundle >/dev/null 2>&1 \
-    && t_ok "unique branch preserved as a bundle" || t_fail "no bundle written for the unique branch"
-  bfile="$(ls "$pres"/*/gone-unique*.bundle 2>/dev/null | head -n1)"
-  if [ -n "$bfile" ] && [ -f "$bfile.sha256" ] &&
+  bfile="$pres/$(basename "$r")/fix-stable-rsa-pin-$unique_short.bundle"
+  if [ -f "$bfile" ] && git -C "$r" bundle verify "$bfile" >/dev/null 2>&1 &&
+     git -C "$r" bundle list-heads "$bfile" | awk -v tip="$unique_tip" '$1 == tip { found = 1 } END { exit !found }'; then
+    t_ok "slash-named branch has an exact-tip bundle with a portable slug"
+  else t_fail "missing portable exact-tip bundle for the slash-named branch"; fi
+  if [ -f "$bfile" ] && [ -f "$bfile.sha256" ] &&
      [ "$(awk '{print $1}' "$bfile.sha256")" = "$(t_hyg_sha256 "$bfile")" ]; then
     t_ok "bundle has a matching .sha256 sidecar"
   else t_fail "bundle .sha256 sidecar missing or wrong"; fi
