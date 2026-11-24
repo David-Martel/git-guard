@@ -10,7 +10,8 @@
 # Subcommands:
 #   pre-push REMOTE URL    called by hooks/pre-push with the ref list on stdin.
 #                          Exits 77 (HYG_REFUSE) ONLY for a push that creates a NEW branch on
-#                          the remote while the repo is over a limit. Commits,
+#                          the remote while over a stale-branch or open-PR
+#                          limit. A worktree overage is advisory. Commits,
 #                          existing-branch pushes, deletes, tags, preserve/* and
 #                          the first publish of the default branch never block.
 #   post-checkout P N F    called by hooks/post-checkout; warns after
@@ -385,13 +386,13 @@ hyg_measure() {
   return 0
 }
 
-# hyg_explain LEVEL — the human message for an over-limit state.
+# hyg_explain LEVEL [WORKTREE_LEVEL] — the human message for an over-limit state.
 hyg_explain() {
   _lvl="$1"
   for _k in $HYG_OVER; do
     case "$_k" in
       hygiene.maxWorktrees)
-        hyg_say "git-guard hygiene $_lvl: $HYG_WT_N linked worktrees > hygiene.maxWorktrees=$HYG_MAX_WT"
+        hyg_say "git-guard hygiene ${2:-$_lvl}: $HYG_WT_N linked worktrees > hygiene.maxWorktrees=$HYG_MAX_WT"
         printf '%s\n' "$HYG_WT_LIST" | awk -F '\t' 'NF { printf "    worktree %s  (%s%s)\n", $2, ($3 == "-" ? "detached" : $3), ($5 == "-" ? "" : ", locked: " $5) }' >&2 ;;
       hygiene.maxStaleBranches)
         hyg_say "git-guard hygiene $_lvl: $HYG_ST_N stale local branches > hygiene.maxStaleBranches=$HYG_MAX_ST"
@@ -400,7 +401,7 @@ hyg_explain() {
         hyg_say "git-guard hygiene $_lvl: $HYG_PR_N open PRs > hygiene.maxOpenPRs=$HYG_MAX_PR (review and merge or close them)" ;;
     esac
   done
-  hyg_say "  Drain first:  git fetch --prune && sh $HYG_CLI hygiene drain --dry-run   (then --apply)"
+  hyg_say "  Check what can drain:  git fetch --prune && sh $HYG_CLI hygiene drain --dry-run   (then --apply)"
   hyg_say "  drain removes only clean, unlocked, merged work and bundles any unique tip first."
   hyg_say "  What it keeps (locked, dirty, unique commits) needs its owner: finish, merge or hand it off,"
   hyg_say "  or raise this repo's limit deliberately: git config hygiene.<key> <n>."
@@ -439,7 +440,16 @@ hyg_pre_push() {
     hyg_say "  (hygiene mode warn: pushing new branch(es)$_new anyway)"
     return 0
   fi
-  hyg_explain BLOCK
+  # A first push may be needed to review and merge a branch already in a
+  # linked worktree. Keep that route open even when no tree can drain yet.
+  case "$HYG_OVER " in
+    *" hygiene.maxStaleBranches "*|*" hygiene.maxOpenPRs "*) : ;;
+    *)
+      hyg_explain WARN
+      hyg_say "  The worktree limit is advisory for pushes. Use the published branches for review and integration."
+      return 0 ;;
+  esac
+  hyg_explain BLOCK WARN
   hyg_say "  Refused: new branch(es)$_new. Existing branches, deletes and commits are never blocked."
   hyg_say "  One push only: GIT_GUARD_HYGIENE=warn git push ...   Do NOT use --no-verify."
   return "$HYG_REFUSE"
@@ -460,9 +470,10 @@ hyg_post_checkout() {
   hyg_measure "" "" 0
   [ -n "$HYG_OVER" ] || return 0
   hyg_explain WARN
-  if [ "$_mode" = "enforce" ]; then
-    hyg_say "  Pushing a NEW branch from this repo is refused until the backlog is under the limit."
-  fi
+  case "$_mode:$HYG_OVER " in
+    enforce:*" hygiene.maxStaleBranches "*)
+      hyg_say "  The stale-branch limit currently blocks first pushes of new remote branches." ;;
+  esac
   return 0
 }
 

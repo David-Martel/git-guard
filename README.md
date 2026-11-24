@@ -111,11 +111,11 @@ Git Bash).
 
 ### Backlog hygiene limits
 
-A push that creates a NEW branch is refused while the repo is over
-`hygiene.maxWorktrees` (default 3 linked worktrees), `hygiene.maxStaleBranches`
-(default 5 merged or upstream-gone local branches) or, when set,
-`hygiene.maxOpenPRs`. Commits and pushes of existing branches are never
-blocked. `git-guard hygiene report` shows the counts, and
+A push that creates a new remote branch warns above `hygiene.maxWorktrees`
+(default 3 linked worktrees), so an existing checkout can be published for
+review. It is refused above `hygiene.maxStaleBranches` (default 5 merged or
+upstream-gone local branches) or, when set, `hygiene.maxOpenPRs`.
+`git-guard hygiene report` shows the counts, and
 `git-guard hygiene drain [--apply]` removes only clean, merged, unlocked work,
 bundling anything unique first. `GIT_GUARD_HYGIENE=warn|off` softens it. See
 [`docs/QA_TOOLING.md` §12](docs/QA_TOOLING.md#12-backlog-hygiene-limits).

@@ -709,10 +709,12 @@ normal gate then reports the error.
 
 ## 12. Backlog hygiene limits
 
-Owner rule (2026-10-09): clear your merged worktrees, branches and PRs before
-starting new work. `hooks/common/hygiene.sh` enforces it per repository, on
-each host, at the one point where it cannot strand work: **a push that creates
-a NEW branch on the remote is refused while the repo is over a limit.**
+Clear merged worktrees, branches and PRs before starting new work. In
+enforce mode, [hygiene.sh](../hooks/common/hygiene.sh) refuses a push that creates
+a new remote branch when the stale-branch or open-PR count exceeds its limit.
+A linked-worktree overage warns at checkout and on first push. This lets a
+local branch reach review and merge so its checkout can drain. Git runs
+`post-checkout` after adding the linked checkout.
 Commits, pushes of existing branches, deletes, tags, `preserve/*` pushes and
 the first publish of the default branch (`main`, `master` or the base's own
 name) are never blocked. Only the check's refusal code refuses a push; any
@@ -723,7 +725,7 @@ when the repo is over a limit, and never fails.
 | Key (`git config`) | Default | Counts |
 |---|---|---|
 | `hygiene.mode` | `enforce` | `enforce`, `warn` or `off` (`GIT_GUARD_HYGIENE` beats it) |
-| `hygiene.maxWorktrees` | 3 | linked worktrees, primary excluded; `0` turns the check off |
+| `hygiene.maxWorktrees` | 3 | linked worktrees, primary excluded; advisory in hooks; `0` turns the check off |
 | `hygiene.maxStaleBranches` | 5 | local branches whose upstream is gone or whose tip is merged into `<remote>/HEAD`; `main`, `master`, `preserve/*` and branches a worktree uses (checked out, or under an in-progress rebase, `rebase --update-refs` or bisect) are excluded; `0` is off |
 | `hygiene.maxOpenPRs` | unset (off) | open non-bot PRs on the GitHub remote, through `gh api` REST; set it to enable |
 | `hygiene.exemptLockPrefix` | `vigil.operator-release/`, `vigil.fleet-build/`, `vigil.operator-build/` (set by `defaults` when none is configured) | multi-valued; a worktree locked with a reason that starts with one of these is infrastructure (for example `vigil.operator-release/`, `vigil.fleet-build/`, or a vigil-spark `vigil.operator-build/v1` build worktree that `operator_build_prune.py` retires) and is never counted or drained |

@@ -270,8 +270,8 @@ if [ -f "$git_guard_hook_dir/common/secret_scan.sh" ] && [ ! -t 0 ]; then
 fi
 
 # Backlog hygiene (common/hygiene.sh, docs/QA_TOOLING.md §12): refuse a push
-# that creates a NEW branch while this repo is over hygiene.maxWorktrees,
-# hygiene.maxStaleBranches or hygiene.maxOpenPRs. Existing-branch pushes,
+# that creates a NEW branch while this repo is over hygiene.maxStaleBranches
+# or hygiene.maxOpenPRs. Worktree count is advisory. Existing-branch pushes,
 # deletes and tags always pass; preserve/* pushes exited above. It reads the
 # ref list, so buffer stdin (unless an earlier step already did) and replay it.
 # GIT_GUARD_HYGIENE=warn|off softens it; a failure to measure never blocks.
