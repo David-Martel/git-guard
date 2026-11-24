@@ -95,6 +95,12 @@ Some properties of this block, each of them deliberate and tested:
 - **`user.signingkey` is the private key path.** Git then signs straight from
   the file, so no `SSH_AUTH_SOCK` is needed. That matters for both launchers
   (see below).
+- **Windows paths** for `user.signingkey` and `gpg.ssh.allowedSignersFile`
+  use absolute Windows form with forward slashes, such as
+  `C:/Users/<user>/.ssh/agent-signing/claude@<host>`. This lets native Git
+  resolve the same values from Git Bash, PowerShell, and launcher settings.
+  The [identity CLI tests](../tests/22-identity.t.sh) check the emitted shell
+  and TOML values and load the JSON values in native PowerShell.
 - **`GIT_GUARD_AGENT`** is the explicit selector `prepare-commit-msg` prefers
   over `CODEX_THREAD_ID` / `CLAUDECODE` detection. It accepts `claude`, `codex`,
   `gemini` and `copilot`; Antigravity and Copilot export no marker, so their

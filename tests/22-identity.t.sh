@@ -207,6 +207,60 @@ t_case_identity_cli() {
   t_expect_rc 1 "$?" "check rejects namespaces=\"git\" that appears only in the comment"
 
   gg_rmrepo "$r"; rm -rf "$lab"
+  gg_id_env_windows_paths
+}
+
+# Protects: agent signing configuration shared by Git Bash and native tools.
+# Detects: MSYS paths escaping into an env block that native Git cannot resolve.
+# Needs: Git Bash/MSYS with cygpath, native Git, and Windows PowerShell or pwsh.
+# Breadcrumb: hooks/common/identity.sh, cmd_env.
+gg_id_env_windows_paths() {
+  t_begin "identity env: native Windows paths in all launcher formats"
+  if ! gg_is_windows; then t_skip "native Windows identity paths require Git Bash/MSYS"; return; fi
+  if have pwsh; then
+    ps=pwsh
+  elif have powershell.exe; then
+    ps=powershell.exe
+  else
+    t_skip "native Windows identity paths require PowerShell"; return
+  fi
+  lab="$(mktemp -d "$GG_T_TMPROOT/gg-id-paths.XXXXXX")" || { t_fail "identity paths lab dir"; return; }
+  mkdir -p "$lab/key dir"
+  : > "$lab/key dir/codex@testhost"
+  : > "$lab/allowed signers"
+  expected_key="$(cygpath -am "$lab/key dir/codex@testhost")"
+  expected_signers="$(cygpath -am "$lab/allowed signers")"
+
+  for fmt in sh json toml; do
+    sh "$GG_ROOT/hooks/common/identity.sh" env codex --host testhost \
+      --dir "$lab/key dir" --allowed-signers "$lab/allowed signers" --format "$fmt" > "$lab/env.$fmt"
+    t_expect_rc 0 "$?" "identity env emits a $fmt block"
+  done
+
+  # Inspect the values in the generating shell before MSYS can rewrite them
+  # at process creation and hide a defect in the serialized environment.
+  # shellcheck disable=SC1091
+  raw_paths="$(. "$lab/env.sh"; printf '%s|%s' "$GIT_CONFIG_VALUE_0" "$GIT_CONFIG_VALUE_3")"
+  gg_id_eq "$expected_key|$expected_signers" "$raw_paths" "shell block stores both native paths verbatim"
+  grep -Fxq "GIT_CONFIG_VALUE_0 = \"$expected_key\"" "$lab/env.toml" &&
+    grep -Fxq "GIT_CONFIG_VALUE_3 = \"$expected_signers\"" "$lab/env.toml"
+  t_assert "$?" "Codex TOML stores both native paths verbatim"
+
+  cat > "$lab/consume.ps1" <<'PS'
+$ErrorActionPreference = 'Stop'
+$config = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'env.json') | ConvertFrom-Json
+foreach ($entry in $config.PSObject.Properties) {
+    Set-Item -LiteralPath "Env:$($entry.Name)" -Value $entry.Value
+}
+$expectedKey = (Join-Path $PSScriptRoot 'key dir/codex@testhost').Replace('\', '/')
+$expectedSigners = (Join-Path $PSScriptRoot 'allowed signers').Replace('\', '/')
+$key = git config --get user.signingkey
+if ($LASTEXITCODE -ne 0 -or $key -ne $expectedKey -or !(Test-Path -LiteralPath $key -PathType Leaf)) { exit 1 }
+$signers = git config --get gpg.ssh.allowedSignersFile
+if ($LASTEXITCODE -ne 0 -or $signers -ne $expectedSigners -or !(Test-Path -LiteralPath $signers -PathType Leaf)) { exit 1 }
+PS
+  "$ps" -NoLogo -NoProfile -File "$(cygpath -am "$lab/consume.ps1")"
+  t_expect_rc 0 "$?" "native Git and PowerShell resolve both JSON paths without MSYS conversion"
 }
 
 t_case_identity_verify() {
