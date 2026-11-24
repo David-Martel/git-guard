@@ -21,6 +21,8 @@
 #   * drain: --dry-run changes nothing; --apply removes only clean, merged,
 #     unlocked worktrees/branches, refuses dirty or locked ones, and bundles a
 #     branch with unique commits instead of deleting it.
+#   * drain retains an unmerged executable-mode change even when the blob is
+#     identical, and verifies the full preserved tip in a cached bundle.
 #   * drain never deletes a branch git itself treats as in use: checked out
 #     in any worktree, or under an in-progress rebase, bisect or
 #     rebase --update-refs (worktree list shows those as "detached"), also
@@ -404,14 +406,55 @@ t_hyg_body() {
   grep -q "PRESERVE FAILED" "$log" && t_ok "failed bundle is reported" || t_fail "failed bundle not reported"
   pres3="$GG_T_TMPROOT/hyg-preserve3"
   git -C "$r3" config hygiene.preserveDir "$pres3"
+  pe_tip="$(git -C "$r3" rev-parse pe-wt)"
+  pe_short="$(git -C "$r3" rev-parse --short "$pe_tip")"
+  pe_bundle="$pres3/$(basename "$r3")/pe-wt-$pe_short.bundle"
+  # A valid unrelated bundle and matching checksum at the expected filename
+  # do not protect the branch tip. The replacement must actually carry it.
+  if mkdir -p "$(dirname "$pe_bundle")" && git -C "$r3" bundle create "$pe_bundle" main &&
+     git -C "$r3" bundle verify -q "$pe_bundle" >/dev/null 2>&1; then
+    printf '%s  %s\n' "$(t_hyg_sha256 "$pe_bundle")" "$(basename "$pe_bundle")" > "$pe_bundle.sha256"
+  else
+    t_fail "fixture: cannot seed the valid wrong-tip bundle"
+  fi
   ( cd "$r3" && sh "$hyg" drain --apply >"$log" 2>&1 )
   [ ! -d "$wtp/pe-wt" ] && ! git -C "$r3" rev-parse -q --verify refs/heads/pe-br >/dev/null \
     && t_ok "with a writable preserve dir the patch-equivalent work is drained" \
     || t_fail "patch-equivalent work not drained once preservation can succeed"
+  if git -C "$r3" bundle list-heads "$pe_bundle" | awk -v tip="$pe_tip" '$1 == tip { found = 1 } END { exit !found }'; then
+    t_ok "wrong-tip cache replaced with a bundle advertising the exact drained tip"
+  else
+    t_fail "patch-equivalent work drained without preserving its exact tip"
+  fi
   [ "$(ls "$pres3"/*/pe-*.bundle 2>/dev/null | wc -l | tr -d ' ')" = "2" ] \
     && t_ok "both patch-equivalent tips were bundled before deletion" \
     || t_fail "expected 2 bundles for pe-wt and pe-br"
   gg_rmrepo "$r3"
+
+  # Matching blob IDs do not establish a squash merge. Git tracks a file's
+  # executable bit even on hosts where the working file mode is ignored.
+  mode_r="$(t_hyg_repo)" || { t_fail "fixture mode-only"; return 0; }
+  if (
+    cd "$mode_r" || exit 1
+    git config core.fileMode false && git checkout -q -b mode-only &&
+      git update-index --chmod=+x README.md &&
+      git commit -q -m "make README executable" && git checkout -q main &&
+      git worktree add -q "$wtp/mode-only" mode-only &&
+      [ "$(git rev-parse main:README.md)" = "$(git rev-parse mode-only:README.md)" ] &&
+      git cherry origin/main mode-only | grep -q '^+' &&
+      git diff --summary main mode-only | grep -q 'mode change 100644 => 100755'
+  ); then
+    ( cd "$mode_r" && sh "$hyg" drain --dry-run >"$log" 2>&1 ); rc=$?
+    t_expect_rc 0 "$rc" "unmerged mode-only dry run exits 0"
+    if grep 'mode-only' "$log" | grep -q 'commits not on'; then
+      t_ok "drain retains an unmerged mode-only worktree"
+    else
+      t_fail "unmerged executable mode was judged integrated"
+    fi
+  else
+    t_fail "fixture: expected equal blobs and a unique 100644 to 100755 change"
+  fi
+  gg_rmrepo "$mode_r"
 
   # --- review findings: detached worktrees, quoted names, ancestor -d ------
   r4="$(t_hyg_repo)" || { t_fail "fixture r4"; return 0; }
