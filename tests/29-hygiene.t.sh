@@ -1,15 +1,15 @@
 #!/bin/sh
 # Category 29 — backlog hygiene limits (hooks/common/hygiene.sh).
 #
-# The owner's rule (2026-10-09): worktree, branch and PR backlog clearance comes
-# before new work, with enforced limits. git-guard enforces it at the one point
-# where it cannot strand work: pushing a NEW branch. Commits, pushes of existing
-# branches, deletes and tags are never blocked.
+# Protects: publishing existing local work for review and enforcing branch/PR limits.
+# Detects: checkout counts blocking first pushes or masking genuine limit violations.
+# Needs: Git and a local bare remote. The PR count uses a stub GitHub CLI.
+# Breadcrumb: hooks/common/hygiene.sh, hyg_pre_push and hyg_post_checkout.
 #
 # Load-bearing assertions:
-#   * POSITIVE CONTROL: over hygiene.maxWorktrees, a real `git push` of a new
-#     branch is refused, the branch does not reach the remote, and the message
-#     names the config key and the drain command.
+#   * Over hygiene.maxWorktrees, a first push from the linked worktree reaches
+#     the remote and the warning names the config key and the drain command.
+#   * With a simultaneous stale-branch overage, the branch limit still blocks.
 #   * A commit and a push of an EXISTING branch in the same over-limit repo
 #     succeed (a hook that blocked them would strand WIP).
 #   * Delete pushes pass (draining IS deleting).
@@ -196,21 +196,30 @@ t_hyg_body() {
   done
 
   t_hyg_branch "$r" feat-new
-  t_hyg_gg "$r" "$log" push origin feat-new; rc=$?
-  ( cd "$r" && printf 'refs/heads/x %s refs/heads/x 0000000000000000000000000000000000000000\n' \
-      "$(git rev-parse HEAD)" | sh "$hyg" pre-push origin "$(git remote get-url origin)" >/dev/null 2>&1 ); hrc=$?
-  t_expect_rc 77 "$hrc" "hygiene.sh pre-push refuses with the distinct code 77"
-  if [ "$rc" -ne 0 ]; then t_ok "new-branch push refused over hygiene.maxWorktrees (rc=$rc)"
-  else t_fail "new-branch push was NOT refused over the worktree limit"; fi
+  git -C "$wtp/w3" checkout -q feat-new || t_fail "checkout unpublished branch in linked worktree"
+  t_hyg_gg "$wtp/w3" "$log" push origin feat-new; rc=$?
+  t_expect_rc 0 "$rc" "first push from an existing linked worktree succeeds over hygiene.maxWorktrees"
   t_hyg_remote_has "$r" feat-new \
-    && t_fail "refused branch reached the remote anyway" \
-    || t_ok "refused branch did not reach the remote"
-  grep -q "hygiene.maxWorktrees" "$log" && t_ok "refusal names hygiene.maxWorktrees" \
-    || t_fail "refusal does not name hygiene.maxWorktrees"
-  grep -q "git-guard hygiene drain --dry-run" "$log" && t_ok "refusal names the drain command" \
-    || t_fail "refusal does not name the drain command"
-  grep -q "w3" "$log" && t_ok "refusal lists the worktrees to drain" \
-    || t_fail "refusal does not list the worktrees"
+    && t_ok "the worktree branch reached the remote" || t_fail "the worktree branch did not reach the remote"
+  grep -q "hygiene WARN: .*hygiene.maxWorktrees" "$log" && t_ok "warning names hygiene.maxWorktrees" \
+    || t_fail "warning does not name hygiene.maxWorktrees"
+  grep -q "git-guard hygiene drain --dry-run" "$log" && t_ok "warning names the drain command" \
+    || t_fail "warning does not name the drain command"
+  grep -q "w3" "$log" && t_ok "warning lists the worktrees to drain" \
+    || t_fail "warning does not list the worktrees"
+  git -C "$wtp/w3" checkout -q w3 || t_fail "restore the original worktree branch"
+
+  git -C "$r" config hygiene.maxStaleBranches 1
+  git -C "$r" branch stale-a
+  git -C "$r" branch stale-b
+  t_hyg_branch "$r" feat-warn
+  ( cd "$r" && printf 'refs/heads/x %s refs/heads/x 0000000000000000000000000000000000000000\n' \
+      "$(git rev-parse HEAD)" | sh "$hyg" pre-push origin "$(git remote get-url origin)" >"$log" 2>&1 ); hrc=$?
+  t_expect_rc 77 "$hrc" "stale branches still refuse new remote branches with exit 77"
+  grep -q "hygiene BLOCK: .*hygiene.maxStaleBranches" "$log" &&
+    grep -q "hygiene WARN: .*hygiene.maxWorktrees" "$log" \
+    && t_ok "mixed overages distinguish the blocker from the worktree warning" \
+    || t_fail "mixed overages did not identify their separate severity"
 
   # Commits and existing-branch pushes are never blocked.
   printf 'more\n' >> "$r/README.md"
@@ -248,7 +257,7 @@ t_hyg_body() {
 
   # Escape hatches.
   ( cd "$r" && GIT_GUARD_HYGIENE=warn GIT_GUARD_RULES_DIR="$GG_BUNDLED" \
-      git -c core.hooksPath="$GG_ROOT/hooks" push origin feat-new >"$log" 2>&1 ); rc=$?
+      git -c core.hooksPath="$GG_ROOT/hooks" push origin feat-warn >"$log" 2>&1 ); rc=$?
   t_expect_rc 0 "$rc" "GIT_GUARD_HYGIENE=warn lets the new branch through"
   grep -q "git-guard hygiene WARN" "$log" && t_ok "warn mode still prints the warning" \
     || t_fail "warn mode printed no warning"
@@ -263,6 +272,8 @@ t_hyg_body() {
   t_hyg_gg "$r" "$log" push origin feat-cfg; rc=$?
   t_expect_rc 0 "$rc" "hygiene.mode=off (git config) lets the new branch through"
   git -C "$r" config --unset hygiene.mode
+  git -C "$r" config hygiene.maxStaleBranches 0
+  git -C "$r" branch -d stale-a stale-b >/dev/null || t_fail "clear stale branch fixtures"
 
   # Delete pushes pass even over the limit.
   t_hyg_gg "$r" "$log" push origin --delete feat-off; rc=$?
@@ -274,6 +285,8 @@ t_hyg_body() {
   t_hyg_branch "$r" feat-exempt
   t_hyg_gg "$r" "$log" push origin feat-exempt; rc=$?
   t_expect_rc 0 "$rc" "worktree locked with an exempt reason prefix is not counted"
+  grep -q "hygiene.maxWorktrees" "$log" && t_fail "exempt worktree triggered a warning" \
+    || t_ok "exempt worktree produced no worktree warning"
   git -C "$r" worktree unlock "$wtp/w3"
   git -C "$r" config --unset hygiene.exemptLockPrefix
 
@@ -281,7 +294,7 @@ t_hyg_body() {
   # build, locked "vigil.operator-build/v1 <commit> <attempt>", and
   # scripts/operator_build_prune.py retires it. It is tool-managed infrastructure
   # like an operator-release tree. Counting it put vigil-spark on asuspro13 at 4 of
-  # 3 on 2026-10-30, which refused every new-branch push there. The prefixes that
+  # 3 on 2026-10-30. The prefixes that
   # `defaults` seeds must exempt it; the control shows the same lock IS counted
   # without them, so the first assertion cannot pass vacuously.
   ob_home="$(mktemp -d "$GG_T_TMPROOT/hyg-ob-home.XXXXXX")"
@@ -290,11 +303,15 @@ t_hyg_body() {
   git -C "$r" worktree lock --reason "vigil.operator-build/v1 0123abcd 20261029T020207Z-f8a6cb32" "$wtp/w3"
   t_hyg_branch "$r" feat-opbuild-ctl
   t_hyg_gg "$r" "$log" push origin feat-opbuild-ctl; rc=$?
-  if [ "$rc" -ne 0 ]; then t_ok "control: without the seeded prefixes an operator-build worktree counts (rc=$rc)"
-  else t_fail "control: operator-build worktree was not counted even without an exempt prefix"; fi
+  t_expect_rc 0 "$rc" "control: an unexempt operator-build worktree does not block publication"
+  grep -q "hygiene WARN: .*hygiene.maxWorktrees" "$log" \
+    && t_ok "control: without the seeded prefixes an operator-build worktree counts" \
+    || t_fail "control: operator-build worktree was not counted without an exempt prefix"
   t_hyg_branch "$r" feat-opbuild
   ( GIT_CONFIG_GLOBAL="$ob_home/.gitconfig"; export GIT_CONFIG_GLOBAL; t_hyg_gg "$r" "$log" push origin feat-opbuild ); rc=$?
   t_expect_rc 0 "$rc" "operator-build worktree is not counted under the seeded default prefixes"
+  grep -q "hygiene.maxWorktrees" "$log" && t_fail "seeded operator-build exemption still warned" \
+    || t_ok "seeded exemption produced no worktree warning"
   git -C "$r" worktree unlock "$wtp/w3"
   rm -rf "$ob_home"
 
@@ -303,6 +320,8 @@ t_hyg_body() {
   t_expect_rc 0 "$rc" "post-checkout never fails a worktree add"
   grep -q "git-guard hygiene WARN" "$log" && t_ok "post-checkout warns when worktrees exceed the limit" \
     || t_fail "post-checkout printed no warning over the limit"
+  grep -q "blocks first pushes" "$log" && t_fail "post-checkout implied a worktree overage blocks pushing" \
+    || t_ok "post-checkout identifies worktree-only overages as warnings"
   t_hyg_gg "$r" "$log" checkout -q main; rc=$?
   grep -q "git-guard hygiene" "$log" \
     && t_fail "post-checkout warned on an ordinary branch checkout (should be quiet)" \
