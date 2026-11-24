@@ -6,10 +6,10 @@
 #   vendored), test-path exemption, suppressions and merge-parent intersection.
 # Detects: an interpreter call on that route (tripwire shims leave a marker); a native path
 #   that passes what the scanner blocks; a missing or failing ast-grep read as a clean scan;
-#   a rule table that drifts from mandate_scan.py; staged Python no longer reaching the
-#   scanner.
-# Needs: git and a genuine ast-grep (reported SKIPPED without one; the missing-tool case
-#   still runs). Every repository is a temp one.
+#   a rule table that drifts from mandate_scan.py; enabled Ruff codes missed by the native
+#   suppression check; staged Python no longer reaching the scanner.
+# Needs: git, plus ast-grep and Python for selectors that use the real tools. Missing tools
+#   skip those selectors. The stubbed native checks still run against temporary repos.
 # Breadcrumb: hooks/common/mandate_native.sh; hooks/common/mandate_scan.sh (--staged route).
 
 _nm_scan() {
@@ -88,6 +88,35 @@ t_case_native_staged_mandate() {
   _qm_put "$r" src/lib.rs '// ast-grep-ignore: mandate-rust-panic\t// SAFETY: fixture\nfn p() { panic!("x"); }\n'
   _nm_stub 2; t_expect_rc 0 "$?" "tab in comment: a reason after a tab is read, and the ignore suppresses"
   _nm_clean "suppression filter (stub ast-grep)"
+
+  # Scan each code by itself so a finding for another code cannot mask a missed block.
+  _nm_python=""
+  if gg_has_python; then _nm_python="$(gg_python)"
+  else t_skip "Ruff suppression parity: Python unavailable for the reference scanner"; fi
+  _nm_ruff_case() {
+    # _nm_ruff_case EXPECTED_RC NOQA_SUFFIX CASE DESCRIPTION_OF_FINDING
+    _qm_put "$r" src/lib.rs "// # noqa: $2\nfn p() {}\n"
+    _nm_stub ""; t_expect_rc "$1" "$?" "native Ruff suppression: $3"
+    if [ -n "$4" ]; then _qm_has "$log" "$4" "native Ruff finding: $3"; fi
+    if [ -n "$_nm_python" ]; then
+      ( cd "$r" && NM_STUB_LINES="" PATH="$_nm_lab/stubsg:$PATH" "$_nm_python" "$GG_ROOT/hooks/common/mandate_scan.py" --staged ) >/dev/null 2>"$log"
+      t_expect_rc "$1" "$?" "reference Ruff suppression: $3"
+      if [ -n "$4" ]; then _qm_has "$log" "$4" "reference Ruff finding: $3"; fi
+    fi
+  }
+  _nm_ruff_case 1 BLE001 "missing BLE001 reason blocks" 'BLE001` suppresses a mandate rule with no reason'
+  _nm_ruff_case 1 S110 "missing S110 reason blocks" 'S110` suppresses a mandate rule with no reason'
+  _nm_ruff_case 1 'PGH003 // SAFETY: fixture' "PGH003 remains blocked with a reason" "suppression checks cannot suppress themselves: PGH003"
+  _nm_ruff_case 1 'PGH004 // SAFETY: fixture' "PGH004 remains blocked with a reason" "suppression checks cannot suppress themselves: PGH004"
+  _nm_ruff_case 0 'BLE001 // SAFETY: fixture' "a reason for BLE001 passes" ""
+  _nm_ruff_case 0 ZZZ999 "an unrelated code passes" ""
+  _qm_conf "$r" 'mandate.blind_except=off\nmandate.suppression_code=off\n'
+  _nm_ruff_case 0 BLE001 "disabled BLE001 passes" ""
+  _nm_ruff_case 0 PGH004 "disabled PGH004 passes" ""
+  _nm_ruff_case 1 S110 "S110 still blocks with unrelated rules off" 'S110` suppresses a mandate rule with no reason'
+  git -C "$r" rm -q -f -- .qa-gate.conf
+  _nm_clean "Ruff suppression filter (stub ast-grep)"
+
   # A staged name with a tab or newline cannot be carried through the native route's
   # tab- and newline-separated records, and such a file escaped the scan silently (codex
   # autopilot review of #121). It is refused as a TOOL ERROR, never passed. Only a name that

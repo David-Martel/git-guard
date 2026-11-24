@@ -168,8 +168,9 @@ sed -n 's/^vendored=//p' "$nm_tmp/resolved" > "$nm_tmp/vendored"
 nm_sev() { awk -v k="$1" '$1 == "sev" && $2 == k { print $3 }' "$nm_tmp/resolved"; }
 nm_panic_sev="$(nm_sev rust_panic)"
 nm_reason_sev="$(nm_sev suppression_reason)"
-# Ruff codes of enabled rules: a `noqa` naming one in a comment needs a recorded reason.
-nm_codes="$(awk '$1 == "sev" && $3 != "off" && $4 != "" { print $4 }' "$nm_tmp/resolved" | tr ',' ' ')"
+# Flatten the enabled Ruff codes into the space-delimited tokens used by the comment check.
+nm_codes="$(awk '$1 == "sev" && $3 != "off" && $4 != "" { gsub(/,/, " ", $4); printf "%s ", $4 }' \
+  "$nm_tmp/resolved")" || nm_tool_error awk "cannot collect the enabled Ruff codes"
 
 # --- changed lines of the staged content -----------------------------------------------
 nm_diff() {
