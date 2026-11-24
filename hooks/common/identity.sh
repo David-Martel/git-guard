@@ -22,6 +22,7 @@
 #       git sign with that agent's key, plus GIT_GUARD_AGENT.
 #       json = a Claude Code settings.json "env" object;
 #       toml = a Codex [shell_environment_policy.set] table.
+#       Windows POSIX shells emit native Windows paths for both Git files.
 #   status
 #       What THIS process would sign with, which principal that maps to, and
 #       which Agent trailer prepare-commit-msg would write.
@@ -251,6 +252,14 @@ cmd_env() {
   # The PRIVATE key path: git then signs straight from the file, so no
   # SSH_AUTH_SOCK is needed (Codex's inherit="core" drops it; a Claude Code
   # settings value for it loses to the shell's export).
+  # A serialized env block may be read by native PowerShell or a launcher
+  # without MSYS path conversion. Export both paths in Git's native form.
+  case "$(uname -s 2>/dev/null || :)" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+      key="$(cygpath -am -- "$key")" || gg_die "env: cannot convert the signing key path to Windows form"
+      signers="$(cygpath -am -- "$signers")" || gg_die "env: cannot convert the allowed-signers path to Windows form"
+      ;;
+  esac
   set -- \
     GIT_CONFIG_COUNT 4 \
     GIT_CONFIG_KEY_0 user.signingkey GIT_CONFIG_VALUE_0 "$key" \
