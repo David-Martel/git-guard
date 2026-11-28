@@ -195,6 +195,7 @@ t_case_prepush_provider_git_env_fail_closed
 t_case_precommit_submodules
 t_case_posix_tool_path
 t_case_secret_scan_diff_parsing
+t_case_heredoc_pipe_window
 t_case_workflow_fork_guard
 "
 

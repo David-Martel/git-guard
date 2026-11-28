@@ -413,6 +413,35 @@ else
 fi
 [ -z "$added" ] && exit 0
 
+# The loop below reads the diff from a temporary file, never a here-document.
+# Git Bash's sh (bash 5.3, Cygwin) writes a here-document body into a 64 KiB pipe
+# before the loop reads any of it, and only switches to a file for bodies of
+# about 65,670 bytes and more, so a diff of 65,537 to about 65,670 bytes blocked
+# the hook forever (2026-11-27; tests/44-heredoc-pipe-window.t.sh). The loop
+# stays in this shell because it sets the hit_* variables read after it.
+if [ "$gg_scan_history" = 1 ]; then
+  gg_scan_kept="Nothing was pushed."
+else
+  gg_scan_kept="Staged work is preserved."
+fi
+gg_scan_input=""
+trap '[ -z "$gg_scan_input" ] || rm -f "$gg_scan_input"' EXIT
+# A signal must end the scan, not resume it after the cleanup.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+gg_scan_input="$(mktemp "${TMPDIR:-/tmp}/git-guard-secret-scan.XXXXXX")" || {
+  gg_scan_input=""
+  printf '%s\n' "git-guard BLOCKED: secret scan could not create a temporary file in ${TMPDIR:-/tmp} for the diff, so nothing was scanned. $gg_scan_kept" >&2
+  exit 1
+}
+printf '%s\n' "$added" > "$gg_scan_input" || {
+  printf '%s\n' "git-guard BLOCKED: secret scan could not write the diff to its temporary file $gg_scan_input, so nothing was scanned. $gg_scan_kept" >&2
+  exit 1
+}
+# Set on the first line read: the diff is not empty, so a loop that read
+# nothing could not open the file and must not report a clean scan.
+gg_scan_read=0
+
 cur_file=""
 new_lineno=0
 # In a hunk (after an "@@" line, until the next "diff --git") every line is file
@@ -428,6 +457,7 @@ hit_commit=""
 # Read the unified diff line by line. We need POSIX-safe iteration that
 # preserves leading spaces, so use read -r with IFS unset.
 while IFS= read -r diffline; do
+  gg_scan_read=1
   case "$in_hunk:$diffline" in
     ?:"git-guard-commit "*) cur_commit="${diffline#git-guard-commit }"; cur_file=""; in_hunk=0 ;;
     ?:"diff --git "*) in_hunk=0 ;;
@@ -499,9 +529,11 @@ while IFS= read -r diffline; do
       esac
       ;;
   esac
-done <<EOF
-$added
-EOF
+done < "$gg_scan_input"
+if [ "$gg_scan_read" != 1 ]; then
+  printf '%s\n' "git-guard BLOCKED: secret scan could not read the diff from its temporary file $gg_scan_input, so nothing was scanned. $gg_scan_kept" >&2
+  exit 1
+fi
 
 if [ -n "$hit_label" ] && [ "$gg_scan_history" = 1 ]; then
   printf '%s\n' "git-guard BLOCKED: possible secret in ${hit_file}:${hit_line} (${hit_label}) in commit ${hit_commit:-<unknown>}, which is being pushed. Nothing was pushed. Rewrite the commit to remove the secret (and rotate it if it is real); if it is genuinely not a secret, tag the line '# pragma: allowlist secret'." >&2
