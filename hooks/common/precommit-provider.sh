@@ -35,9 +35,22 @@ validate_gitlinks() (
   # The default record is "<mode> SP <type> SP <sha> TAB <path>", with the
   # path C-quoted exactly as `--format=%(path)` quotes it. `--format` itself
   # needs git 2.36, and Ubuntu 22.04 ships 2.34, where it refused every push.
-  links="$(git -c core.quotePath=false ls-tree -r "$commit")" ||
+  # The listing names every tracked file, so it goes to a temporary file, never
+  # a here-document: Git Bash's sh blocks forever on a here-document of 65,537 to
+  # about 65,670 bytes (tests/44-heredoc-pipe-window.t.sh).
+  links="$(mktemp "${TMPDIR:-/tmp}/git-guard-submodule-links.XXXXXX")" ||
+    submodule_block "listing for '${prefix:-.}' could not get a temporary file in ${TMPDIR:-/tmp}."
+  trap 'rm -f "$links"' EXIT
+  # A signal must end the walk, not resume it after the cleanup.
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  git -c core.quotePath=false ls-tree -r "$commit" > "$links" ||
     submodule_block "listing for '${prefix:-.}' failed at $commit."
+  # Set on the first record read: a non-empty listing that yields no record
+  # could not be opened and must not pass as a tree without gitlinks.
+  read_any=0
   while IFS= read -r line; do
+    read_any=1
     [ "${line%% *}" = 160000 ] || continue
     rest="${line#* }"; rest="${rest#* }"
     sha="${rest%%	*}"; path="${rest#*	}"; shown="$prefix$path"
@@ -93,9 +106,10 @@ validate_gitlinks() (
       fi
       validate_gitlinks "$sub" "$sha" "$shown/" $((depth + 1))
     ) || exit 1
-  done <<EOF
-$links
-EOF
+  done < "$links"
+  if [ -s "$links" ] && [ "$read_any" != 1 ]; then
+    submodule_block "listing for '${prefix:-.}' could not be read back from its temporary file."
+  fi
 )
 
 refs=""
